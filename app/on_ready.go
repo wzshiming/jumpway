@@ -18,6 +18,9 @@ func (a *App) onReady() {
 	mSystemProxy := systray.AddMenuItemCheckbox("System Proxy", "System Proxy with http(s)", false)
 	go a.ItemSystemProxy(mSystemProxy)
 
+	mExportCommand := systray.AddMenuItem("Proxy Export Line To Clipboard", "Proxy Export Line To Clipboard")
+	go a.ItemExportCommand(mExportCommand)
+
 	mConfig := systray.AddMenuItem("Config", "Config")
 	{
 		mEditConfig := mConfig.AddSubMenuItem("Edit", "Edit config")
