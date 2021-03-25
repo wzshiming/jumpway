@@ -1,0 +1,8 @@
+
+ways:
+  - - http://xxxx:8080
+    - socks5://yyy:1080
+  - - socks4://zzzz:8000
+
+proxy:
+  port: 8080
