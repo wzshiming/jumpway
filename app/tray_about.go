@@ -2,15 +2,15 @@ package app
 
 import (
 	"github.com/getlantern/systray"
-	"github.com/skratchdot/open-golang/open"
+	"github.com/wzshiming/jumpway/webview"
 	"github.com/wzshiming/logger"
 )
 
 func (a *App) ItemAbout(menu *systray.MenuItem) {
 	for range menu.ClickedCh {
-		err := open.Start("https://github.com/wzshiming/jumpway")
+		err := webview.View("https://github.com/wzshiming/jumpway", "JumpWay", 800, 600)
 		if err != nil {
-			logger.Log.Error(err, "EditConfig")
+			logger.Log.Error(err, "About")
 		}
 	}
 }

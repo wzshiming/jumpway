@@ -60,6 +60,8 @@ github.com/stretchr/testify v1.4.0 h1:2E4SXV/wtOkTonXsotYi4li6zVWxYlZuYNCXe9XRJy
 github.com/stretchr/testify v1.4.0/go.mod h1:j7eGeouHqKxXV5pUuKE4zz7dFj8WfuZ+81PSLYec5m4=
 github.com/takama/daemon v1.0.0 h1:XS3VLnFKmqw2Z7fQ/dHRarrVjdir9G3z7BEP8osjizQ=
 github.com/takama/daemon v1.0.0/go.mod h1:gKlhcjbqtBODg5v9H1nj5dU1a2j2GemtuWSNLD5rxOE=
+github.com/webview/webview v0.0.0-20210216142346-e0bfdf0e5d90 h1:G/O1RFjhc9hgVYjaPQ0Oceqxf3GwRQl/5XEAWYetjmg=
+github.com/webview/webview v0.0.0-20210216142346-e0bfdf0e5d90/go.mod h1:rpXAuuHgyEJb6kXcXldlkOjU6y4x+YcASKKXJNUhh0Y=
 github.com/wzshiming/bridge v0.5.0 h1:ePrQW/xRD2DgAsqrJJG9Yia6PdeqzbXkJixvWk83Zys=
 github.com/wzshiming/bridge v0.5.0/go.mod h1:+U1Yfci0MazDgC7T0GG66HIAeU1EVCNwzy4MKDP94zM=
 github.com/wzshiming/cmux v0.1.1 h1:njiTsaiG2Fz1B3n9mpLxCS9vGI4EQWSAlpBO71aRHYU=
