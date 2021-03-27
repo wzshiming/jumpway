@@ -10,7 +10,7 @@ import (
 
 func (a *App) ItemExportCommand(menu *systray.MenuItem) {
 	for range menu.ClickedCh {
-		command := fmt.Sprintf("export http_proxy=http://%s; export https_proxy=http://%s; ", a.ProxyAddress, a.ProxyAddress)
+		command := fmt.Sprintf("export http_proxy=http://127.0.0.1:%d https_proxy=http://127.0.0.1:%d; ", a.Port, a.Port)
 		err := clipboard.WriteAll(command)
 		if err != nil {
 			logger.Log.Error(err, "write clipboard")

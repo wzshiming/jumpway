@@ -10,30 +10,38 @@ func (a *App) onReady() {
 	systray.SetTitle("")
 	systray.SetTooltip("Jump Way")
 
+	mStatus := systray.AddMenuItem("", "")
+	a.ItemStatus(mStatus)
+
 	systray.AddSeparator()
 
-	mDaemon := systray.AddMenuItemCheckbox("Daemon", "Daemon", false)
+	mDaemon := systray.AddMenuItemCheckbox("Daemon", "", false)
 	go a.ItemDaemon(mDaemon)
 
-	mSystemProxy := systray.AddMenuItemCheckbox("System Proxy", "System Proxy with http(s)", false)
-	go a.ItemSystemProxy(mSystemProxy)
+	systray.AddSeparator()
 
-	mExportCommand := systray.AddMenuItem("Proxy Export Line To Clipboard", "Proxy Export Line To Clipboard")
+	mManualMode := systray.AddMenuItemCheckbox("Manual Mode", "", false)
+	mGlobalMode := systray.AddMenuItemCheckbox("Global Mode", "", false)
+	go a.ItemProxyMode(mGlobalMode, mManualMode)
+
+	mExportCommand := systray.AddMenuItem("Proxy Export Line To Clipboard", "")
 	go a.ItemExportCommand(mExportCommand)
 
-	mConfig := systray.AddMenuItem("Config", "Config")
+	systray.AddSeparator()
+
+	mConfig := systray.AddMenuItem("Config", "")
 	{
-		mEditConfig := mConfig.AddSubMenuItem("Edit", "Edit config")
+		mEditConfig := mConfig.AddSubMenuItem("Edit", "")
 		go a.ItemEditConfig(mEditConfig)
-		mReloadConfig := mConfig.AddSubMenuItem("Reload", "Reload config")
+		mReloadConfig := mConfig.AddSubMenuItem("Reload", "")
 		go a.ItemReloadConfig(mReloadConfig)
 	}
 
 	systray.AddSeparator()
 
-	mAbout := systray.AddMenuItem("About", "About the project")
+	mAbout := systray.AddMenuItem("About", "")
 	go a.ItemAbout(mAbout)
 
-	mQuit := systray.AddMenuItem("Quit", "Quit the app")
+	mQuit := systray.AddMenuItem("Quit", "")
 	go a.ItemQuit(mQuit)
 }

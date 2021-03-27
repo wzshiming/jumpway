@@ -11,7 +11,10 @@ import (
 )
 
 type App struct {
-	ProxyAddress string
+	Port int
+	Mode string
+
+	UpdateStatus func()
 }
 
 func NewApp() *App {
