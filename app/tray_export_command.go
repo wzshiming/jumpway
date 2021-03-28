@@ -9,6 +9,10 @@ import (
 )
 
 func (a *App) ItemExportCommand(menu *systray.MenuItem) {
+	a.itemExportCommand(menu)
+}
+
+func (a *App) itemExportCommandShell(menu *systray.MenuItem) {
 	for range menu.ClickedCh {
 		command := fmt.Sprintf("export http_proxy=http://127.0.0.1:%d https_proxy=http://127.0.0.1:%d; ", a.Port, a.Port)
 		err := clipboard.WriteAll(command)

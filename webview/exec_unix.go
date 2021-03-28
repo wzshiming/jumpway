@@ -1,4 +1,4 @@
-// +build !window
+// +build !windows
 
 package webview
 
