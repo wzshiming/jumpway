@@ -4,8 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/wzshiming/logger"
-
+	"github.com/wzshiming/bridge/chain"
 	_ "github.com/wzshiming/bridge/protocols/command"
 	_ "github.com/wzshiming/bridge/protocols/connect"
 	_ "github.com/wzshiming/bridge/protocols/netcat"
@@ -16,8 +15,7 @@ import (
 	_ "github.com/wzshiming/bridge/protocols/ssh"
 	_ "github.com/wzshiming/bridge/protocols/tls"
 	_ "github.com/wzshiming/bridge/protocols/ws"
-
-	"github.com/wzshiming/bridge/chain"
+	"github.com/wzshiming/logger"
 )
 
 func RunProxy(ctx context.Context, port uint32, ways []string) error {

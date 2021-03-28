@@ -2,12 +2,10 @@ package main
 
 import (
 	"os"
-
-	"github.com/wzshiming/jumpway/daemon"
-
 	_ "time/tzdata"
 
 	"github.com/wzshiming/jumpway/app"
+	"github.com/wzshiming/jumpway/daemon"
 	"github.com/wzshiming/logger"
 )
 

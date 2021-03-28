@@ -5,9 +5,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/wzshiming/jumpway"
-
 	"github.com/skratchdot/open-golang/open"
+	"github.com/wzshiming/jumpway"
 	"github.com/wzshiming/logger"
 	"gopkg.in/yaml.v2"
 )
