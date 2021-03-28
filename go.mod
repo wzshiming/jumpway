@@ -14,5 +14,5 @@ require (
 	github.com/wzshiming/bridge v0.5.0
 	github.com/wzshiming/logger v0.1.0
 	github.com/wzshiming/notify v0.1.0
-	gopkg.in/yaml.v2 v2.2.2
+	gopkg.in/yaml.v2 v2.2.3
 )
