@@ -2,6 +2,7 @@ package webview
 
 import (
 	"os"
+	"path/filepath"
 	"strconv"
 
 	"github.com/getlantern/byteexec"
@@ -10,7 +11,7 @@ import (
 )
 
 func View(url string, title string, w, h int64) error {
-	exec, err := byteexec.New(view, os.Args[0])
+	exec, err := byteexec.New(view, filepath.Join(filepath.Dir(os.Args[0]), "webview"))
 	if err != nil {
 		logger.Log.Error(err, "byte exec")
 		return open.Start(url)
