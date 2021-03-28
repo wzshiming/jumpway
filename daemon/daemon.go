@@ -13,7 +13,7 @@ var (
 )
 
 func init() {
-	svc, err := daemon.New(jumpway.AppName, jumpway.AppDescription, daemon.UserAgent)
+	svc, err := daemon.New(jumpway.AppName, jumpway.AppDescription, Kind)
 	if err != nil {
 		logger.Log.Error(err, "get daemon")
 		os.Exit(2)

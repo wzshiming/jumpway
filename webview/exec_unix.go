@@ -1,3 +1,5 @@
+// +build !window
+
 package webview
 
 import (
