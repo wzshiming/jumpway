@@ -6,7 +6,7 @@ import (
 )
 
 func (a *App) onReady() {
-	systray.SetTemplateIcon(icon.Icon, icon.Icon)
+	systray.SetTemplateIcon(icon.White, icon.White)
 	systray.SetTitle("")
 	systray.SetTooltip("Jump Way")
 

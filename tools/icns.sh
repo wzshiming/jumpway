@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-IN=icon/icon
+IN=icon/icon_black
 OUT=release/JumpWay.app/Contents/Resources/JumpWay
 TMP=icons.iconset
 mkdir -p "${TMP}"
