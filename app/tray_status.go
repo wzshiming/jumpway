@@ -9,7 +9,7 @@ import (
 func (a *App) ItemStatus(menu *systray.MenuItem) {
 	menu.Disable()
 	a.UpdateStatus = func() {
-		status := fmt.Sprintf("JumpWay %s Mode On Port %d", a.Mode, a.Port)
+		status := fmt.Sprintf("JumpWay %s Mode On %s:%d", a.Mode, a.Host, a.Port)
 		menu.SetTitle(status)
 	}
 }

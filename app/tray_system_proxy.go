@@ -23,7 +23,7 @@ func (a *App) ItemProxyMode(global, manual *systray.MenuItem) {
 				logger.Log.Error(err, "EnsureHelperToolPresent")
 				return
 			}
-			cancel, err = sysproxy.On(fmt.Sprintf("127.0.0.1:%d", a.Port))
+			cancel, err = sysproxy.On(fmt.Sprintf("%s:%d", a.RawHost, a.Port))
 			if err != nil {
 				logger.Log.Error(err, "sysproxy.On")
 				return

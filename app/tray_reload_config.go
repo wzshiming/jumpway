@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/getlantern/systray"
 	"github.com/wzshiming/jumpway"
@@ -24,10 +25,17 @@ func (a *App) ItemReloadConfig(menu *systray.MenuItem) {
 			logger.Log.Error(err, "LoadConfig")
 			systray.Quit()
 		}
-		a.Port = int(conf.Proxy.Port)
+		port := conf.Proxy.Port
+		host := conf.Proxy.Host
+		a.Port = int(port)
+		a.RawHost = host
+		a.Host = host
+		if a.Host == "" || a.Host == "0.0.0.0" {
+			a.Host = "127.0.0.1"
+		}
 		a.UpdateStatus()
 		go func() {
-			err := jumpway.RunProxy(ctx, conf.Proxy.Port, conf.Ways.Strings())
+			err := jumpway.RunProxy(ctx, fmt.Sprintf("%s:%d", host, port), conf.Ways.Strings())
 			if err != nil {
 				logger.Log.Error(err, "RunProxy")
 				systray.Quit()

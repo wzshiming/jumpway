@@ -17,6 +17,7 @@ type Config struct {
 }
 
 type Proxy struct {
+	Host string
 	Port uint32
 }
 

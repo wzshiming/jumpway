@@ -11,8 +11,10 @@ import (
 )
 
 type App struct {
-	Port int
-	Mode string
+	Port    int
+	RawHost string
+	Host    string
+	Mode    string
 
 	UpdateStatus func()
 }
