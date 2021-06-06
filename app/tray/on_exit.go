@@ -1,4 +1,4 @@
-package app
+package tray
 
 import (
 	"github.com/wzshiming/jumpway/daemon"

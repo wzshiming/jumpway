@@ -4,7 +4,7 @@ import (
 	"os"
 	_ "time/tzdata"
 
-	"github.com/wzshiming/jumpway/app"
+	"github.com/wzshiming/jumpway/app/tray"
 	"github.com/wzshiming/jumpway/daemon"
 	"github.com/wzshiming/logger"
 )
@@ -16,6 +16,6 @@ func main() {
 		return
 	}
 
-	a := app.NewApp()
+	a := tray.NewApp()
 	a.Run()
 }
