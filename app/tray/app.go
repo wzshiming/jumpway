@@ -11,9 +11,8 @@ import (
 )
 
 type App struct {
-	Port    int
+	Address string
 	RawHost string
-	Host    string
 	Mode    string
 
 	UpdateStatus func()

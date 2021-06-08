@@ -2,7 +2,10 @@ package tray
 
 import (
 	"context"
-	"fmt"
+	"net"
+	"strconv"
+
+	"github.com/wzshiming/bridge/protocols/local"
 
 	"github.com/getlantern/systray"
 	"github.com/wzshiming/jumpway"
@@ -27,15 +30,20 @@ func (a *App) ItemReloadConfig(menu *systray.MenuItem) {
 		}
 		port := conf.Proxy.Port
 		host := conf.Proxy.Host
-		a.Port = int(port)
-		a.RawHost = host
-		a.Host = host
-		if a.Host == "" || a.Host == "0.0.0.0" {
-			a.Host = "127.0.0.1"
+		if host == "" {
+			host = "127.0.0.1"
 		}
+		listener, err := local.LOCAL.Listen(ctx, "tcp", net.JoinHostPort(host, strconv.FormatUint(uint64(port), 10)))
+		if err != nil {
+			logger.Log.Error(err, "Listen")
+			systray.Quit()
+		}
+
+		a.Address = listener.Addr().String()
+		a.RawHost = host
 		a.UpdateStatus()
 		go func() {
-			err := jumpway.RunProxy(ctx, fmt.Sprintf("%s:%d", host, port), conf.Ways.Strings())
+			err := jumpway.RunProxy(ctx, listener, conf.Ways.Strings())
 			if err != nil {
 				logger.Log.Error(err, "RunProxy")
 				systray.Quit()

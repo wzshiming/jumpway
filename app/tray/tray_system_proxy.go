@@ -1,8 +1,6 @@
 package tray
 
 import (
-	"fmt"
-
 	"github.com/getlantern/sysproxy"
 	"github.com/getlantern/systray"
 	"github.com/wzshiming/logger"
@@ -23,7 +21,7 @@ func (a *App) ItemProxyMode(global, manual *systray.MenuItem) {
 				logger.Log.Error(err, "EnsureHelperToolPresent")
 				return
 			}
-			cancel, err = sysproxy.On(fmt.Sprintf("%s:%d", a.RawHost, a.Port))
+			cancel, err = sysproxy.On(a.Address)
 			if err != nil {
 				logger.Log.Error(err, "sysproxy.On")
 				return

@@ -2,6 +2,7 @@ package jumpway
 
 import (
 	"context"
+	"net"
 
 	"github.com/wzshiming/bridge/chain"
 	"github.com/wzshiming/bridge/multiple/proxy"
@@ -18,17 +19,13 @@ import (
 	_ "github.com/wzshiming/bridge/protocols/ws"
 )
 
-func RunProxy(ctx context.Context, address string, ways []string) error {
-	listener, err := local.LOCAL.Listen(ctx, "tcp", address)
-	if err != nil {
-		return err
-	}
-
+func RunProxy(ctx context.Context, listener net.Listener, ways []string) error {
 	dialer, err := chain.Default.BridgeChain(local.LOCAL, ways...)
 	if err != nil {
 		return err
 	}
 
+	address := listener.Addr().String()
 	proxies := []string{
 		"http://" + address,
 		"socks5://" + address,
