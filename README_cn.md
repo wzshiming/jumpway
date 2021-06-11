@@ -1,6 +1,6 @@
 # Jump Way
 
-A cross-platform proxy GUI client
+一个跨平台的 GUI 客户端
 
 [![Build Darwin](https://github.com/wzshiming/jumpway/actions/workflows/build_darwin.yml/badge.svg)](https://github.com/wzshiming/jumpway/actions/workflows/build_darwin.yml)
 [![Build Windows](https://github.com/wzshiming/jumpway/actions/workflows/build_windows.yml/badge.svg)](https://github.com/wzshiming/jumpway/actions/workflows/build_windows.yml)
@@ -8,21 +8,21 @@ A cross-platform proxy GUI client
 - [English](https://github.com/wzshiming/jumpway/blob/master/README.md)
 - [简体中文](https://github.com/wzshiming/jumpway/blob/master/README_cn.md)
 
-## Feature
+## 特性
 
-- [ ] I18n
-- [x] System Tray
-    - [x] Power on
-    - [x] System proxy
-    - [x] Proxy export line to clipboard
+- [ ] 国际化
+- [x] 系统托盘
+    - [x] 开机启动
+    - [x] 系统代理
+    - [x] 导出终端代理命令到剪切板
         - [x] Shell
         - [x] Cmd
         - [x] PowerShell
-- [ ] Configure the proxy with GUI
-    - [ ] Configure the multi-level proxy
-    - [ ] Support to get SSH proxy configuration from `~/.ssh/config`
-- [x] Multi-level proxy
-- [x] Proxy protocol
+- [ ] 图形界面配置代理
+    - [ ] 配置多级代理
+    - [ ] 支持从 `~/.ssh/config` 获取 SSH 代理
+- [x] 多级代理
+- [x] 代理协议
     - [x] SSH
     - [x] [Http Proxy](https://github.com/wzshiming/httpproxy)
     - [x] [Socks4](https://github.com/wzshiming/socks4)
@@ -47,7 +47,7 @@ A cross-platform proxy GUI client
             - [x] chacha20-ietf
             - [x] salsa20
 
-## Build
+## 构建
 
 ### MacOS
 
@@ -59,4 +59,4 @@ A cross-platform proxy GUI client
 
 ## License
 
-Licensed under the MIT License. See [LICENSE](https://github.com/wzshiming/jumpway/blob/master/LICENSE) for the full license text.
+软件包根据 MIT License 许可。有关完整的许可证文本，请参阅[LICENSE](https://github.com/wzshiming/jumpway/blob/master/LICENSE)。  
