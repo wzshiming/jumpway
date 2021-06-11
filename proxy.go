@@ -3,12 +3,10 @@ package jumpway
 import (
 	"context"
 	"net"
+	"sync"
 
-	"github.com/wzshiming/bridge/chain"
-	"github.com/wzshiming/bridge/multiple/proxy"
 	_ "github.com/wzshiming/bridge/protocols/command"
 	_ "github.com/wzshiming/bridge/protocols/connect"
-	"github.com/wzshiming/bridge/protocols/local"
 	_ "github.com/wzshiming/bridge/protocols/netcat"
 	_ "github.com/wzshiming/bridge/protocols/shadowsocks"
 	_ "github.com/wzshiming/bridge/protocols/smux"
@@ -17,12 +15,23 @@ import (
 	_ "github.com/wzshiming/bridge/protocols/ssh"
 	_ "github.com/wzshiming/bridge/protocols/tls"
 	_ "github.com/wzshiming/bridge/protocols/ws"
+
+	"github.com/wzshiming/anyproxy"
+	"github.com/wzshiming/bridge/chain"
+	"github.com/wzshiming/bridge/config"
+	"github.com/wzshiming/bridge/protocols/local"
+	"github.com/wzshiming/hostmatcher"
 )
 
-func RunProxy(ctx context.Context, listener net.Listener, ways []string) error {
-	dialer, err := chain.Default.BridgeChain(local.LOCAL, ways...)
+func RunProxy(ctx context.Context, listener net.Listener, ways []config.Node, noProxy []string) error {
+	dialer, err := chain.Default.BridgeChainWithConfig(local.LOCAL, ways...)
 	if err != nil {
 		return err
+	}
+
+	if len(noProxy) != 0 {
+		matcher := hostmatcher.NewMatcher(noProxy)
+		dialer = newNoProxy(dialer, matcher)
 	}
 
 	address := listener.Addr().String()
@@ -31,7 +40,7 @@ func RunProxy(ctx context.Context, listener net.Listener, ways []string) error {
 		"socks5://" + address,
 		"socks4://" + address,
 	}
-	proxy, err := proxy.NewProxy(ctx, proxies, dialer)
+	proxy, err := anyproxy.NewAnyProxy(ctx, proxies, dialer, nil, BytesPool)
 	if err != nil {
 		return err
 	}
@@ -47,4 +56,31 @@ func RunProxy(ctx context.Context, listener net.Listener, ways []string) error {
 	}
 
 	return nil
+}
+
+var DefaultSize = 32 * 1024
+
+type bytesPool struct {
+	sync.Pool
+}
+
+func (b *bytesPool) Get() []byte {
+	buf := b.Pool.Get().([]byte)
+	buf = buf[:cap(buf)]
+	return buf
+}
+
+func (b *bytesPool) Put(d []byte) {
+	if d == nil || len(d) < DefaultSize {
+		return
+	}
+	b.Pool.Put(d)
+}
+
+var BytesPool = &bytesPool{
+	Pool: sync.Pool{
+		New: func() interface{} {
+			return make([]byte, DefaultSize)
+		},
+	},
 }

@@ -16,6 +16,7 @@ import (
 func (a *App) ItemReloadConfig(menu *systray.MenuItem) {
 	var cancel func()
 	var ctx context.Context
+	var listener net.Listener
 
 	check := func() {
 		logger.Log.Info("Reload config")
@@ -33,7 +34,13 @@ func (a *App) ItemReloadConfig(menu *systray.MenuItem) {
 		if host == "" {
 			host = "127.0.0.1"
 		}
-		listener, err := local.LOCAL.Listen(ctx, "tcp", net.JoinHostPort(host, strconv.FormatUint(uint64(port), 10)))
+
+		if listener != nil {
+			listener.Close()
+		}
+
+		address := net.JoinHostPort(host, strconv.FormatUint(uint64(port), 10))
+		listener, err = local.LOCAL.Listen(ctx, "tcp", address)
 		if err != nil {
 			logger.Log.Error(err, "Listen")
 			systray.Quit()
@@ -43,10 +50,9 @@ func (a *App) ItemReloadConfig(menu *systray.MenuItem) {
 		a.RawHost = host
 		a.UpdateStatus()
 		go func() {
-			err := jumpway.RunProxy(ctx, listener, conf.Ways.Strings())
+			err := jumpway.RunProxy(ctx, listener, conf.GetWay(), conf.NoProxy.GetList())
 			if err != nil {
 				logger.Log.Error(err, "RunProxy")
-				systray.Quit()
 			}
 		}()
 	}

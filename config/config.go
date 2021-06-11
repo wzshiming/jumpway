@@ -1,24 +1,104 @@
 package config
 
 import (
+	"bufio"
 	_ "embed"
+	"io"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/skratchdot/open-golang/open"
-	"github.com/wzshiming/jumpway"
+	"github.com/wzshiming/bridge/config"
 	"github.com/wzshiming/logger"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
-	Ways  jumpway.Ways
-	Proxy Proxy
+	CurrentContext string    `yaml:"current_context"`
+	Contexts       []Context `yaml:"contexts"`
+	Proxy          Proxy     `yaml:"proxy"`
+	NoProxy        NoProxy   `yaml:"no_proxy"`
+}
+
+func (c Config) GetWay() []config.Node {
+	for _, ctx := range c.Contexts {
+		if ctx.Name == c.CurrentContext {
+			return ctx.Way
+		}
+	}
+	return nil
+}
+
+type Context struct {
+	Name string        `yaml:"name"`
+	Way  []config.Node `yaml:"way"`
 }
 
 type Proxy struct {
-	Host string
-	Port uint32
+	Host string `yaml:"host"`
+	Port uint32 `yaml:"port"`
+}
+
+type NoProxy struct {
+	List     []string `yaml:"list"`
+	FromEnv  []string `yaml:"from_env"`
+	FromFile []string `yaml:"from_file"`
+}
+
+func (n *NoProxy) GetList() []string {
+	set := map[string]struct{}{}
+	for _, item := range n.List {
+		setEnv(set, item)
+	}
+	for _, env := range n.FromEnv {
+		setEnv(set, os.Getenv(env))
+	}
+	for _, file := range n.FromFile {
+		if strings.HasPrefix(file, "~") {
+			home, err := os.UserHomeDir()
+			if err == nil {
+				file = filepath.Join(home, file[1:])
+			}
+		} else if strings.HasPrefix(file, ".") {
+			file = filepath.Join(configDir, file[1:])
+		}
+		f, err := os.Open(file)
+		if err != nil {
+			logger.Log.Error(err, "Open file", "file", file)
+			continue
+		}
+		reader := bufio.NewReader(f)
+		for {
+			line, _, err := reader.ReadLine()
+			if err != nil {
+				if err != io.EOF {
+					logger.Log.Error(err, "Open file", "file", file)
+				}
+				break
+			}
+			setEnv(set, string(line))
+		}
+		f.Close()
+	}
+	list := make([]string, 0, len(set))
+	for item := range set {
+		list = append(list, item)
+	}
+	sort.Strings(list)
+	return list
+}
+
+func setEnv(set map[string]struct{}, val string) {
+	val = strings.TrimSpace(val)
+	if val == "" {
+		return
+	}
+	for _, m := range strings.Split(val, ",") {
+		m = strings.TrimSpace(m)
+		set[m] = struct{}{}
+	}
 }
 
 var (
@@ -64,6 +144,14 @@ func LoadConfig() (*Config, error) {
 		return nil, err
 	}
 	return &conf, nil
+}
+
+func SaveConfig(conf *Config) error {
+	out, err := yaml.Marshal(conf)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(configPath, out, 0644)
 }
 
 func EditConfig() error {

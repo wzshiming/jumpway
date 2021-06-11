@@ -1,8 +1,28 @@
-
-ways:
-  - - http://xxxx:8080
-    - socks5://yyy:1080
-  - - socks4://zzzz:8000
-
+current_context: default
+contexts:
+  - name: default
+    way:
+      - probe:
+        lb:
+          - http://xxxx:8080
+          - socks5://yyy:1080
+      - probe:
+        lb:
+          - socks4://zzzz:8000
 proxy:
-  port: 8080
+  host: 127.0.0.1
+  port: 1087
+
+no_proxy:
+  list:
+    - 127.0.0.1
+    - localhost
+    - 192.168.0.0/16
+    - 10.0.0.0/8
+    - FE80::/64
+    - ::1
+    - FD00::/8
+
+  from_env:
+    - NO_PROXY
+    - no_proxy

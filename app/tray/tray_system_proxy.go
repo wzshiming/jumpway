@@ -11,10 +11,10 @@ func (a *App) ItemProxyMode(global, manual *systray.MenuItem) {
 	var cancel func() error
 
 	check := func(checked proxyMode) {
-		if checked == globalMode {
+		if checked == systemMode {
 			global.Check()
 			manual.Uncheck()
-			a.Mode = "Global"
+			a.Mode = "System"
 			a.UpdateStatus()
 			err := sysproxy.EnsureHelperToolPresent("sysproxy-cmd", "Input your password and save the world!", "")
 			if err != nil {
@@ -34,9 +34,13 @@ func (a *App) ItemProxyMode(global, manual *systray.MenuItem) {
 			if cancel != nil {
 				err := cancel()
 				if err != nil {
-					logger.Log.Error(err, "sysproxy.Off")
+					logger.Log.Error(err, "sysproxy.On cancel")
 				}
 				cancel = nil
+			}
+			err := sysproxy.Off(a.Address)
+			if err != nil {
+				logger.Log.Error(err, "sysproxy.Off")
 			}
 		}
 	}
@@ -44,7 +48,7 @@ func (a *App) ItemProxyMode(global, manual *systray.MenuItem) {
 	for {
 		select {
 		case <-global.ClickedCh:
-			checked = globalMode
+			checked = systemMode
 		case <-manual.ClickedCh:
 			checked = manualMode
 		}
@@ -57,5 +61,5 @@ type proxyMode uint
 
 const (
 	manualMode proxyMode = iota
-	globalMode
+	systemMode
 )

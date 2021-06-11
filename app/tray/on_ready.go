@@ -21,7 +21,7 @@ func (a *App) onReady() {
 	systray.AddSeparator()
 
 	mManualMode := systray.AddMenuItemCheckbox("Manual Mode", "", false)
-	mGlobalMode := systray.AddMenuItemCheckbox("Global Mode", "", false)
+	mGlobalMode := systray.AddMenuItemCheckbox("System Mode", "", false)
 	go a.ItemProxyMode(mGlobalMode, mManualMode)
 
 	mExportCommand := systray.AddMenuItem("Proxy Export Line To Clipboard", "")
