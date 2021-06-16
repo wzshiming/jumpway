@@ -1,14 +1,13 @@
 package tray
 
 import (
-	"github.com/getlantern/sysproxy"
 	"github.com/getlantern/systray"
 	"github.com/wzshiming/logger"
+	"github.com/wzshiming/sysproxy"
 )
 
 func (a *App) ItemProxyMode(global, manual *systray.MenuItem) {
 	var checked proxyMode
-	var cancel func() error
 
 	check := func(checked proxyMode) {
 		if checked == systemMode {
@@ -16,14 +15,15 @@ func (a *App) ItemProxyMode(global, manual *systray.MenuItem) {
 			manual.Uncheck()
 			a.Mode = "System"
 			a.UpdateStatus()
-			err := sysproxy.EnsureHelperToolPresent("sysproxy-cmd", "Input your password and save the world!", "")
+
+			err := sysproxy.OnHTTPS(a.Address)
 			if err != nil {
-				logger.Log.Error(err, "EnsureHelperToolPresent")
+				logger.Log.Error(err, "sysproxy.OnHTTPS")
 				return
 			}
-			cancel, err = sysproxy.On(a.Address)
+			err = sysproxy.OnHTTP(a.Address)
 			if err != nil {
-				logger.Log.Error(err, "sysproxy.On")
+				logger.Log.Error(err, "sysproxy.OnHTTP")
 				return
 			}
 		} else {
@@ -31,16 +31,14 @@ func (a *App) ItemProxyMode(global, manual *systray.MenuItem) {
 			global.Uncheck()
 			a.Mode = "Manual"
 			a.UpdateStatus()
-			if cancel != nil {
-				err := cancel()
-				if err != nil {
-					logger.Log.Error(err, "sysproxy.On cancel")
-				}
-				cancel = nil
-			}
-			err := sysproxy.Off(a.Address)
+
+			err := sysproxy.OffHTTPS()
 			if err != nil {
-				logger.Log.Error(err, "sysproxy.Off")
+				logger.Log.Error(err, "sysproxy.OffHTTPS")
+			}
+			err = sysproxy.OffHTTP()
+			if err != nil {
+				logger.Log.Error(err, "sysproxy.OffHTTP")
 			}
 		}
 	}
