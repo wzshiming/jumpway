@@ -10,6 +10,7 @@ require (
 	github.com/wzshiming/anyproxy v0.4.0
 	github.com/wzshiming/bridge v0.6.0
 	github.com/wzshiming/hostmatcher v0.0.0-20210610072858-ede9eec59216
+	github.com/wzshiming/httpcache v0.2.1
 	github.com/wzshiming/logger v0.1.0
 	github.com/wzshiming/notify v0.1.0
 	github.com/wzshiming/sysproxy v0.2.1

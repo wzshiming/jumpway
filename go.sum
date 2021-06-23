@@ -68,6 +68,8 @@ github.com/wzshiming/commandproxy v0.2.0 h1:uPVhgIj2YSncRUo6g9smGR6OMzsIg7lwklcM
 github.com/wzshiming/commandproxy v0.2.0/go.mod h1:wS6+aJ9KMHciqYX3xmDO0W+QVY0zvngeBvmoIFMfq8A=
 github.com/wzshiming/hostmatcher v0.0.0-20210610072858-ede9eec59216 h1:+fHfFL7dH+ARkVISYJVR6kbORl3KvmM8Dm8J/9cbRIE=
 github.com/wzshiming/hostmatcher v0.0.0-20210610072858-ede9eec59216/go.mod h1:3EyfIDuzQyo0tqrCtcUkD5UvAsdxOUb/RbcYOiPTh1E=
+github.com/wzshiming/httpcache v0.2.1 h1:W0Y3KzCBrHES1Q2xgZ0ERhnQS64MM/0QMQaEwxevtoo=
+github.com/wzshiming/httpcache v0.2.1/go.mod h1:b5kBGWI1rExt9fgrc18ml+MGQtzn39OPgmxZNlQmd6I=
 github.com/wzshiming/httpproxy v0.3.4 h1:HpDmF0jQv83zMtMSJgd2CA41OlX98yNMJDnHnZPOXKY=
 github.com/wzshiming/httpproxy v0.3.4/go.mod h1:drZR+iQLfYsQi7/nETLjyB9Z0f5KDXQo2PEkJBbg3xQ=
 github.com/wzshiming/logger v0.1.0 h1:dOXSCqtlhgbYIYtQUOmq13+R/Ikb4rtR8dfRvg6qp8s=

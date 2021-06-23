@@ -2,15 +2,22 @@ package config
 
 import (
 	"bufio"
+	"crypto/tls"
 	_ "embed"
+	"fmt"
 	"io"
+	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/skratchdot/open-golang/open"
 	"github.com/wzshiming/bridge/config"
+	"github.com/wzshiming/httpcache"
 	"github.com/wzshiming/logger"
 	"gopkg.in/yaml.v3"
 )
@@ -56,25 +63,17 @@ func (n *NoProxy) GetList() []string {
 		setEnv(set, os.Getenv(env))
 	}
 	for _, file := range n.FromFile {
-		if strings.HasPrefix(file, "~") {
-			home, err := os.UserHomeDir()
-			if err == nil {
-				file = filepath.Join(home, file[1:])
-			}
-		} else if strings.HasPrefix(file, ".") {
-			file = filepath.Join(configDir, file[1:])
-		}
-		f, err := os.Open(file)
+		f, err := getFile(file)
 		if err != nil {
 			logger.Log.Error(err, "Open file", "file", file)
 			continue
 		}
 		reader := bufio.NewReader(f)
-		for {
+		for i := 0; ; i++ {
 			line, _, err := reader.ReadLine()
 			if err != nil {
 				if err != io.EOF {
-					logger.Log.Error(err, "Open file", "file", file)
+					logger.Log.Error(err, "Open file", "file", file, "line", i+1)
 				}
 				break
 			}
@@ -102,6 +101,7 @@ func setEnv(set map[string]struct{}, val string) {
 }
 
 var (
+	homeDir    = ""
 	configDir  = ""
 	configPath = ""
 
@@ -111,12 +111,12 @@ var (
 
 func init() {
 	var err error
-	configDir, err = os.UserHomeDir()
+	homeDir, err = os.UserHomeDir()
 	if err != nil {
 		logger.Log.Error(err, "get hostname")
 		os.Exit(2)
 	}
-	configDir = filepath.Join(configDir, ".jumpway")
+	configDir = filepath.Join(homeDir, ".jumpway")
 	configPath = filepath.Join(configDir, "config.yaml")
 }
 
@@ -156,4 +156,61 @@ func SaveConfig(conf *Config) error {
 
 func EditConfig() error {
 	return open.Run(configPath)
+}
+
+func getFile(filpath string) (io.ReadCloser, error) {
+	u, err := url.Parse(filpath)
+	if err != nil {
+		return nil, err
+	}
+
+	switch u.Scheme {
+	case "http", "https":
+		req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := httpCli.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		return resp.Body, nil
+	case "file", "":
+		file := u.Path
+		if strings.HasPrefix(file, "~") {
+			file = filepath.Join(homeDir, file[1:])
+		} else if strings.HasPrefix(file, ".") {
+			file = filepath.Join(configDir, file[1:])
+		}
+		body, err := os.OpenFile(file, os.O_RDONLY, 0)
+		if err != nil {
+			return nil, err
+		}
+		return body, nil
+	default:
+		return nil, fmt.Errorf("unknown scheme %v", u.Scheme)
+	}
+}
+
+var httpCli *http.Client
+
+func init() {
+	httpCli = &http.Client{
+		Transport: httpcache.NewRoundTripper(&http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+			DialContext: (&net.Dialer{
+				Timeout:   5 * time.Second,
+				KeepAlive: 5 * time.Second,
+			}).DialContext,
+			ForceAttemptHTTP2:     true,
+			MaxIdleConns:          100,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		}, httpcache.WithStorer(
+			httpcache.DirectoryStorer(filepath.Join(configDir, "cache")),
+		)),
+	}
 }
