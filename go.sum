@@ -57,8 +57,9 @@ github.com/stretchr/testify v1.4.0 h1:2E4SXV/wtOkTonXsotYi4li6zVWxYlZuYNCXe9XRJy
 github.com/stretchr/testify v1.4.0/go.mod h1:j7eGeouHqKxXV5pUuKE4zz7dFj8WfuZ+81PSLYec5m4=
 github.com/takama/daemon v1.0.0 h1:XS3VLnFKmqw2Z7fQ/dHRarrVjdir9G3z7BEP8osjizQ=
 github.com/takama/daemon v1.0.0/go.mod h1:gKlhcjbqtBODg5v9H1nj5dU1a2j2GemtuWSNLD5rxOE=
-github.com/wzshiming/anyproxy v0.3.1 h1:DbTpun3NvBKn+AbVNYmaAiuZWqL5sYSUOq3f6v/x/s4=
 github.com/wzshiming/anyproxy v0.3.1/go.mod h1:vWVvSKRU4rVgfdUcAT14Fpo6t59v1TJyjNNjcPQ41mQ=
+github.com/wzshiming/anyproxy v0.4.0 h1:oOIvo8OArTfUlojAUuqSFWA2GYL0zr3ynozKXG4SgG4=
+github.com/wzshiming/anyproxy v0.4.0/go.mod h1:vWVvSKRU4rVgfdUcAT14Fpo6t59v1TJyjNNjcPQ41mQ=
 github.com/wzshiming/bridge v0.6.0 h1:+lCGQiEEcC7K8gyLWkBoJWZOgUCe084sEnuQ+ffWfJU=
 github.com/wzshiming/bridge v0.6.0/go.mod h1:/yFktfYG8qyasmblFku+Ui1vqda3S1ZwxFlPx4BzrSY=
 github.com/wzshiming/cmux v0.2.2 h1:U6IH96kRFxnnjy3duskHvp237o8cK6gILQYIROE3NI4=
