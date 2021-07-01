@@ -31,6 +31,10 @@ github.com/go-logr/zapr v0.3.0/go.mod h1:qhKdvif7YF5GI9NWEpyxTSSBdGmzkNguibrdCNV
 github.com/go-stack/stack v1.8.0 h1:5SgMzNM5HxrEjV0ww2lTmX6E2Izsfxas4+YHWRs3Lsk=
 github.com/go-stack/stack v1.8.0/go.mod h1:v0f6uXyyMGvRgIKkXu+yp6POWl0qKG85gN/melR3HDY=
 github.com/google/renameio v0.1.0/go.mod h1:KWCgfxg9yswjAJkECMjeO8J8rahYeXnNhOm40UhjYkI=
+github.com/gorilla/handlers v1.4.2 h1:0QniY0USkHQ1RGCLfKxeNHK9bkDHGRYGNDFBCS+YARg=
+github.com/gorilla/handlers v1.4.2/go.mod h1:Qkdc/uu4tH4g6mTK6auzZ766c4CA0Ng8+o/OAirnOIQ=
+github.com/gorilla/mux v1.8.0 h1:i40aqfkR1h2SlN9hojwV5ZA91wcXFOvkdNIeFDP5koI=
+github.com/gorilla/mux v1.8.0/go.mod h1:DVbg23sWSpFRCP0SfiEN6jmj59UnW/n46BH5rLB71So=
 github.com/kisielk/gotool v1.0.0/go.mod h1:XhKaO+MFFWcvkIS/tQcRk01m1F5IRFswLeQ+oQHNcck=
 github.com/kr/pretty v0.1.0 h1:L/CwN0zerZDmRFUapSPitk6f+Q3+0za1rQkzVuMiMFI=
 github.com/kr/pretty v0.1.0/go.mod h1:dAy3ld7l9f0ibDNOQOHHMYYIIbhfbHSm3C4ZsoJORNo=
@@ -58,8 +62,8 @@ github.com/stretchr/testify v1.4.0/go.mod h1:j7eGeouHqKxXV5pUuKE4zz7dFj8WfuZ+81P
 github.com/takama/daemon v1.0.0 h1:XS3VLnFKmqw2Z7fQ/dHRarrVjdir9G3z7BEP8osjizQ=
 github.com/takama/daemon v1.0.0/go.mod h1:gKlhcjbqtBODg5v9H1nj5dU1a2j2GemtuWSNLD5rxOE=
 github.com/wzshiming/anyproxy v0.3.1/go.mod h1:vWVvSKRU4rVgfdUcAT14Fpo6t59v1TJyjNNjcPQ41mQ=
-github.com/wzshiming/anyproxy v0.4.0 h1:oOIvo8OArTfUlojAUuqSFWA2GYL0zr3ynozKXG4SgG4=
-github.com/wzshiming/anyproxy v0.4.0/go.mod h1:vWVvSKRU4rVgfdUcAT14Fpo6t59v1TJyjNNjcPQ41mQ=
+github.com/wzshiming/anyproxy v0.4.2 h1:G08bJPJo1fbXD+xZlgvNNXcEWEo+YRGYtdQAe6nvyZ0=
+github.com/wzshiming/anyproxy v0.4.2/go.mod h1:vWVvSKRU4rVgfdUcAT14Fpo6t59v1TJyjNNjcPQ41mQ=
 github.com/wzshiming/bridge v0.6.0 h1:+lCGQiEEcC7K8gyLWkBoJWZOgUCe084sEnuQ+ffWfJU=
 github.com/wzshiming/bridge v0.6.0/go.mod h1:/yFktfYG8qyasmblFku+Ui1vqda3S1ZwxFlPx4BzrSY=
 github.com/wzshiming/cmux v0.2.2 h1:U6IH96kRFxnnjy3duskHvp237o8cK6gILQYIROE3NI4=
@@ -76,6 +80,8 @@ github.com/wzshiming/logger v0.1.0 h1:dOXSCqtlhgbYIYtQUOmq13+R/Ikb4rtR8dfRvg6qp8
 github.com/wzshiming/logger v0.1.0/go.mod h1:ZrCaVKS2W7/ivqWwOXmW7GuOlTe3jC6RCDyP48cJCqc=
 github.com/wzshiming/notify v0.1.0 h1:BZND3IfiWkyDseAiaqLb43mTU8vefmmK0gOdnuschPI=
 github.com/wzshiming/notify v0.1.0/go.mod h1:SFhsQKZJznzsDcj/Qfo9A65k5IRcpUrpgbLRzZEa/DI=
+github.com/wzshiming/openapiui/v2 v2.0.0 h1:tE/aDJo7/he03lYbPMBqsshjvxP1Jg1twghEHDR2ZfY=
+github.com/wzshiming/openapiui/v2 v2.0.0/go.mod h1:wij15kw1O5SfHCqY6ZXzHIXks2lJTG4hn9higGt7WLc=
 github.com/wzshiming/schedialer v0.1.1 h1:ozkPD0tiEDTj62SGq/tqyE9IpAmA51d3GCFTTZf0JxE=
 github.com/wzshiming/schedialer v0.1.1/go.mod h1:TvVxg4QZIBTJzRfmL/G7g6CzynFQKPmtXtSeJ2c4Lus=
 github.com/wzshiming/shadowsocks v0.2.1 h1:DmWJ6mojdAwdNGw5XWk9ooU2YAuE9vZpNNUYUkln+ME=

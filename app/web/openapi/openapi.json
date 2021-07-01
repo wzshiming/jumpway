@@ -1,0 +1,262 @@
+{
+ "openapi": "3.0.1",
+ "info": {
+  "title": "OpenAPI Demo",
+  "description": "Automatically generated",
+  "contact": {
+   "name": "wzshiming",
+   "url": "https://github.com/wzshiming/gen"
+  },
+  "version": "0.0.1"
+ },
+ "servers": [
+  {
+   "url": "/"
+  },
+  {
+   "url": "{scheme}{host}{port}{path}",
+   "variables": {
+    "host": {
+     "enum": [
+      "localhost"
+     ],
+     "default": "localhost"
+    },
+    "path": {
+     "enum": [
+      "/"
+     ],
+     "default": "/"
+    },
+    "port": {
+     "enum": [
+      ""
+     ],
+     "default": ""
+    },
+    "scheme": {
+     "enum": [
+      "http://",
+      "https://"
+     ],
+     "default": "http://"
+    }
+   }
+  }
+ ],
+ "paths": {
+  "/configs": {
+   "get": {
+    "tags": [
+     "ConfigsService"
+    ],
+    "summary": "Get the Config",
+    "description": "Get the Config\n\n\n#route:\"GET /\"#",
+    "responses": {
+     "200": {
+      "description": "Response code is 200",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Config"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Response code is 400",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string",
+         "format": "error"
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "ConfigsService"
+    ],
+    "summary": "Update the Config",
+    "description": "Update the Config\n\n\n#route:\"PUT /\"#",
+    "requestBody": {
+     "$ref": "#/components/requestBodies/conf_body"
+    },
+    "responses": {
+     "400": {
+      "description": "Response code is 400",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string",
+         "format": "error"
+        }
+       }
+      }
+     }
+    }
+   }
+  }
+ },
+ "components": {
+  "schemas": {
+   "Config": {
+    "required": [
+     "CurrentContext",
+     "Contexts",
+     "Proxy",
+     "NoProxy"
+    ],
+    "type": "object",
+    "properties": {
+     "Contexts": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Context"
+      }
+     },
+     "CurrentContext": {
+      "type": "string"
+     },
+     "NoProxy": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/NoProxy"
+       }
+      ]
+     },
+     "Proxy": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/Proxy"
+       }
+      ]
+     }
+    }
+   },
+   "Context": {
+    "required": [
+     "Name",
+     "Way"
+    ],
+    "type": "object",
+    "properties": {
+     "Name": {
+      "type": "string"
+     },
+     "Way": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Node"
+      }
+     }
+    }
+   },
+   "NoProxy": {
+    "required": [
+     "List",
+     "FromEnv",
+     "FromFile"
+    ],
+    "type": "object",
+    "properties": {
+     "FromEnv": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "FromFile": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "List": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     }
+    }
+   },
+   "Node": {
+    "required": [
+     "probe",
+     "lb"
+    ],
+    "type": "object",
+    "properties": {
+     "lb": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "probe": {
+      "type": "string"
+     }
+    }
+   },
+   "Proxy": {
+    "required": [
+     "Host",
+     "Port"
+    ],
+    "type": "object",
+    "properties": {
+     "Host": {
+      "type": "string"
+     },
+     "Port": {
+      "type": "integer",
+      "format": "uint32"
+     }
+    }
+   }
+  },
+  "responses": {
+   "conf_body": {
+    "description": "Response code is 200",
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/Config"
+      }
+     }
+    }
+   },
+   "err_body": {
+    "description": "Response code is 400",
+    "content": {
+     "text/plain": {
+      "schema": {
+       "type": "string",
+       "format": "error"
+      }
+     }
+    }
+   }
+  },
+  "requestBodies": {
+   "conf_body": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/Config"
+      }
+     }
+    }
+   }
+  }
+ },
+ "tags": [
+  {
+   "name": "ConfigsService",
+   "description": "ConfigsService\n\n\n#path:\"/configs/\"#"
+  }
+ ]
+}

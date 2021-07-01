@@ -5,23 +5,6 @@ import (
 	"net"
 	"sync"
 
-	_ "github.com/wzshiming/bridge/protocols/command"
-	_ "github.com/wzshiming/bridge/protocols/connect"
-	_ "github.com/wzshiming/bridge/protocols/netcat"
-	_ "github.com/wzshiming/bridge/protocols/shadowsocks"
-	_ "github.com/wzshiming/bridge/protocols/smux"
-	_ "github.com/wzshiming/bridge/protocols/socks4"
-	_ "github.com/wzshiming/bridge/protocols/socks5"
-	_ "github.com/wzshiming/bridge/protocols/ssh"
-	_ "github.com/wzshiming/bridge/protocols/tls"
-	_ "github.com/wzshiming/bridge/protocols/ws"
-
-	_ "github.com/wzshiming/anyproxy/pprof"
-	_ "github.com/wzshiming/anyproxy/proxies/httpproxy"
-	_ "github.com/wzshiming/anyproxy/proxies/shadowsocks"
-	_ "github.com/wzshiming/anyproxy/proxies/socks4"
-	_ "github.com/wzshiming/anyproxy/proxies/socks5"
-
 	"github.com/wzshiming/anyproxy"
 	"github.com/wzshiming/bridge/chain"
 	"github.com/wzshiming/bridge/config"
@@ -45,7 +28,7 @@ func RunProxy(ctx context.Context, listener net.Listener, ways []config.Node, no
 		"http://" + address,
 		"socks5://" + address,
 		"socks4://" + address,
-		"pprof://" + address,
+		"view://" + address,
 	}
 	proxy, err := anyproxy.NewAnyProxy(ctx, proxies, dialer, nil, BytesPool)
 	if err != nil {

@@ -35,6 +35,8 @@ func (a *App) onReady() {
 		go a.ItemEditConfig(mEditConfig)
 		mReloadConfig := mConfig.AddSubMenuItem("Reload", "")
 		go a.ItemReloadConfig(mReloadConfig)
+		mView := mConfig.AddSubMenuItem("View", "View")
+		go a.ItemView(mView)
 	}
 
 	systray.AddSeparator()
