@@ -58,6 +58,10 @@ A cross-platform proxy GUI client
 
 `.\tools\build_windows.bat`
 
+### Linux gtk3
+
+`./tools/build_linux_gtk3.sh`
+
 ## License
 
 Licensed under the MIT License. See [LICENSE](https://github.com/wzshiming/jumpway/blob/master/LICENSE) for the full license text.

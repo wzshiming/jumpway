@@ -4,6 +4,7 @@
 
 [![Build Darwin](https://github.com/wzshiming/jumpway/actions/workflows/build_darwin.yml/badge.svg)](https://github.com/wzshiming/jumpway/actions/workflows/build_darwin.yml)
 [![Build Windows](https://github.com/wzshiming/jumpway/actions/workflows/build_windows.yml/badge.svg)](https://github.com/wzshiming/jumpway/actions/workflows/build_windows.yml)
+[![Build Linux gtk3](https://github.com/wzshiming/jumpway/actions/workflows/build_linux_gtk3.yaml/badge.svg)](https://github.com/wzshiming/jumpway/actions/workflows/build_linux_gtk3.yaml)
 
 - [English](https://github.com/wzshiming/jumpway/blob/master/README.md)
 - [简体中文](https://github.com/wzshiming/jumpway/blob/master/README_cn.md)
@@ -56,6 +57,10 @@
 ### Windows
 
 `.\tools\build_windows.bat`
+
+### Linux gtk3
+
+`./tools/build_linux_gtk3.sh`
 
 ## License
 
