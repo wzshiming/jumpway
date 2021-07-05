@@ -1,0 +1,158 @@
+{
+    "language": "en",
+    "messages": [
+        {
+            "id": "Daemon",
+            "message": "Daemon",
+            "translation": "Daemon"
+        },
+        {
+            "id": "Manual Proxy",
+            "message": "Manual Proxy",
+            "translation": "Manual Proxy"
+        },
+        {
+            "id": "System Proxy",
+            "message": "System Proxy",
+            "translation": "System Proxy"
+        },
+        {
+            "id": "Proxy Mode",
+            "message": "Proxy Mode",
+            "translation": "Proxy Mode"
+        },
+        {
+            "id": "Export Command",
+            "message": "Export Command",
+            "translation": "Proxy Export Line To Clipboard"
+        },
+        {
+            "id": "Config",
+            "message": "Config",
+            "translation": "Config"
+        },
+        {
+            "id": "Edit Config",
+            "message": "Edit Config",
+            "translation": "Edit Config"
+        },
+        {
+            "id": "Reload Config",
+            "message": "Reload Config",
+            "translation": "Reload Config"
+        },
+        {
+            "id": "View Edit Config",
+            "message": "View Edit Config",
+            "translation": "View Edit Config TODO"
+        },
+        {
+            "id": "Log",
+            "message": "Log",
+            "translation": "Log"
+        },
+        {
+            "id": "About",
+            "message": "About",
+            "translation": "About"
+        },
+        {
+            "id": "Quit",
+            "message": "Quit",
+            "translation": "Quit"
+        },
+        {
+            "id": "Redirect Log",
+            "message": "Redirect Log",
+            "translation": "Redirect Log"
+        },
+        {
+            "id": "Init Config",
+            "message": "Init Config",
+            "translation": "Init Config"
+        },
+        {
+            "id": "Write Clipboard",
+            "message": "Write Clipboard",
+            "translation": "Write Clipboard"
+        },
+        {
+            "id": "Run Proxy",
+            "message": "Run Proxy",
+            "translation": "Run Proxy"
+        },
+        {
+            "id": "Args",
+            "message": "Args",
+            "translation": "Args"
+        },
+        {
+            "id": "Open File",
+            "message": "Open File",
+            "translation": "Open File"
+        },
+        {
+            "id": "Connect",
+            "message": "Connect",
+            "translation": "Connect"
+        },
+        {
+            "id": "Use Proxy",
+            "message": "Use Proxy",
+            "translation": "Use Proxy"
+        },
+        {
+            "id": "Listen {Address}",
+            "message": "Listen {Address}",
+            "translation": "Listen {Address}",
+            "placeholders": [
+                {
+                    "id": "Address",
+                    "string": "%[1]s",
+                    "type": "string",
+                    "underlyingType": "string",
+                    "argNum": 1,
+                    "expr": "address"
+                }
+            ]
+        },
+        {
+            "id": "Alert {Message}",
+            "message": "Alert {Message}",
+            "translation": "Alert {Message}",
+            "placeholders": [
+                {
+                    "id": "Message",
+                    "string": "%[1]s",
+                    "type": "string",
+                    "underlyingType": "string",
+                    "argNum": 1,
+                    "expr": "message"
+                }
+            ]
+        },
+        {
+            "id": "JumpWay {Mode} On {Address}",
+            "message": "JumpWay {Mode} On {Address}",
+            "translation": "JumpWay {Mode} On {Address}",
+            "placeholders": [
+                {
+                    "id": "Mode",
+                    "string": "%[1]s",
+                    "type": "string",
+                    "underlyingType": "string",
+                    "argNum": 1,
+                    "expr": "mode"
+                },
+                {
+                    "id": "Address",
+                    "string": "%[2]s",
+                    "type": "string",
+                    "underlyingType": "string",
+                    "argNum": 2,
+                    "expr": "address"
+                }
+            ]
+        }
+    ]
+}

@@ -1,15 +1,13 @@
 package tray
 
 import (
-	"fmt"
-
 	"github.com/getlantern/systray"
+	"github.com/wzshiming/jumpway/i18n"
 )
 
 func (a *App) ItemStatus(menu *systray.MenuItem) {
 	menu.Disable()
 	a.UpdateStatus = func() {
-		status := fmt.Sprintf("JumpWay %s Mode On %s", a.Mode, a.Address)
-		menu.SetTitle(status)
+		menu.SetTitle(i18n.Status(a.Mode, a.Address))
 	}
 }

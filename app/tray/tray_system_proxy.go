@@ -2,6 +2,7 @@ package tray
 
 import (
 	"github.com/getlantern/systray"
+	"github.com/wzshiming/jumpway/i18n"
 	"github.com/wzshiming/jumpway/log"
 	"github.com/wzshiming/sysproxy"
 )
@@ -13,7 +14,7 @@ func (a *App) ItemProxyMode(global, manual *systray.MenuItem) {
 		if checked == systemMode {
 			global.Check()
 			manual.Uncheck()
-			a.Mode = "System"
+			a.Mode = i18n.SystemProxy()
 			a.UpdateStatus()
 
 			err := sysproxy.OnHTTPS(a.Address)
@@ -29,7 +30,7 @@ func (a *App) ItemProxyMode(global, manual *systray.MenuItem) {
 		} else {
 			manual.Check()
 			global.Uncheck()
-			a.Mode = "Manual"
+			a.Mode = i18n.ManualProxy()
 			a.UpdateStatus()
 
 			err := sysproxy.OffHTTPS()
@@ -51,7 +52,7 @@ func (a *App) ItemProxyMode(global, manual *systray.MenuItem) {
 			checked = manualMode
 		}
 		check(checked)
-		log.Info("System Proxy", "Check", checked)
+		log.Info(i18n.ProxyMode(), "mode", checked)
 	}
 }
 

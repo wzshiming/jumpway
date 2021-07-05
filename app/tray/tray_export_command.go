@@ -5,6 +5,7 @@ import (
 
 	"github.com/atotto/clipboard"
 	"github.com/getlantern/systray"
+	"github.com/wzshiming/jumpway/i18n"
 	"github.com/wzshiming/jumpway/log"
 )
 
@@ -24,7 +25,7 @@ func (a *App) itemExportCommandShell(menu *systray.MenuItem) {
 		command := fmt.Sprintf("export http_proxy=http://%s https_proxy=http://%s; ", a.Address, a.Address)
 		err := clipboard.WriteAll(command)
 		if err != nil {
-			log.Error(err, "write clipboard")
+			log.Error(err, i18n.WriteClipboard())
 		}
 	}
 }
@@ -34,7 +35,7 @@ func (a *App) itemExportCommandCmd(menu *systray.MenuItem) {
 		command := fmt.Sprintf("set http_proxy=http://%s && set https_proxy=http://%s", a.Address, a.Address)
 		err := clipboard.WriteAll(command)
 		if err != nil {
-			log.Error(err, "write clipboard")
+			log.Error(err, i18n.WriteClipboard())
 		}
 	}
 }
@@ -44,7 +45,7 @@ func (a *App) itemExportCommandPowerShell(menu *systray.MenuItem) {
 		command := fmt.Sprintf("$env:http_proxy='http://%s'; $env:https_proxy='http://%s'; ", a.Address, a.Address)
 		err := clipboard.WriteAll(command)
 		if err != nil {
-			log.Error(err, "write clipboard")
+			log.Error(err, i18n.WriteClipboard())
 		}
 	}
 }

@@ -7,6 +7,7 @@ import (
 
 	"github.com/getlantern/systray"
 	"github.com/wzshiming/jumpway/config"
+	"github.com/wzshiming/jumpway/i18n"
 	"github.com/wzshiming/jumpway/log"
 	"github.com/wzshiming/notify"
 )
@@ -32,12 +33,12 @@ func (a *App) Run() {
 	a.Log = logfile
 	err := log.Redirect(logfile)
 	if err != nil {
-		log.Error(err, "Redirect")
+		log.Error(err, i18n.RedirectLog())
 		return
 	}
 	err = config.InitConfig()
 	if err != nil {
-		log.Error(err, "InitConfig")
+		log.Error(err, i18n.InitConfig())
 		return
 	}
 	systray.Run(a.onReady, a.onExit)

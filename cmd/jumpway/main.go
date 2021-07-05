@@ -24,11 +24,12 @@ import (
 
 	"github.com/wzshiming/jumpway/app/tray"
 	"github.com/wzshiming/jumpway/daemon"
+	"github.com/wzshiming/jumpway/i18n"
 	"github.com/wzshiming/jumpway/log"
 )
 
 func main() {
-	log.Info("Args", "list", os.Args)
+	log.Info(i18n.Args(), "list", os.Args)
 	if len(os.Args) == 2 {
 		daemon.Run(os.Args[1])
 		return

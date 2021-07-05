@@ -6,23 +6,10 @@ import (
 	"sync"
 
 	"github.com/wzshiming/anyproxy"
-	"github.com/wzshiming/bridge/chain"
-	"github.com/wzshiming/bridge/config"
-	"github.com/wzshiming/bridge/protocols/local"
-	"github.com/wzshiming/hostmatcher"
+	"github.com/wzshiming/bridge"
 )
 
-func RunProxy(ctx context.Context, listener net.Listener, ways []config.Node, noProxy []string) error {
-	dialer, err := chain.Default.BridgeChainWithConfig(local.LOCAL, ways...)
-	if err != nil {
-		return err
-	}
-
-	if len(noProxy) != 0 {
-		matcher := hostmatcher.NewMatcher(noProxy)
-		dialer = newNoProxy(dialer, matcher)
-	}
-
+func RunProxy(ctx context.Context, listener net.Listener, dialer bridge.Dialer) error {
 	address := listener.Addr().String()
 	proxies := []string{
 		"http://" + address,

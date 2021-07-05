@@ -1,0 +1,158 @@
+{
+    "language": "zh",
+    "messages": [
+        {
+            "id": "Daemon",
+            "message": "Daemon",
+            "translation": "开机启动"
+        },
+        {
+            "id": "Manual Proxy",
+            "message": "Manual Proxy",
+            "translation": "手动代理"
+        },
+        {
+            "id": "System Proxy",
+            "message": "System Proxy",
+            "translation": "系统代理"
+        },
+        {
+            "id": "Proxy Mode",
+            "message": "Proxy Mode",
+            "translation": "代理模式"
+        },
+        {
+            "id": "Export Command",
+            "message": "Export Command",
+            "translation": "导出代理命令到剪切板"
+        },
+        {
+            "id": "Config",
+            "message": "Config",
+            "translation": "配置"
+        },
+        {
+            "id": "Edit Config",
+            "message": "Edit Config",
+            "translation": "编辑配置"
+        },
+        {
+            "id": "Reload Config",
+            "message": "Reload Config",
+            "translation": "重载配置"
+        },
+        {
+            "id": "View Edit Config",
+            "message": "View Edit Config",
+            "translation": "可视化编辑 开发中..."
+        },
+        {
+            "id": "Log",
+            "message": "Log",
+            "translation": "日志"
+        },
+        {
+            "id": "About",
+            "message": "About",
+            "translation": "关于"
+        },
+        {
+            "id": "Quit",
+            "message": "Quit",
+            "translation": "退出"
+        },
+        {
+            "id": "Redirect Log",
+            "message": "Redirect Log",
+            "translation": "重定向日志"
+        },
+        {
+            "id": "Init Config",
+            "message": "Init Config",
+            "translation": "初始化加载配置"
+        },
+        {
+            "id": "Write Clipboard",
+            "message": "Write Clipboard",
+            "translation": "导出到剪切板"
+        },
+        {
+            "id": "Run Proxy",
+            "message": "Run Proxy",
+            "translation": "启动代理服务器"
+        },
+        {
+            "id": "Args",
+            "message": "Args",
+            "translation": "参数"
+        },
+        {
+            "id": "Open File",
+            "message": "Open File",
+            "translation": "打开文件"
+        },
+        {
+            "id": "Connect",
+            "message": "Connect",
+            "translation": "连接"
+        },
+        {
+            "id": "Use Proxy",
+            "message": "Use Proxy",
+            "translation": "使用代理"
+        },
+        {
+            "id": "Listen {Address}",
+            "message": "Listen {Address}",
+            "translation": "监听 {Address}",
+            "placeholders": [
+                {
+                    "id": "Address",
+                    "string": "%[1]s",
+                    "type": "string",
+                    "underlyingType": "string",
+                    "argNum": 1,
+                    "expr": "address"
+                }
+            ]
+        },
+        {
+            "id": "Alert {Message}",
+            "message": "Alert {Message}",
+            "translation": "警告 {Message}",
+            "placeholders": [
+                {
+                    "id": "Message",
+                    "string": "%[1]s",
+                    "type": "string",
+                    "underlyingType": "string",
+                    "argNum": 1,
+                    "expr": "message"
+                }
+            ]
+        },
+        {
+            "id": "JumpWay {Mode} On {Address}",
+            "message": "JumpWay {Mode} On {Address}",
+            "translation": "JumpWay {Mode} 在 {Address}",
+            "placeholders": [
+                {
+                    "id": "Mode",
+                    "string": "%[1]s",
+                    "type": "string",
+                    "underlyingType": "string",
+                    "argNum": 1,
+                    "expr": "mode"
+                },
+                {
+                    "id": "Address",
+                    "string": "%[2]s",
+                    "type": "string",
+                    "underlyingType": "string",
+                    "argNum": 2,
+                    "expr": "address"
+                }
+            ]
+        }
+    ]
+}
