@@ -58,32 +58,32 @@ func Run(command string) {
 
 func Install() {
 	status, err := globalDaemon.Install()
-	if err != nil {
-		log.Error(err, "daemon install")
+	if err != nil && err != daemon.ErrAlreadyInstalled {
+		log.Error(err, "daemon install", "status", status)
 	}
 	log.Info("daemon install", "status", status)
 }
 
 func Start() {
 	status, err := globalDaemon.Start()
-	if err != nil {
-		log.Error(err, "daemon start")
+	if err != nil && err != daemon.ErrAlreadyRunning {
+		log.Error(err, "daemon start", "status", status)
 	}
 	log.Info("daemon start", "status", status)
 }
 
 func Stop() {
 	status, err := globalDaemon.Stop()
-	if err != nil {
-		log.Error(err, "daemon stop")
+	if err != nil && err != daemon.ErrAlreadyStopped {
+		log.Error(err, "daemon stop", "status", status)
 	}
 	log.Info("daemon stop", "status", status)
 }
 
 func Remove() {
 	status, err := globalDaemon.Remove()
-	if err != nil {
-		log.Error(err, "daemon remove")
+	if err != nil && err != daemon.ErrNotInstalled {
+		log.Error(err, "daemon remove", "status", status)
 	}
 	log.Info("daemon remove", "status", status)
 }
@@ -91,7 +91,7 @@ func Remove() {
 func Status() {
 	status, err := globalDaemon.Status()
 	if err != nil {
-		log.Error(err, "daemon status")
+		log.Error(err, "daemon status", "status", status)
 	}
 	log.Info("daemon status", "status", status)
 }
