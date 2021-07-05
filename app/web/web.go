@@ -18,21 +18,22 @@ import (
 
 func Handler() http.Handler {
 	m := mux.NewRouter()
-	m.HandleFunc("/debug/pprof/", pprof.Index)
 	m.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
 	m.HandleFunc("/debug/pprof/profile", pprof.Profile)
 	m.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
 	m.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	m.PathPrefix("/debug/pprof/").Handler(http.HandlerFunc(pprof.Index))
 	m.Handle("/swaggerui/openapi.json",
 		http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 			config := bytes.Replace(config, []byte(`"/"`), []byte(`"/apis/"`), -1)
 			http.ServeContent(rw, r, "openapi.json", time.Time{}, bytes.NewReader(config))
 		}))
 	m.PathPrefix("/swaggerui/").Handler(http.FileServer(http.FS(swaggerui.FS)))
-	m.PathPrefix("/apis/").Handler(http.StripPrefix("/apis", route.Router()))
+	apis := route.Router()
+	apis = handlers.CombinedLoggingHandler(os.Stdout, apis)
+	m.PathPrefix("/apis/").Handler(http.StripPrefix("/apis", apis))
 	m.PathPrefix("/").Handler(http.FileServer(http.FS(staticsFS)))
-	mux := handlers.RecoveryHandler()(m)
-	return handlers.CombinedLoggingHandler(os.Stdout, mux)
+	return handlers.RecoveryHandler()(m)
 }
 
 //go:embed openapi/openapi.json
