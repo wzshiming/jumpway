@@ -39,6 +39,9 @@ func (a *App) onReady() {
 
 	systray.AddSeparator()
 
+	mLog := systray.AddMenuItem("Log", "")
+	go a.ItemLog(mLog)
+
 	mAbout := systray.AddMenuItem("About", "")
 	go a.ItemAbout(mAbout)
 

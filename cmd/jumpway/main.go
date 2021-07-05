@@ -6,11 +6,11 @@ import (
 
 	"github.com/wzshiming/jumpway/app/tray"
 	"github.com/wzshiming/jumpway/daemon"
-	"github.com/wzshiming/logger"
+	"github.com/wzshiming/jumpway/log"
 )
 
 func main() {
-	logger.Log.Info("Args", "list", os.Args)
+	log.Info("Args", "list", os.Args)
 	if len(os.Args) == 2 {
 		daemon.Run(os.Args[1])
 		return

@@ -2,25 +2,34 @@ package log
 
 import (
 	"os"
-	"path/filepath"
-	"time"
 
-	"github.com/wzshiming/jumpway/config"
+	"github.com/wzshiming/jumpway"
 	"github.com/wzshiming/logger"
 	"github.com/wzshiming/logger/zap"
+	"github.com/wzshiming/sysnotify"
 )
 
-func InitLog() error {
-	dir := filepath.Join(config.GetConfigDir(), "logs")
-	os.MkdirAll(dir, 0755)
-	logfile := filepath.Join(dir, time.Now().Format("2006_01_02_15_04_05")+".log")
+func Redirect(logfile string) error {
 	f, err := os.OpenFile(logfile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
 		return err
 	}
-	logger.Log.Info("Log redirect", "file", logfile)
+
+	Info("Log redirect", "file", logfile)
 	logger.SetLogger(zap.WithOut(zap.Log, f))
 	os.Stdout = f
 	os.Stderr = f
 	return nil
+}
+
+func Error(err error, msg string, keysAndValues ...interface{}) {
+	logger.Log.Error(err, msg, keysAndValues...)
+	e := sysnotify.Alert(jumpway.AppName+" "+msg, err.Error(), "")
+	if e != nil {
+		logger.Log.Error(err, "Alert "+msg, keysAndValues...)
+	}
+}
+
+func Info(msg string, keysAndValues ...interface{}) {
+	logger.Log.Info(msg, keysAndValues...)
 }

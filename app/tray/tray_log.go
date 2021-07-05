@@ -6,11 +6,11 @@ import (
 	"github.com/wzshiming/jumpway/log"
 )
 
-func (a *App) ItemAbout(menu *systray.MenuItem) {
+func (a *App) ItemLog(menu *systray.MenuItem) {
 	for range menu.ClickedCh {
-		err := open.Start("https://github.com/wzshiming/jumpway")
+		err := open.Start(a.Log)
 		if err != nil {
-			log.Error(err, "About")
+			log.Error(err, "Log")
 		}
 	}
 }

@@ -84,6 +84,8 @@ github.com/wzshiming/socks4 v0.2.3 h1:H22IqBxSlWkXC6pZIN9y3ftqhc99TObRSjZQHKdtHq
 github.com/wzshiming/socks4 v0.2.3/go.mod h1:YEPfhjf/4JezwdTmgXZU+UX+A2KvD05quzhsUBVMNA0=
 github.com/wzshiming/socks5 v0.2.3 h1:5fj2WKTwe8OmsfC1qjhkEueQUGirQGxk5MSEGt61PYc=
 github.com/wzshiming/socks5 v0.2.3/go.mod h1:BvCAqlzocQN5xwLjBZDBbvWlrx8sCYSSbHEOf2wZgT0=
+github.com/wzshiming/sysnotify v0.0.1 h1:RJQbtb53u5jQi52HWiTCspRv8k1P9COpn55eU7stATk=
+github.com/wzshiming/sysnotify v0.0.1/go.mod h1:wV51YHA43Y1rhnhTi4qdpyPMoyG+sB1bAGORkANLW5I=
 github.com/wzshiming/sysproxy v0.2.1 h1:5o0SJXtvQEY7AYonxqjr7k6GQzfAdcSk4uHTBBySbs4=
 github.com/wzshiming/sysproxy v0.2.1/go.mod h1:Epx6hex0nK1YhLHDnIhrhusgCtBQFR2NQPhM8WlMDTc=
 github.com/wzshiming/trie v0.0.1 h1:6xnhRyO5tZWR6aKjEpFfm8KSNNHYsNbpKrY1+NdyHME=

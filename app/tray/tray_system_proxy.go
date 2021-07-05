@@ -2,7 +2,7 @@ package tray
 
 import (
 	"github.com/getlantern/systray"
-	"github.com/wzshiming/logger"
+	"github.com/wzshiming/jumpway/log"
 	"github.com/wzshiming/sysproxy"
 )
 
@@ -18,12 +18,12 @@ func (a *App) ItemProxyMode(global, manual *systray.MenuItem) {
 
 			err := sysproxy.OnHTTPS(a.Address)
 			if err != nil {
-				logger.Log.Error(err, "sysproxy.OnHTTPS")
+				log.Error(err, "sysproxy.OnHTTPS")
 				return
 			}
 			err = sysproxy.OnHTTP(a.Address)
 			if err != nil {
-				logger.Log.Error(err, "sysproxy.OnHTTP")
+				log.Error(err, "sysproxy.OnHTTP")
 				return
 			}
 		} else {
@@ -34,11 +34,11 @@ func (a *App) ItemProxyMode(global, manual *systray.MenuItem) {
 
 			err := sysproxy.OffHTTPS()
 			if err != nil {
-				logger.Log.Error(err, "sysproxy.OffHTTPS")
+				log.Error(err, "sysproxy.OffHTTPS")
 			}
 			err = sysproxy.OffHTTP()
 			if err != nil {
-				logger.Log.Error(err, "sysproxy.OffHTTP")
+				log.Error(err, "sysproxy.OffHTTP")
 			}
 		}
 	}
@@ -51,7 +51,7 @@ func (a *App) ItemProxyMode(global, manual *systray.MenuItem) {
 			checked = manualMode
 		}
 		check(checked)
-		logger.Log.Info("System Proxy", "Check", checked)
+		log.Info("System Proxy", "Check", checked)
 	}
 }
 

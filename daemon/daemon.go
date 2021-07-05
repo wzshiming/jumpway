@@ -5,7 +5,7 @@ import (
 
 	"github.com/takama/daemon"
 	"github.com/wzshiming/jumpway"
-	"github.com/wzshiming/logger"
+	"github.com/wzshiming/jumpway/log"
 )
 
 var (
@@ -15,7 +15,7 @@ var (
 func init() {
 	svc, err := daemon.New(jumpway.AppName, jumpway.AppDescription, Kind)
 	if err != nil {
-		logger.Log.Error(err, "get daemon")
+		log.Error(err, "get daemon")
 		os.Exit(2)
 	}
 	globalDaemon = svc
@@ -24,10 +24,10 @@ func init() {
 func DaemonIsRunning() bool {
 	status, err := globalDaemon.Status()
 	if err != nil {
-		logger.Log.Info("daemon status", "status", err)
+		log.Info("daemon status", "status", err)
 		return false
 	}
-	logger.Log.Info("daemon status", "status", status)
+	log.Info("daemon status", "status", status)
 	return true
 }
 
@@ -51,7 +51,7 @@ func Run(command string) {
 		Status()
 		return
 	default:
-		logger.Log.Error(nil, "Command not defined", "command", command)
+		log.Error(nil, "Command not defined", "command", command)
 		return
 	}
 }
@@ -59,44 +59,39 @@ func Run(command string) {
 func Install() {
 	status, err := globalDaemon.Install()
 	if err != nil {
-		logger.Log.Error(err, "daemon install")
-		//continue
+		log.Error(err, "daemon install")
 	}
-	logger.Log.Info("daemon install", "status", status)
+	log.Info("daemon install", "status", status)
 }
 
 func Start() {
 	status, err := globalDaemon.Start()
 	if err != nil {
-		logger.Log.Error(err, "daemon start")
-		//continue
+		log.Error(err, "daemon start")
 	}
-	logger.Log.Info("daemon start", "status", status)
+	log.Info("daemon start", "status", status)
 }
 
 func Stop() {
 	status, err := globalDaemon.Stop()
 	if err != nil {
-		logger.Log.Error(err, "daemon stop")
-		//continue
+		log.Error(err, "daemon stop")
 	}
-	logger.Log.Info("daemon stop", "status", status)
+	log.Info("daemon stop", "status", status)
 }
 
 func Remove() {
 	status, err := globalDaemon.Remove()
 	if err != nil {
-		logger.Log.Error(err, "daemon remove")
-		//continue
+		log.Error(err, "daemon remove")
 	}
-	logger.Log.Info("daemon remove", "status", status)
+	log.Info("daemon remove", "status", status)
 }
 
 func Status() {
 	status, err := globalDaemon.Status()
 	if err != nil {
-		logger.Log.Error(err, "daemon status")
-		//continue
+		log.Error(err, "daemon status")
 	}
-	logger.Log.Info("daemon status", "status", status)
+	log.Info("daemon status", "status", status)
 }
