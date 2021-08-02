@@ -1,10 +1,7 @@
 package i18n
 
 import (
-	"os"
-	"os/exec"
-	"strings"
-
+	locale "github.com/Xuanwo/go-locale"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
 
@@ -18,24 +15,15 @@ var (
 )
 
 func init() {
-	fmt = message.NewPrinter(language.MustParse(GetLocale()))
+	fmt = message.NewPrinter(GetLocale())
 }
 
-func GetLocale() string {
-	// Check the LANG environment variable, common on UNIX.
-	lang, ok := os.LookupEnv("LANG")
-	if ok {
-		return strings.SplitN(lang, ".", 2)[0]
+func GetLocale() language.Tag {
+	tag, err := locale.Detect()
+	if err != nil {
+		return language.English
 	}
-
-	// Exec powershell Get-Culture on Windows.
-	cmd := exec.Command("powershell", "Get-Culture | select -exp Name")
-	output, err := cmd.Output()
-	if err == nil {
-		return strings.Trim(string(output), "\r\n")
-	}
-
-	return "en"
+	return tag
 }
 
 func Daemon() string {

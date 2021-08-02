@@ -3,6 +3,7 @@ module github.com/wzshiming/jumpway
 go 1.16
 
 require (
+	github.com/Xuanwo/go-locale v1.0.0
 	github.com/atotto/clipboard v0.1.4
 	github.com/getlantern/systray v1.1.0
 	github.com/gorilla/handlers v1.4.2
