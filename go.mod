@@ -11,7 +11,7 @@ require (
 	github.com/skratchdot/open-golang v0.0.0-20200116055534-eef842397966
 	github.com/takama/daemon v1.0.0
 	github.com/wzshiming/anyproxy v0.4.2
-	github.com/wzshiming/bridge v0.6.3
+	github.com/wzshiming/bridge v0.6.5
 	github.com/wzshiming/cmux v0.2.2
 	github.com/wzshiming/hostmatcher v0.0.0-20210610072858-ede9eec59216
 	github.com/wzshiming/httpcache v0.3.0
