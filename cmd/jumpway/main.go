@@ -21,6 +21,7 @@ import (
 	_ "github.com/wzshiming/anyproxy/proxies/shadowsocks"
 	_ "github.com/wzshiming/anyproxy/proxies/socks4"
 	_ "github.com/wzshiming/anyproxy/proxies/socks5"
+	_ "github.com/wzshiming/anyproxy/proxies/sshproxy"
 
 	"github.com/wzshiming/jumpway/app/tray"
 	"github.com/wzshiming/jumpway/daemon"

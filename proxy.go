@@ -15,6 +15,7 @@ func RunProxy(ctx context.Context, listener net.Listener, dialer bridge.Dialer) 
 		"http://" + address,
 		"socks5://" + address,
 		"socks4://" + address,
+		"ssh://" + address,
 		"view://" + address,
 	}
 	proxy, err := anyproxy.NewAnyProxy(ctx, proxies, dialer, nil, BytesPool)
