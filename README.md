@@ -24,11 +24,11 @@ A cross-platform proxy GUI client
     - [ ] Support to get SSH proxy configuration from `~/.ssh/config`
 - [x] Multi-level proxy
 - [x] Proxy protocol
-    - [x] SSH
+    - [x] [SSH Proxy](https://github.com/wzshiming/sshproxy)
     - [x] [Http Proxy](https://github.com/wzshiming/httpproxy)
     - [x] [Socks4](https://github.com/wzshiming/socks4)
     - [x] [Socks5](https://github.com/wzshiming/socks5)
-    - [x] [Shadowsocks](https://github.com/wzshiming/shadowsocks)
+    - [x] [Shadow Socks](https://github.com/wzshiming/shadowsocks)
         - AEAD
             - [x] aes-128-gcm
             - [x] aes-256-gcm
