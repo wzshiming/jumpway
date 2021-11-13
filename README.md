@@ -22,7 +22,8 @@ A cross-platform proxy GUI client
 - [ ] Configure the proxy with GUI
     - [ ] Configure the multi-level proxy
     - [ ] Support to get SSH proxy configuration from `~/.ssh/config`
-- [x] Multi-level proxy
+- [x] Multi-level proxy [Bridge](https://github.com/wzshiming/bridge)
+- [x] Support multiple proxy protocols on a port [Any Proxy](https://github.com/wzshiming/anyproxy)
 - [x] Proxy protocol
     - [x] [SSH Proxy](https://github.com/wzshiming/sshproxy)
     - [x] [Http Proxy](https://github.com/wzshiming/httpproxy)

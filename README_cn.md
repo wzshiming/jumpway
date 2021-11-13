@@ -22,7 +22,8 @@
 - [ ] 图形界面配置代理
     - [ ] 配置多级代理
     - [ ] 支持从 `~/.ssh/config` 获取 SSH 代理
-- [x] 多级代理
+- [x] 多级代理 [Bridge](https://github.com/wzshiming/bridge)
+- [x] 单端口支持多代理协议 [Any Proxy](https://github.com/wzshiming/anyproxy)
 - [x] 代理协议
     - [x] [SSH Proxy](https://github.com/wzshiming/sshproxy)
     - [x] [Http Proxy](https://github.com/wzshiming/httpproxy)
