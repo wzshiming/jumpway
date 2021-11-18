@@ -70,7 +70,7 @@ func (a *App) ItemReloadConfig(menu *systray.MenuItem) {
 				subDialer := jumpway.NewLogDialer(local.LOCAL, func(ctx context.Context, network, address string) {
 					log.Info(i18n.Connect(), "proxy", false, "address", address)
 				})
-				dialer = jumpway.NewShuntDialer(dialer, subDialer, matcher)
+				dialer = chain.NewShuntDialer(dialer, subDialer, matcher)
 			}
 
 			err = jumpway.RunProxy(ctx, listener, dialer)

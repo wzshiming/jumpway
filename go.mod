@@ -11,7 +11,7 @@ require (
 	github.com/skratchdot/open-golang v0.0.0-20200116055534-eef842397966
 	github.com/takama/daemon v1.0.0
 	github.com/wzshiming/anyproxy v0.5.2
-	github.com/wzshiming/bridge v0.7.0
+	github.com/wzshiming/bridge v0.7.6
 	github.com/wzshiming/cmux v0.2.2
 	github.com/wzshiming/hostmatcher v0.0.1
 	github.com/wzshiming/httpcache v0.3.1
@@ -40,7 +40,7 @@ require (
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/oxtoacart/bpool v0.0.0-20190530202638-03653db5a59c // indirect
 	github.com/wzshiming/commandproxy v0.2.0 // indirect
-	github.com/wzshiming/emux v0.1.0 // indirect
+	github.com/wzshiming/emux v0.1.4 // indirect
 	github.com/wzshiming/httpproxy v0.4.1 // indirect
 	github.com/wzshiming/schedialer v0.2.1 // indirect
 	github.com/wzshiming/shadowsocks v0.3.1 // indirect
