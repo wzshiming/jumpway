@@ -8,7 +8,7 @@ require (
 	github.com/getlantern/systray v1.1.0
 	github.com/gorilla/handlers v1.5.1
 	github.com/gorilla/mux v1.8.0
-	github.com/skratchdot/open-golang v0.0.0-20200116055534-eef842397966
+	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8
 	github.com/takama/daemon v1.0.0
 	github.com/wzshiming/anyproxy v0.5.2
 	github.com/wzshiming/bridge v0.7.11

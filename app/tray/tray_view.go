@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/getlantern/systray"
-	"github.com/skratchdot/open-golang/open"
+	"github.com/pkg/browser"
 	"github.com/wzshiming/jumpway/i18n"
 	"github.com/wzshiming/logger"
 )
@@ -12,7 +12,7 @@ import (
 func (a *App) ItemView(menu *systray.MenuItem) {
 	var err error
 	for range menu.ClickedCh {
-		err = open.Start(fmt.Sprintf("http://%s", a.Address))
+		err = browser.OpenURL(fmt.Sprintf("http://%s", a.Address))
 		if err != nil {
 			logger.Log.Error(err, i18n.ViewEditConfig())
 		}

@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/skratchdot/open-golang/open"
+	"github.com/pkg/browser"
 	"github.com/wzshiming/bridge/config"
 	"github.com/wzshiming/httpcache"
 	"github.com/wzshiming/jumpway/i18n"
@@ -156,7 +156,7 @@ func SaveConfig(conf *Config) error {
 }
 
 func EditConfig() error {
-	return open.Run(configPath)
+	return browser.OpenFile(configPath)
 }
 
 func getFile(filpath string) (io.ReadCloser, error) {
