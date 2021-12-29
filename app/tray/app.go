@@ -22,7 +22,7 @@ type App struct {
 
 func NewApp() *App {
 	a := &App{}
-	notify.On(a.Quit, os.Interrupt)
+	notify.On(os.Interrupt, a.Quit)
 	return a
 }
 
