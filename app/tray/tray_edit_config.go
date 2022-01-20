@@ -1,10 +1,10 @@
 package tray
 
 import (
-	"github.com/getlantern/systray"
 	"github.com/wzshiming/jumpway/config"
 	"github.com/wzshiming/jumpway/i18n"
 	"github.com/wzshiming/jumpway/log"
+	"github.com/wzshiming/systray"
 )
 
 func (a *App) ItemEditConfig(menu *systray.MenuItem) {

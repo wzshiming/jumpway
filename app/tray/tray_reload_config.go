@@ -5,7 +5,6 @@ import (
 	"net"
 	"strconv"
 
-	"github.com/getlantern/systray"
 	"github.com/wzshiming/bridge/chain"
 	"github.com/wzshiming/bridge/protocols/local"
 	"github.com/wzshiming/hostmatcher"
@@ -14,6 +13,7 @@ import (
 	"github.com/wzshiming/jumpway/i18n"
 	"github.com/wzshiming/jumpway/log"
 	"github.com/wzshiming/jumpway/utils"
+	"github.com/wzshiming/systray"
 )
 
 func (a *App) ItemReloadConfig(menu *systray.MenuItem) {
@@ -49,7 +49,8 @@ func (a *App) ItemReloadConfig(menu *systray.MenuItem) {
 			return
 		}
 
-		a.Address = listener.Addr().String()
+		a.Address = formatAddress(listener.Addr().String())
+
 		a.RawHost = host
 		a.UpdateStatus()
 		go func() {
@@ -84,4 +85,15 @@ func (a *App) ItemReloadConfig(menu *systray.MenuItem) {
 	for range menu.ClickedCh {
 		check()
 	}
+}
+
+func formatAddress(address string) string {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return address
+	}
+	if net.ParseIP(host).IsUnspecified() {
+		host = "127.0.0.1"
+	}
+	return net.JoinHostPort(host, port)
 }

@@ -3,10 +3,10 @@ package tray
 import (
 	"fmt"
 
-	"github.com/getlantern/systray"
 	"github.com/pkg/browser"
 	"github.com/wzshiming/jumpway/i18n"
 	"github.com/wzshiming/logger"
+	"github.com/wzshiming/systray"
 )
 
 func (a *App) ItemView(menu *systray.MenuItem) {
