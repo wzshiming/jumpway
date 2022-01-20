@@ -1,8 +1,8 @@
 package tray
 
 import (
-	"github.com/getlantern/systray"
 	"github.com/wzshiming/jumpway/daemon"
+	"github.com/wzshiming/systray"
 )
 
 func (a *App) ItemDaemon(menu *systray.MenuItem) {

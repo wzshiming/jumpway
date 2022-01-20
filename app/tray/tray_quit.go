@@ -1,7 +1,7 @@
 package tray
 
 import (
-	"github.com/getlantern/systray"
+	"github.com/wzshiming/systray"
 )
 
 func (a *App) ItemQuit(menu *systray.MenuItem) {

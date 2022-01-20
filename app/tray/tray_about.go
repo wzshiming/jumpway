@@ -1,10 +1,10 @@
 package tray
 
 import (
-	"github.com/getlantern/systray"
 	"github.com/pkg/browser"
 	"github.com/wzshiming/jumpway/i18n"
 	"github.com/wzshiming/jumpway/log"
+	"github.com/wzshiming/systray"
 )
 
 func (a *App) ItemAbout(menu *systray.MenuItem) {
