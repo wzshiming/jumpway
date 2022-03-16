@@ -19,7 +19,7 @@ import (
 	"github.com/wzshiming/bridge/config"
 	"github.com/wzshiming/httpcache"
 	"github.com/wzshiming/jumpway/i18n"
-	"github.com/wzshiming/jumpway/log"
+	"github.com/wzshiming/jumpway/logger"
 	"gopkg.in/yaml.v3"
 )
 
@@ -66,7 +66,7 @@ func (n *NoProxy) GetList() []string {
 	for _, file := range n.FromFile {
 		f, err := getFile(file)
 		if err != nil {
-			log.Error(err, i18n.OpenFile(), "file", file)
+			logger.Error(err, i18n.OpenFile(), "file", file)
 			continue
 		}
 		reader := bufio.NewReader(f)
@@ -74,7 +74,7 @@ func (n *NoProxy) GetList() []string {
 			line, _, err := reader.ReadLine()
 			if err != nil {
 				if err != io.EOF {
-					log.Error(err, i18n.OpenFile(), "file", file, "line", i+1)
+					logger.Error(err, i18n.OpenFile(), "file", file, "line", i+1)
 				}
 				break
 			}
@@ -114,7 +114,7 @@ func init() {
 	var err error
 	homeDir, err = os.UserHomeDir()
 	if err != nil {
-		log.Error(err, "Get User Home Directory")
+		logger.Error(err, "Get User Home Directory")
 		os.Exit(2)
 	}
 	configDir = filepath.Join(homeDir, ".jumpway")

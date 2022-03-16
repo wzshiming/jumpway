@@ -2,7 +2,7 @@ package tray
 
 import (
 	"github.com/wzshiming/jumpway/i18n"
-	"github.com/wzshiming/jumpway/log"
+	"github.com/wzshiming/jumpway/logger"
 	"github.com/wzshiming/sysproxy"
 	"github.com/wzshiming/systray"
 )
@@ -19,12 +19,12 @@ func (a *App) ItemProxyMode(global, manual *systray.MenuItem) {
 
 			err := sysproxy.OnHTTPS(a.Address)
 			if err != nil {
-				log.Error(err, "sysproxy.OnHTTPS")
+				logger.Error(err, "sysproxy.OnHTTPS")
 				return
 			}
 			err = sysproxy.OnHTTP(a.Address)
 			if err != nil {
-				log.Error(err, "sysproxy.OnHTTP")
+				logger.Error(err, "sysproxy.OnHTTP")
 				return
 			}
 		} else {
@@ -35,11 +35,11 @@ func (a *App) ItemProxyMode(global, manual *systray.MenuItem) {
 
 			err := sysproxy.OffHTTPS()
 			if err != nil {
-				log.Error(err, "sysproxy.OffHTTPS")
+				logger.Error(err, "sysproxy.OffHTTPS")
 			}
 			err = sysproxy.OffHTTP()
 			if err != nil {
-				log.Error(err, "sysproxy.OffHTTP")
+				logger.Error(err, "sysproxy.OffHTTP")
 			}
 		}
 	}
@@ -52,7 +52,7 @@ func (a *App) ItemProxyMode(global, manual *systray.MenuItem) {
 			checked = manualMode
 		}
 		check(checked)
-		log.Info(i18n.ProxyMode(), "mode", checked)
+		logger.Std.Info(i18n.ProxyMode(), "mode", checked)
 	}
 }
 

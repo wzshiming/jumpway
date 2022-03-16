@@ -5,7 +5,7 @@ import (
 
 	"github.com/pkg/browser"
 	"github.com/wzshiming/jumpway/i18n"
-	"github.com/wzshiming/logger"
+	"github.com/wzshiming/jumpway/logger"
 	"github.com/wzshiming/systray"
 )
 
@@ -14,7 +14,7 @@ func (a *App) ItemView(menu *systray.MenuItem) {
 	for range menu.ClickedCh {
 		err = browser.OpenURL(fmt.Sprintf("http://%s", a.Address))
 		if err != nil {
-			logger.Log.Error(err, i18n.ViewEditConfig())
+			logger.Error(err, i18n.ViewEditConfig())
 		}
 	}
 }
