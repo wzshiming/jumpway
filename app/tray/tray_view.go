@@ -3,10 +3,10 @@ package tray
 import (
 	"fmt"
 
+	"fyne.io/systray"
 	"github.com/pkg/browser"
 	"github.com/wzshiming/jumpway/i18n"
-	"github.com/wzshiming/logger"
-	"github.com/wzshiming/systray"
+	"github.com/wzshiming/jumpway/log"
 )
 
 func (a *App) ItemView(menu *systray.MenuItem) {
@@ -14,7 +14,7 @@ func (a *App) ItemView(menu *systray.MenuItem) {
 	for range menu.ClickedCh {
 		err = browser.OpenURL(fmt.Sprintf("http://%s", a.Address))
 		if err != nil {
-			logger.Log.Error(err, i18n.ViewEditConfig())
+			log.Error(err, i18n.ViewEditConfig())
 		}
 	}
 }

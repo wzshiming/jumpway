@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"net"
 
+	"fyne.io/systray"
 	"github.com/atotto/clipboard"
 	"github.com/wzshiming/jumpway/i18n"
 	"github.com/wzshiming/jumpway/log"
-	"github.com/wzshiming/systray"
 )
 
 func (a *App) ItemExportCommand(menu *systray.MenuItem) {

@@ -1,9 +1,9 @@
 package tray
 
 import (
+	"fyne.io/systray"
 	"github.com/wzshiming/jumpway/i18n"
 	"github.com/wzshiming/jumpway/icon"
-	"github.com/wzshiming/systray"
 )
 
 func (a *App) onReady() {

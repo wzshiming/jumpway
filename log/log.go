@@ -1,13 +1,18 @@
 package log
 
 import (
+	"log/slog"
 	"os"
+	"sync"
 
 	"github.com/wzshiming/jumpway"
 	"github.com/wzshiming/jumpway/i18n"
-	"github.com/wzshiming/logger"
-	"github.com/wzshiming/logger/zap"
 	"github.com/wzshiming/sysnotify"
+)
+
+var (
+	logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
+	mut    sync.RWMutex
 )
 
 func Redirect(logfile string) error {
@@ -16,21 +21,27 @@ func Redirect(logfile string) error {
 		return err
 	}
 
-	Info(i18n.RedirectLog(), "file", logfile)
-	logger.SetLogger(zap.WithOut(zap.Log, f))
-	os.Stdout = f
-	os.Stderr = f
+	mut.Lock()
+	defer mut.Unlock()
+
+	logger = slog.New(slog.NewTextHandler(f, nil))
 	return nil
 }
 
 func Error(err error, msg string, keysAndValues ...interface{}) {
-	logger.Log.Error(err, msg, keysAndValues...)
+	mut.RLock()
+	defer mut.RUnlock()
+
+	logger.Error(msg, append([]any{"err", err}, keysAndValues...))
 	e := sysnotify.Alert(jumpway.AppName+" "+msg, err.Error(), "")
 	if e != nil {
-		logger.Log.Error(err, i18n.Alert(msg), keysAndValues...)
+		logger.Error(i18n.Alert(msg), "err", e)
 	}
 }
 
 func Info(msg string, keysAndValues ...interface{}) {
-	logger.Log.Info(msg, keysAndValues...)
+	mut.RLock()
+	defer mut.RUnlock()
+
+	logger.Info(msg, keysAndValues...)
 }

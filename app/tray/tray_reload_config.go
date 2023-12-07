@@ -5,6 +5,7 @@ import (
 	"net"
 	"strconv"
 
+	"fyne.io/systray"
 	"github.com/wzshiming/bridge/chain"
 	"github.com/wzshiming/bridge/protocols/local"
 	"github.com/wzshiming/hostmatcher"
@@ -13,7 +14,6 @@ import (
 	"github.com/wzshiming/jumpway/i18n"
 	"github.com/wzshiming/jumpway/log"
 	"github.com/wzshiming/jumpway/utils"
-	"github.com/wzshiming/systray"
 )
 
 func (a *App) ItemReloadConfig(menu *systray.MenuItem) {
