@@ -1,13 +1,47 @@
 package tray
 
 import (
+	"bytes"
+	"image/png"
+	"runtime"
+
 	"fyne.io/systray"
+	toicon "github.com/Kodeworks/golang-image-ico"
 	"github.com/wzshiming/jumpway/i18n"
 	"github.com/wzshiming/jumpway/icon"
+	"github.com/wzshiming/jumpway/log"
+	"github.com/wzshiming/systheme"
 )
 
 func (a *App) onReady() {
-	systray.SetTemplateIcon(icon.White, icon.White)
+	ico := icon.Black
+	switch t, _ := systheme.GetTheme(); t {
+	case systheme.Light:
+		ico = icon.Black
+	case systheme.Dark:
+		ico = icon.White
+	case systheme.Unknown:
+		ico = icon.Gray
+	}
+
+	if runtime.GOOS == "windows" {
+		buf := bytes.NewBuffer(nil)
+		img, err := png.Decode(bytes.NewReader(ico))
+		if err != nil {
+			log.Error(err, "Unable to decode icon")
+		} else {
+			err = toicon.Encode(buf, img)
+			if err != nil {
+				log.Error(err, "Unable to encode icon")
+			} else {
+				ico = buf.Bytes()
+				systray.SetTemplateIcon(ico, ico)
+			}
+		}
+	} else {
+		systray.SetTemplateIcon(ico, ico)
+	}
+
 	systray.SetTitle("")
 	systray.SetTooltip("Jump Way")
 

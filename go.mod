@@ -4,6 +4,7 @@ go 1.21
 
 require (
 	fyne.io/systray v1.10.0
+	github.com/Kodeworks/golang-image-ico v0.0.0-20141118225523-73f0f4cfade9
 	github.com/Xuanwo/go-locale v1.1.0
 	github.com/atotto/clipboard v0.1.4
 	github.com/gorilla/handlers v1.5.2
@@ -19,6 +20,7 @@ require (
 	github.com/wzshiming/openapiui/v2 v2.0.0
 	github.com/wzshiming/sysnotify v0.0.2
 	github.com/wzshiming/sysproxy v0.2.2
+	github.com/wzshiming/systheme v0.0.1
 	golang.org/x/text v0.14.0
 	gopkg.in/yaml.v3 v3.0.1
 )
