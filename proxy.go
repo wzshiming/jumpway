@@ -18,7 +18,10 @@ func RunProxy(ctx context.Context, listener net.Listener, dialer bridge.Dialer) 
 		"ssh://" + address,
 		"view://" + address,
 	}
-	proxy, err := anyproxy.NewAnyProxy(ctx, proxies, dialer, nil, BytesPool)
+	proxy, err := anyproxy.NewAnyProxy(ctx, proxies, &anyproxy.Config{
+		Dialer:    dialer,
+		BytesPool: BytesPool,
+	})
 	if err != nil {
 		return err
 	}

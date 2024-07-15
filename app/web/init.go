@@ -4,7 +4,6 @@ import (
 	"context"
 	"net"
 	"net/http"
-	"net/url"
 
 	"github.com/wzshiming/anyproxy"
 	"github.com/wzshiming/cmux/pattern"
@@ -14,7 +13,7 @@ func init() {
 	anyproxy.Register("view", NewServeConn)
 }
 
-func NewServeConn(ctx context.Context, sch, address string, users []*url.Userinfo, dial anyproxy.Dialer, logger anyproxy.Logger, pool anyproxy.BytesPool) (anyproxy.ServeConn, []string, error) {
+func NewServeConn(ctx context.Context, sch, address string, cong *anyproxy.Config) (anyproxy.ServeConn, []string, error) {
 	var patterns []string
 
 	tmp := pattern.Pattern[pattern.HTTP]
