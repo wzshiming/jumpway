@@ -57,7 +57,7 @@ func (a *App) ItemReloadConfig(menu *systray.MenuItem) {
 			dialer := jumpway.NewLogDialer(local.LOCAL, func(ctx context.Context, network, address string) {
 				log.Info(i18n.UseProxy(), "address", address)
 			})
-			dialer, err := chain.Default.BridgeChainWithConfig(dialer, conf.GetWay()...)
+			dialer, err := chain.Default.BridgeChainWithConfig(ctx, dialer, conf.GetWay()...)
 			if err != nil {
 				log.Error(err, i18n.Connect(), "address", address)
 				return
