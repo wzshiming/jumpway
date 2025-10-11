@@ -19,7 +19,10 @@ A cross-platform proxy GUI client
         - [x] Shell
         - [x] Cmd
         - [x] PowerShell
-- [ ] Configure the proxy with GUI
+- [x] Configure the proxy with WebUI
+    - [x] Edit configuration via React-based web interface
+    - [x] Manage contexts and routing
+    - [x] Configure proxy settings
     - [ ] Configure the multi-level proxy
     - [ ] Support to get SSH proxy configuration from `~/.ssh/config`
 - [x] Multi-level proxy [Bridge](https://github.com/wzshiming/bridge)
@@ -48,6 +51,35 @@ A cross-platform proxy GUI client
             - [x] chacha20
             - [x] chacha20-ietf
             - [x] salsa20
+
+## WebUI
+
+Jump Way includes a React-based web interface for configuration management. 
+
+Access the WebUI at `http://localhost:8080/config/` when the application is running.
+
+### Features
+- View and edit configuration in real-time
+- Manage contexts and routing configurations
+- Configure proxy and no-proxy settings
+- Add/edit/delete contexts and way nodes
+
+### Building the WebUI
+
+The WebUI is built using React. To rebuild after making changes:
+
+```bash
+cd app/web/webui
+npm install
+npm run build
+```
+
+Or use the build script:
+
+```bash
+cd app/web
+./build_webui.sh
+```
 
 ## Build
 

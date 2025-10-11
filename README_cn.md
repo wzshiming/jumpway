@@ -19,7 +19,10 @@
         - [x] Shell
         - [x] Cmd
         - [x] PowerShell
-- [ ] 图形界面配置代理
+- [x] Web 界面配置代理
+    - [x] 通过 React 网页界面编辑配置
+    - [x] 管理上下文和路由
+    - [x] 配置代理设置
     - [ ] 配置多级代理
     - [ ] 支持从 `~/.ssh/config` 获取 SSH 代理
 - [x] 多级代理 [Bridge](https://github.com/wzshiming/bridge)
@@ -48,6 +51,35 @@
             - [x] chacha20
             - [x] chacha20-ietf
             - [x] salsa20
+
+## Web 界面
+
+Jump Way 包含一个基于 React 的网页配置管理界面。
+
+当应用程序运行时，在浏览器中访问 `http://localhost:8080/config/` 即可使用。
+
+### 功能
+- 实时查看和编辑配置
+- 管理上下文和路由配置
+- 配置代理和 no-proxy 设置
+- 添加/编辑/删除上下文和路由节点
+
+### 构建 Web 界面
+
+Web 界面使用 React 构建。修改后重新构建：
+
+```bash
+cd app/web/webui
+npm install
+npm run build
+```
+
+或使用构建脚本：
+
+```bash
+cd app/web
+./build_webui.sh
+```
 
 ## 构建
 
