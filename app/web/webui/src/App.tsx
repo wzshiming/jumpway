@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import './App.css';
 import { Config } from './types';
 
 const App: React.FC = () => {
+  const { t } = useTranslation();
   const [config, setConfig] = useState<Config | null>(null);
   const [editedConfig, setEditedConfig] = useState<Config | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -11,27 +13,27 @@ const App: React.FC = () => {
   const [saveMessage, setSaveMessage] = useState<string>('');
   const [isEditing, setIsEditing] = useState<boolean>(false);
 
-  useEffect(() => {
-    fetchConfig();
-  }, []);
-
-  const fetchConfig = async (): Promise<void> => {
+  const fetchConfig = useCallback(async (): Promise<void> => {
     try {
       setLoading(true);
       const response = await fetch('/apis/configs');
       if (!response.ok) {
-        throw new Error('Failed to fetch configuration');
+        throw new Error(t('failedToFetch'));
       }
       const data: Config = await response.json();
       setConfig(data);
       setEditedConfig(data);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
+      setError(err instanceof Error ? err.message : t('unknownError'));
     } finally {
       setLoading(false);
     }
-  };
+  }, [t]);
+
+  useEffect(() => {
+    fetchConfig();
+  }, [fetchConfig]);
 
   const handleEdit = (): void => {
     setIsEditing(true);
@@ -58,15 +60,15 @@ const App: React.FC = () => {
       });
       
       if (!response.ok) {
-        throw new Error('Failed to save configuration');
+        throw new Error(t('failedToSave'));
       }
       
       setConfig(editedConfig);
       setIsEditing(false);
-      setSaveMessage('Configuration saved successfully!');
+      setSaveMessage(t('savedSuccessfully'));
       setTimeout(() => setSaveMessage(''), 3000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
+      setError(err instanceof Error ? err.message : t('unknownError'));
     } finally {
       setSaving(false);
     }
@@ -193,7 +195,7 @@ const App: React.FC = () => {
   if (loading) {
     return (
       <div className="container">
-        <div className="loading">Loading configuration...</div>
+        <div className="loading">{t('loading')}</div>
       </div>
     );
   }
@@ -201,8 +203,8 @@ const App: React.FC = () => {
   if (error) {
     return (
       <div className="container">
-        <div className="error">Error: {error}</div>
-        <button onClick={fetchConfig}>Retry</button>
+        <div className="error">{t('error', { message: error })}</div>
+        <button onClick={fetchConfig}>{t('retry')}</button>
       </div>
     );
   }
@@ -210,27 +212,27 @@ const App: React.FC = () => {
   if (!config || !editedConfig) {
     return (
       <div className="container">
-        <div className="error">No configuration available</div>
+        <div className="error">{t('noConfiguration')}</div>
       </div>
     );
   }
 
   return (
     <div className="container">
-      <h1>Jump Way Configuration</h1>
+      <h1>{t('pageTitle')}</h1>
       
       {saveMessage && <div className="success-message">{saveMessage}</div>}
       
       <div className="section">
-        <h2>Current Context</h2>
+        <h2>{t('currentContext')}</h2>
         <div className="form-group">
-          <label>Current Context Name:</label>
+          <label>{t('currentContextName')}:</label>
           <select
             value={editedConfig.CurrentContext || ''}
             onChange={(e) => updateConfig('CurrentContext', e.target.value)}
             disabled={!isEditing}
           >
-            <option value="">-- Select a context --</option>
+            <option value="">{t('selectContext')}</option>
             {(editedConfig.Contexts || []).map((context, index) => (
               <option key={index} value={context.Name}>
                 {context.Name}
@@ -241,9 +243,9 @@ const App: React.FC = () => {
       </div>
 
       <div className="section">
-        <h2>Proxy Settings</h2>
+        <h2>{t('proxySettings')}</h2>
         <div className="form-group">
-          <label>Host:</label>
+          <label>{t('host')}:</label>
           <input
             type="text"
             value={editedConfig.Proxy?.Host || ''}
@@ -252,7 +254,7 @@ const App: React.FC = () => {
           />
         </div>
         <div className="form-group">
-          <label>Port:</label>
+          <label>{t('port')}:</label>
           <input
             type="number"
             value={editedConfig.Proxy?.Port || 0}
@@ -263,9 +265,9 @@ const App: React.FC = () => {
       </div>
 
       <div className="section">
-        <h2>No Proxy Settings</h2>
+        <h2>{t('noProxySettings')}</h2>
         
-        <h3>List</h3>
+        <h3>{t('list')}</h3>
         {(editedConfig.NoProxy?.List || []).map((item, index) => (
           <div key={index} className="list-item">
             <input
@@ -276,18 +278,18 @@ const App: React.FC = () => {
             />
             {isEditing && (
               <button onClick={() => deleteListEntry('List', index)} className="btn-delete">
-                Delete
+                {t('delete')}
               </button>
             )}
           </div>
         ))}
         {isEditing && (
           <button onClick={() => addListEntry('List')} className="btn-add">
-          Add List Entry
-        </button>
+            {t('addListEntry')}
+          </button>
         )}
 
-        <h3>From Environment</h3>
+        <h3>{t('fromEnvironment')}</h3>
         {(editedConfig.NoProxy?.FromEnv || []).map((item, index) => (
           <div key={index} className="list-item">
             <input
@@ -298,18 +300,18 @@ const App: React.FC = () => {
             />
             {isEditing && (
               <button onClick={() => deleteListEntry('FromEnv', index)} className="btn-delete">
-                Delete
+                {t('delete')}
               </button>
             )}
           </div>
         ))}
         {isEditing && (
           <button onClick={() => addListEntry('FromEnv')} className="btn-add">
-            Add FromEnv Entry
+            {t('addFromEnvEntry')}
           </button>
         )}
 
-        <h3>From File</h3>
+        <h3>{t('fromFile')}</h3>
         {(editedConfig.NoProxy?.FromFile || []).map((item, index) => (
           <div key={index} className="list-item">
             <input
@@ -320,25 +322,25 @@ const App: React.FC = () => {
             />
             {isEditing && (
               <button onClick={() => deleteListEntry('FromFile', index)} className="btn-delete">
-                Delete
+                {t('delete')}
               </button>
             )}
           </div>
         ))}
         {isEditing && (
           <button onClick={() => addListEntry('FromFile')} className="btn-add">
-            Add FromFile Entry
+            {t('addFromFileEntry')}
           </button>
         )}
       </div>
 
       <div className="section">
-        <h2>Contexts</h2>
+        <h2>{t('contexts')}</h2>
         {(editedConfig.Contexts || []).map((context, contextIndex) => (
           <div key={contextIndex} className="context-item">
-            <h3>Context {contextIndex + 1}</h3>
+            <h3>{t('context', { number: contextIndex + 1 })}</h3>
             <div className="form-group">
-              <label>Name:</label>
+              <label>{t('name')}:</label>
               <input
                 type="text"
                 value={context.Name || ''}
@@ -347,11 +349,11 @@ const App: React.FC = () => {
               />
             </div>
             
-            <h4>Way Nodes</h4>
+            <h4>{t('wayNodes')}</h4>
             {(context.Way || []).map((node, nodeIndex) => (
               <div key={nodeIndex} className="way-node">
                 <div className="form-group">
-                  <label>Probe:</label>
+                  <label>{t('probe')}:</label>
                   <input
                     type="text"
                     value={node.probe || ''}
@@ -360,7 +362,7 @@ const App: React.FC = () => {
                   />
                 </div>
                 
-                <h5>Load Balancer Entries</h5>
+                <h5>{t('loadBalancerEntries')}</h5>
                 {(node.lb || []).map((lb, lbIndex) => (
                   <div key={lbIndex} className="list-item">
                     <input
@@ -374,7 +376,7 @@ const App: React.FC = () => {
                         onClick={() => deleteLbEntry(contextIndex, nodeIndex, lbIndex)}
                         className="btn-delete"
                       >
-                        Delete
+                        {t('delete')}
                       </button>
                     )}
                   </div>
@@ -384,7 +386,7 @@ const App: React.FC = () => {
                     onClick={() => addLbEntry(contextIndex, nodeIndex)}
                     className="btn-add-small"
                   >
-                    Add LB Entry
+                    {t('addLbEntry')}
                   </button>
                 )}
                 
@@ -393,27 +395,27 @@ const App: React.FC = () => {
                     onClick={() => deleteWayNode(contextIndex, nodeIndex)}
                     className="btn-delete"
                   >
-                    Delete Way Node
+                    {t('deleteWayNode')}
                   </button>
                 )}
               </div>
             ))}
             {isEditing && (
               <button onClick={() => addWayNode(contextIndex)} className="btn-add">
-                Add Way Node
+                {t('addWayNode')}
               </button>
             )}
             
             {isEditing && (
               <button onClick={() => deleteContext(contextIndex)} className="btn-delete">
-                Delete Context
+                {t('deleteContext')}
               </button>
             )}
           </div>
         ))}
         {isEditing && (
           <button onClick={addContext} className="btn-add">
-            Add Context
+            {t('addContext')}
           </button>
         )}
       </div>
@@ -421,15 +423,15 @@ const App: React.FC = () => {
       <div className="actions">
         {!isEditing ? (
           <button onClick={handleEdit} className="btn-edit">
-            Edit Configuration
+            {t('edit')}
           </button>
         ) : (
           <>
             <button onClick={saveConfig} disabled={saving} className="btn-save">
-              {saving ? 'Saving...' : 'Save'}
+              {saving ? t('saving') : t('save')}
             </button>
             <button onClick={handleCancel} disabled={saving} className="btn-cancel">
-              Cancel
+              {t('cancel')}
             </button>
           </>
         )}
