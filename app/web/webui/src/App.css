@@ -77,6 +77,14 @@ h5 {
   font-size: 14px;
 }
 
+.form-group input:disabled,
+.form-group select:disabled,
+.list-item input:disabled {
+  background-color: #f5f5f5;
+  cursor: not-allowed;
+  color: #666;
+}
+
 .form-group input:focus,
 .form-group select:focus,
 .list-item input:focus {
@@ -166,6 +174,29 @@ button:disabled {
 
 .btn-save:hover:not(:disabled) {
   background-color: #0056b3;
+}
+
+.btn-edit {
+  background-color: #007bff;
+  color: white;
+  padding: 12px 30px;
+  font-size: 16px;
+}
+
+.btn-edit:hover:not(:disabled) {
+  background-color: #0056b3;
+}
+
+.btn-cancel {
+  background-color: #6c757d;
+  color: white;
+  padding: 12px 30px;
+  font-size: 16px;
+  margin-left: 10px;
+}
+
+.btn-cancel:hover:not(:disabled) {
+  background-color: #5a6268;
 }
 
 .btn-refresh {
