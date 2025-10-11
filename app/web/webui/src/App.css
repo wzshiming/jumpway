@@ -68,6 +68,7 @@ h5 {
 }
 
 .form-group input,
+.form-group select,
 .list-item input {
   width: 100%;
   padding: 8px 12px;
@@ -77,6 +78,7 @@ h5 {
 }
 
 .form-group input:focus,
+.form-group select:focus,
 .list-item input:focus {
   outline: none;
   border-color: #007bff;

@@ -208,11 +208,17 @@ const App: React.FC = () => {
         <h2>Current Context</h2>
         <div className="form-group">
           <label>Current Context Name:</label>
-          <input
-            type="text"
+          <select
             value={config.CurrentContext || ''}
             onChange={(e) => updateConfig('CurrentContext', e.target.value)}
-          />
+          >
+            <option value="">-- Select a context --</option>
+            {(config.Contexts || []).map((context, index) => (
+              <option key={index} value={context.Name}>
+                {context.Name}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
