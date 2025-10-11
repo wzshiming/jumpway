@@ -54,7 +54,7 @@
 
 ## Web 界面
 
-Jump Way 包含一个基于 React 的网页配置管理界面。
+Jump Way 包含一个基于 React + TypeScript 的网页配置管理界面。
 
 当应用程序运行时，在浏览器中访问 `http://localhost:8080/config/` 即可使用。
 
@@ -66,7 +66,7 @@ Jump Way 包含一个基于 React 的网页配置管理界面。
 
 ### 构建 Web 界面
 
-Web 界面使用 React 构建。修改后重新构建：
+Web 界面使用 React 和 TypeScript 构建。修改后重新构建：
 
 ```bash
 cd app/web/webui

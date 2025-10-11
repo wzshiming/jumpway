@@ -1,6 +1,12 @@
 # Jump Way WebUI
 
-This directory contains the React-based configuration editor for Jump Way.
+This directory contains the React + TypeScript based configuration editor for Jump Way.
+
+## Technology Stack
+
+- React 19.2.0
+- TypeScript
+- React Scripts 5.0.1
 
 ## Development
 

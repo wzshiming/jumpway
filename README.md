@@ -54,7 +54,7 @@ A cross-platform proxy GUI client
 
 ## WebUI
 
-Jump Way includes a React-based web interface for configuration management. 
+Jump Way includes a React + TypeScript based web interface for configuration management. 
 
 Access the WebUI at `http://localhost:8080/config/` when the application is running.
 
@@ -66,7 +66,7 @@ Access the WebUI at `http://localhost:8080/config/` when the application is runn
 
 ### Building the WebUI
 
-The WebUI is built using React. To rebuild after making changes:
+The WebUI is built using React with TypeScript. To rebuild after making changes:
 
 ```bash
 cd app/web/webui

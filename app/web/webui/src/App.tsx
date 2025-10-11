@@ -1,35 +1,36 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
+import { Config } from './types';
 
-function App() {
-  const [config, setConfig] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [saveMessage, setSaveMessage] = useState('');
+const App: React.FC = () => {
+  const [config, setConfig] = useState<Config | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState<boolean>(false);
+  const [saveMessage, setSaveMessage] = useState<string>('');
 
   useEffect(() => {
     fetchConfig();
   }, []);
 
-  const fetchConfig = async () => {
+  const fetchConfig = async (): Promise<void> => {
     try {
       setLoading(true);
       const response = await fetch('/apis/configs');
       if (!response.ok) {
         throw new Error('Failed to fetch configuration');
       }
-      const data = await response.json();
+      const data: Config = await response.json();
       setConfig(data);
       setError(null);
     } catch (err) {
-      setError(err.message);
+      setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setLoading(false);
     }
   };
 
-  const saveConfig = async () => {
+  const saveConfig = async (): Promise<void> => {
     try {
       setSaving(true);
       setSaveMessage('');
@@ -48,31 +49,35 @@ function App() {
       setSaveMessage('Configuration saved successfully!');
       setTimeout(() => setSaveMessage(''), 3000);
     } catch (err) {
-      setError(err.message);
+      setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setSaving(false);
     }
   };
 
-  const updateConfig = (field, value) => {
+  const updateConfig = (field: keyof Config, value: string): void => {
+    if (!config) return;
     setConfig({ ...config, [field]: value });
   };
 
-  const updateProxy = (field, value) => {
+  const updateProxy = (field: keyof Config['Proxy'], value: string | number): void => {
+    if (!config) return;
     setConfig({
       ...config,
       Proxy: { ...config.Proxy, [field]: value }
     });
   };
 
-  const updateNoProxy = (field, value) => {
+  const updateNoProxy = (field: keyof Config['NoProxy'], value: string[]): void => {
+    if (!config) return;
     setConfig({
       ...config,
       NoProxy: { ...config.NoProxy, [field]: value }
     });
   };
 
-  const addContext = () => {
+  const addContext = (): void => {
+    if (!config) return;
     const newContext = {
       Name: 'new-context',
       Way: []
@@ -83,18 +88,21 @@ function App() {
     });
   };
 
-  const updateContext = (index, field, value) => {
+  const updateContext = (index: number, field: keyof Config['Contexts'][0], value: string): void => {
+    if (!config) return;
     const newContexts = [...config.Contexts];
     newContexts[index] = { ...newContexts[index], [field]: value };
     setConfig({ ...config, Contexts: newContexts });
   };
 
-  const deleteContext = (index) => {
+  const deleteContext = (index: number): void => {
+    if (!config) return;
     const newContexts = config.Contexts.filter((_, i) => i !== index);
     setConfig({ ...config, Contexts: newContexts });
   };
 
-  const addWayNode = (contextIndex) => {
+  const addWayNode = (contextIndex: number): void => {
+    if (!config) return;
     const newContexts = [...config.Contexts];
     const newNode = {
       probe: '',
@@ -104,7 +112,8 @@ function App() {
     setConfig({ ...config, Contexts: newContexts });
   };
 
-  const updateWayNode = (contextIndex, nodeIndex, field, value) => {
+  const updateWayNode = (contextIndex: number, nodeIndex: number, field: string, value: string): void => {
+    if (!config) return;
     const newContexts = [...config.Contexts];
     newContexts[contextIndex].Way[nodeIndex] = {
       ...newContexts[contextIndex].Way[nodeIndex],
@@ -113,13 +122,15 @@ function App() {
     setConfig({ ...config, Contexts: newContexts });
   };
 
-  const deleteWayNode = (contextIndex, nodeIndex) => {
+  const deleteWayNode = (contextIndex: number, nodeIndex: number): void => {
+    if (!config) return;
     const newContexts = [...config.Contexts];
     newContexts[contextIndex].Way = newContexts[contextIndex].Way.filter((_, i) => i !== nodeIndex);
     setConfig({ ...config, Contexts: newContexts });
   };
 
-  const addLbEntry = (contextIndex, nodeIndex) => {
+  const addLbEntry = (contextIndex: number, nodeIndex: number): void => {
+    if (!config) return;
     const newContexts = [...config.Contexts];
     newContexts[contextIndex].Way[nodeIndex].lb = [
       ...(newContexts[contextIndex].Way[nodeIndex].lb || []),
@@ -128,31 +139,36 @@ function App() {
     setConfig({ ...config, Contexts: newContexts });
   };
 
-  const updateLbEntry = (contextIndex, nodeIndex, lbIndex, value) => {
+  const updateLbEntry = (contextIndex: number, nodeIndex: number, lbIndex: number, value: string): void => {
+    if (!config) return;
     const newContexts = [...config.Contexts];
     newContexts[contextIndex].Way[nodeIndex].lb[lbIndex] = value;
     setConfig({ ...config, Contexts: newContexts });
   };
 
-  const deleteLbEntry = (contextIndex, nodeIndex, lbIndex) => {
+  const deleteLbEntry = (contextIndex: number, nodeIndex: number, lbIndex: number): void => {
+    if (!config) return;
     const newContexts = [...config.Contexts];
     newContexts[contextIndex].Way[nodeIndex].lb = 
       newContexts[contextIndex].Way[nodeIndex].lb.filter((_, i) => i !== lbIndex);
     setConfig({ ...config, Contexts: newContexts });
   };
 
-  const updateListEntry = (listName, index, value) => {
+  const updateListEntry = (listName: keyof Config['NoProxy'], index: number, value: string): void => {
+    if (!config) return;
     const newList = [...(config.NoProxy[listName] || [])];
     newList[index] = value;
     updateNoProxy(listName, newList);
   };
 
-  const addListEntry = (listName) => {
+  const addListEntry = (listName: keyof Config['NoProxy']): void => {
+    if (!config) return;
     const newList = [...(config.NoProxy[listName] || []), ''];
     updateNoProxy(listName, newList);
   };
 
-  const deleteListEntry = (listName, index) => {
+  const deleteListEntry = (listName: keyof Config['NoProxy'], index: number): void => {
+    if (!config) return;
     const newList = (config.NoProxy[listName] || []).filter((_, i) => i !== index);
     updateNoProxy(listName, newList);
   };
@@ -356,7 +372,6 @@ function App() {
       </div>
     </div>
   );
-}
+};
 
 export default App;
-
