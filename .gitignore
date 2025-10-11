@@ -19,3 +19,6 @@ tmp
 webview/webview
 webview/webview.exe
 
+# React app dependencies and build
+app/web/webui/node_modules/
+app/web/webui/build/
