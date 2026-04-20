@@ -147,7 +147,7 @@ func (h *tunHandler) NewPacketConnectionEx(ctx context.Context, conn N.PacketCon
 	destAddr := destination.String()
 	h.logger.Info("tun udp connection: ", destAddr)
 
-	udpConn, err := net.Dial("udp", destAddr)
+	remote, err := h.dialer.DialContext(ctx, "udp", destAddr)
 	if err != nil {
 		h.logger.Error("tun udp dial: ", err)
 		if onClose != nil {
@@ -161,7 +161,7 @@ func (h *tunHandler) NewPacketConnectionEx(ctx context.Context, conn N.PacketCon
 		var err error
 		defer func() {
 			conn.Close()
-			udpConn.Close()
+			remote.Close()
 			if onClose != nil {
 				onClose(err)
 			}
@@ -182,15 +182,14 @@ func (h *tunHandler) NewPacketConnectionEx(ctx context.Context, conn N.PacketCon
 			defer buffer.Release()
 			for {
 				buffer.Reset()
-				dest, readErr := conn.ReadPacket(buffer)
+				_, readErr := conn.ReadPacket(buffer)
 				if readErr != nil {
 					return
 				}
-				_, writeErr := udpConn.Write(buffer.Bytes())
+				_, writeErr := remote.Write(buffer.Bytes())
 				if writeErr != nil {
 					return
 				}
-				_ = dest
 			}
 		}()
 
@@ -205,7 +204,7 @@ func (h *tunHandler) NewPacketConnectionEx(ctx context.Context, conn N.PacketCon
 			}()
 			rawBuf := make([]byte, 65535)
 			for {
-				n, readErr := udpConn.Read(rawBuf)
+				n, readErr := remote.Read(rawBuf)
 				if readErr != nil {
 					return
 				}

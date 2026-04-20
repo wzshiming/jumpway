@@ -98,5 +98,3 @@ const zhData string = "" + // Size: 348 bytes
 	"可视化编辑 开发中...\x02日志\x02关于\x02退出\x02重定向日志\x02初始化加载配置\x02导出到剪切板\x02启动代理服务" +
 	"器\x02参数\x02打开文件\x02连接\x02使用代理\x02监听 %[1]s\x02警告 %[1]s\x02JumpWay %[1]s" +
 	" 在 %[2]s\x02全局代理"
-
-	// Total table size 886 bytes (0KiB); checksum: UPDATE

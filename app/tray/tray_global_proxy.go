@@ -122,10 +122,10 @@ func startGlobalProxy() (*tunState, error) {
 // tunLogger adapts the project's logger to sing-tun's logger interface.
 type tunLogger struct{}
 
-func (t *tunLogger) Trace(args ...any) { log.Info("tun trace", "msg", args) }
-func (t *tunLogger) Debug(args ...any) { log.Info("tun debug", "msg", args) }
-func (t *tunLogger) Info(args ...any)  { log.Info("tun info", "msg", args) }
-func (t *tunLogger) Warn(args ...any)  { log.Info("tun warn", "msg", args) }
-func (t *tunLogger) Error(args ...any) { log.Info("tun error", "msg", args) }
-func (t *tunLogger) Fatal(args ...any) { log.Info("tun fatal", "msg", args) }
-func (t *tunLogger) Panic(args ...any) { log.Info("tun panic", "msg", args) }
+func (t *tunLogger) Trace(args ...any) { log.Info("tun [trace]", "msg", args) }
+func (t *tunLogger) Debug(args ...any) { log.Info("tun [debug]", "msg", args) }
+func (t *tunLogger) Info(args ...any)  { log.Info("tun [info]", "msg", args) }
+func (t *tunLogger) Warn(args ...any)  { log.Info("tun [warn]", "msg", args) }
+func (t *tunLogger) Error(args ...any) { log.Info("tun [error]", "msg", args) }
+func (t *tunLogger) Fatal(args ...any) { log.Info("tun [fatal]", "msg", args) }
+func (t *tunLogger) Panic(args ...any) { log.Info("tun [panic]", "msg", args) }
