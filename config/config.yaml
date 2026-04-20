@@ -26,3 +26,10 @@ no_proxy:
   from_env:
     - NO_PROXY
     - no_proxy
+
+tun:
+  name: ""
+  mtu: 9000
+  inet4_address: 198.18.0.1/16
+  auto_route: true
+  stack: system

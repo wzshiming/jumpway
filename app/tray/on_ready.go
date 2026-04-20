@@ -59,6 +59,9 @@ func (a *App) onReady() {
 	mGlobalMode := systray.AddMenuItemCheckbox(i18n.SystemProxy(), "", false)
 	go a.ItemProxyMode(mGlobalMode, mManualMode)
 
+	mGlobalProxy := systray.AddMenuItemCheckbox(i18n.GlobalProxy(), "", false)
+	go a.ItemGlobalProxy(mGlobalProxy)
+
 	mExportCommand := systray.AddMenuItem(i18n.ExportCommand(), "")
 	go a.ItemExportCommand(mExportCommand)
 

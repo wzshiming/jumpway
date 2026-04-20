@@ -15,6 +15,7 @@
 - [x] 系统托盘
     - [x] 开机启动
     - [x] 系统代理
+    - [x] 全局代理 ([sing-tun](https://github.com/SagerNet/sing-tun))
     - [x] 导出终端代理命令到剪切板
         - [x] Shell
         - [x] Cmd
