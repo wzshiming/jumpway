@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"fyne.io/systray"
-	"github.com/wzshiming/bridge"
 	"github.com/wzshiming/jumpway/config"
 	"github.com/wzshiming/jumpway/i18n"
 	"github.com/wzshiming/jumpway/log"
@@ -18,7 +17,6 @@ type App struct {
 	RawHost      string
 	Mode         string
 	Log          string
-	Dialer       bridge.Dialer
 	UpdateStatus func()
 }
 

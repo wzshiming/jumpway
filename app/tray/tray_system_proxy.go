@@ -5,6 +5,9 @@ import (
 	"net/netip"
 
 	"fyne.io/systray"
+	"github.com/wzshiming/bridge"
+	"github.com/wzshiming/bridge/chain"
+	"github.com/wzshiming/hostmatcher"
 	"github.com/wzshiming/jumpway"
 	"github.com/wzshiming/jumpway/config"
 	"github.com/wzshiming/jumpway/i18n"
@@ -64,20 +67,19 @@ func (a *App) ItemProxyMode(system, global, manual *systray.MenuItem) {
 				log.Error(err, "sysproxy.OffHTTP")
 			}
 
-			if a.Dialer == nil {
-				log.Info("global proxy: dialer not ready")
+			conf, err := config.LoadConfig()
+			if err != nil {
+				log.Error(err, i18n.GlobalProxy())
 				return
 			}
 
 			tunName := "jumpway0"
 			tunAddrStr := "198.18.0.1/15"
-			if conf, err := config.LoadConfig(); err == nil {
-				if conf.TUN.Name != "" {
-					tunName = conf.TUN.Name
-				}
-				if conf.TUN.Address != "" {
-					tunAddrStr = conf.TUN.Address
-				}
+			if conf.TUN.Name != "" {
+				tunName = conf.TUN.Name
+			}
+			if conf.TUN.Address != "" {
+				tunAddrStr = conf.TUN.Address
 			}
 
 			tunAddr, err := netip.ParsePrefix(tunAddrStr)
@@ -86,7 +88,15 @@ func (a *App) ItemProxyMode(system, global, manual *systray.MenuItem) {
 				return
 			}
 
-			tp, err := jumpway.RunTUNProxy(context.Background(), tunName, tunAddr, a.Dialer)
+			// Build a dialer chain using a marked base dialer so the
+			// proxy's own outgoing connections bypass TUN routing.
+			tunDialer, err := buildTUNDialer(conf)
+			if err != nil {
+				log.Error(err, i18n.GlobalProxy())
+				return
+			}
+
+			tp, err := jumpway.RunTUNProxy(context.Background(), tunName, tunAddr, tunDialer)
 			if err != nil {
 				log.Error(err, i18n.GlobalProxy())
 				return
@@ -121,6 +131,34 @@ func (a *App) ItemProxyMode(system, global, manual *systray.MenuItem) {
 		check(checked)
 		log.Info(i18n.ProxyMode(), "mode", checked)
 	}
+}
+
+// buildTUNDialer builds a dialer chain for TUN proxy using a marked base
+// dialer. On Linux, the marked dialer sets SO_MARK so that outgoing proxy
+// connections bypass the TUN routing rules and go through the real interface.
+func buildTUNDialer(conf *config.Config) (bridge.Dialer, error) {
+	markedBase := jumpway.NewMarkedDialer()
+
+	dialer := jumpway.NewLogDialer(markedBase, func(ctx context.Context, network, address string) {
+		log.Info(i18n.UseProxy(), "address", address)
+	})
+	dialer, err := chain.Default.BridgeChainWithConfig(context.Background(), dialer, conf.GetWay()...)
+	if err != nil {
+		return nil, err
+	}
+	dialer = jumpway.NewLogDialer(dialer, func(ctx context.Context, network, address string) {
+		log.Info(i18n.Connect(), "proxy", true, "address", address)
+	})
+
+	if noProxy := conf.NoProxy.GetList(); len(noProxy) != 0 {
+		matcher := hostmatcher.NewMatcher(noProxy)
+		subDialer := jumpway.NewLogDialer(markedBase, func(ctx context.Context, network, address string) {
+			log.Info(i18n.Connect(), "proxy", false, "address", address)
+		})
+		dialer = chain.NewShuntDialer(dialer, subDialer, matcher)
+	}
+
+	return dialer, nil
 }
 
 type proxyMode uint

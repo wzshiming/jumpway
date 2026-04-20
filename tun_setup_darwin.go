@@ -1,6 +1,7 @@
 package jumpway
 
 import (
+	"bytes"
 	"fmt"
 	"net/netip"
 	"os/exec"
@@ -21,16 +22,46 @@ func configureTUN(name string, addr netip.Prefix) error {
 		}
 		peer = netip.AddrFrom4(b)
 	}
+	peerStr := peer.String()
 
-	if err := exec.Command("ifconfig", name, "inet", ip, peer.String(), "netmask",
+	if err := exec.Command("ifconfig", name, "inet", ip, peerStr, "netmask",
 		prefixLenToNetmask(prefixLen), "up").Run(); err != nil {
 		return fmt.Errorf("set address: %w", err)
 	}
+
+	// Split routes through the TUN device. These are more specific than
+	// the default 0.0.0.0/0 route so they capture all traffic.
+	if err := exec.Command("route", "add", "-net", "0.0.0.0/1", peerStr).Run(); err != nil {
+		return fmt.Errorf("add split route 0/1: %w", err)
+	}
+	if err := exec.Command("route", "add", "-net", "128.0.0.0/1", peerStr).Run(); err != nil {
+		return fmt.Errorf("add split route 128/1: %w", err)
+	}
+
 	return nil
 }
 
 func unconfigureTUN(name string) {
+	// Remove split routes.
+	exec.Command("route", "delete", "-net", "0.0.0.0/1").Run()
+	exec.Command("route", "delete", "-net", "128.0.0.0/1").Run()
+
 	exec.Command("ifconfig", name, "down").Run()
+}
+
+// defaultGatewayDarwin returns the current default gateway IP.
+func defaultGatewayDarwin() (string, error) {
+	out, err := exec.Command("route", "-n", "get", "default").Output()
+	if err != nil {
+		return "", err
+	}
+	for _, line := range bytes.Split(out, []byte("\n")) {
+		s := strings.TrimSpace(string(line))
+		if strings.HasPrefix(s, "gateway:") {
+			return strings.TrimSpace(strings.TrimPrefix(s, "gateway:")), nil
+		}
+	}
+	return "", fmt.Errorf("could not parse default gateway")
 }
 
 func prefixLenToNetmask(bits int) string {
