@@ -1,19 +1,40 @@
 package tray
 
 import (
+	"context"
+	"net/netip"
+
 	"fyne.io/systray"
+	"github.com/wzshiming/jumpway"
 	"github.com/wzshiming/jumpway/i18n"
 	"github.com/wzshiming/jumpway/log"
 	"github.com/wzshiming/sysproxy"
 )
 
-func (a *App) ItemProxyMode(global, manual *systray.MenuItem) {
+func (a *App) ItemProxyMode(system, global, manual *systray.MenuItem) {
 	var checked proxyMode
+	var tunProxy *jumpway.TUNProxy
+
+	uncheckAll := func() {
+		system.Uncheck()
+		global.Uncheck()
+		manual.Uncheck()
+	}
+
+	stopTUN := func() {
+		if tunProxy != nil {
+			tunProxy.Close()
+			tunProxy = nil
+		}
+	}
 
 	check := func(checked proxyMode) {
-		if checked == systemMode {
-			global.Check()
-			manual.Uncheck()
+		stopTUN()
+
+		switch checked {
+		case systemMode:
+			uncheckAll()
+			system.Check()
 			a.Mode = i18n.SystemProxy()
 			a.UpdateStatus()
 
@@ -27,9 +48,36 @@ func (a *App) ItemProxyMode(global, manual *systray.MenuItem) {
 				log.Error(err, "sysproxy.OnHTTP")
 				return
 			}
-		} else {
+		case globalMode:
+			uncheckAll()
+			global.Check()
+			a.Mode = i18n.GlobalProxy()
+			a.UpdateStatus()
+
+			err := sysproxy.OffHTTPS()
+			if err != nil {
+				log.Error(err, "sysproxy.OffHTTPS")
+			}
+			err = sysproxy.OffHTTP()
+			if err != nil {
+				log.Error(err, "sysproxy.OffHTTP")
+			}
+
+			if a.Dialer == nil {
+				log.Info("global proxy: dialer not ready")
+				return
+			}
+
+			tunAddr := netip.MustParsePrefix("198.18.0.1/15")
+			tp, err := jumpway.RunTUNProxy(context.Background(), "jumpway0", tunAddr, a.Dialer)
+			if err != nil {
+				log.Error(err, i18n.GlobalProxy())
+				return
+			}
+			tunProxy = tp
+		default:
+			uncheckAll()
 			manual.Check()
-			global.Uncheck()
 			a.Mode = i18n.ManualProxy()
 			a.UpdateStatus()
 
@@ -46,8 +94,10 @@ func (a *App) ItemProxyMode(global, manual *systray.MenuItem) {
 	check(checked)
 	for {
 		select {
-		case <-global.ClickedCh:
+		case <-system.ClickedCh:
 			checked = systemMode
+		case <-global.ClickedCh:
+			checked = globalMode
 		case <-manual.ClickedCh:
 			checked = manualMode
 		}
@@ -61,4 +111,5 @@ type proxyMode uint
 const (
 	manualMode proxyMode = iota
 	systemMode
+	globalMode
 )

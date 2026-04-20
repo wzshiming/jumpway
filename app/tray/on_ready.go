@@ -56,8 +56,9 @@ func (a *App) onReady() {
 	systray.AddSeparator()
 
 	mManualMode := systray.AddMenuItemCheckbox(i18n.ManualProxy(), "", false)
-	mGlobalMode := systray.AddMenuItemCheckbox(i18n.SystemProxy(), "", false)
-	go a.ItemProxyMode(mGlobalMode, mManualMode)
+	mSystemMode := systray.AddMenuItemCheckbox(i18n.SystemProxy(), "", false)
+	mGlobalMode := systray.AddMenuItemCheckbox(i18n.GlobalProxy(), "", false)
+	go a.ItemProxyMode(mSystemMode, mGlobalMode, mManualMode)
 
 	mExportCommand := systray.AddMenuItem(i18n.ExportCommand(), "")
 	go a.ItemExportCommand(mExportCommand)

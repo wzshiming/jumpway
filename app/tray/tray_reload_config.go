@@ -74,6 +74,8 @@ func (a *App) ItemReloadConfig(menu *systray.MenuItem) {
 				dialer = chain.NewShuntDialer(dialer, subDialer, matcher)
 			}
 
+			a.Dialer = dialer
+
 			err = jumpway.RunProxy(ctx, listener, dialer)
 			if err != nil && !utils.IsClosedConnError(err) {
 				log.Error(err, i18n.RunProxy())
