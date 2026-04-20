@@ -114,6 +114,10 @@ func Alert(message string) string {
 	return fmt.Sprintf("Alert %s", message)
 }
 
+func GlobalProxy() string {
+	return fmt.Sprintf("Global Proxy")
+}
+
 func Status(mode string, address string) string {
 	return fmt.Sprintf("JumpWay %s On %s", mode, address)
 }
