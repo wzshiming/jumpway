@@ -28,6 +28,7 @@ type Config struct {
 	Contexts       []Context `yaml:"contexts"`
 	Proxy          Proxy     `yaml:"proxy"`
 	NoProxy        NoProxy   `yaml:"no_proxy"`
+	TUN            TUN       `yaml:"tun"`
 }
 
 func (c Config) GetWay() []config.Node {
@@ -47,6 +48,11 @@ type Context struct {
 type Proxy struct {
 	Host string `yaml:"host"`
 	Port uint32 `yaml:"port"`
+}
+
+type TUN struct {
+	Name    string `yaml:"name"`
+	Address string `yaml:"address"`
 }
 
 type NoProxy struct {

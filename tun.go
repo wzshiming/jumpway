@@ -136,12 +136,12 @@ func RunTUNProxy(ctx context.Context, tunName string, tunAddr netip.Prefix, dial
 // Close stops the TUN proxy and releases resources.
 func (tp *TUNProxy) Close() error {
 	tp.cancel()
+	name, _ := tp.dev.Name()
 	tp.dev.Close()
 	tp.stack.Close()
 	tp.ep.Close()
 	tp.wg.Wait()
-	name, err := tp.dev.Name()
-	if err == nil {
+	if name != "" {
 		unconfigureTUN(name)
 	}
 	return nil
@@ -262,6 +262,11 @@ func (tp *TUNProxy) handleUDP(ctx context.Context, r *udp.ForwarderRequest, dst 
 	relay(local, remote)
 }
 
+// closeWriter is implemented by connections that support half-close.
+type closeWriter interface {
+	CloseWrite() error
+}
+
 // relay copies data bidirectionally between two connections.
 func relay(a, b net.Conn) {
 	var wg sync.WaitGroup
@@ -269,10 +274,16 @@ func relay(a, b net.Conn) {
 	go func() {
 		defer wg.Done()
 		io.Copy(b, a)
+		if cw, ok := b.(closeWriter); ok {
+			cw.CloseWrite()
+		}
 	}()
 	go func() {
 		defer wg.Done()
 		io.Copy(a, b)
+		if cw, ok := a.(closeWriter); ok {
+			cw.CloseWrite()
+		}
 	}()
 	wg.Wait()
 }

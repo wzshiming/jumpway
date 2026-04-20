@@ -14,7 +14,11 @@ func configureTUN(name string, addr netip.Prefix) error {
 	peer := addr.Addr()
 	if peer.Is4() {
 		b := peer.As4()
-		b[3]++
+		if b[3] < 255 {
+			b[3]++
+		} else {
+			b[3]--
+		}
 		peer = netip.AddrFrom4(b)
 	}
 
@@ -30,6 +34,11 @@ func unconfigureTUN(name string) {
 }
 
 func prefixLenToNetmask(bits int) string {
+	if bits <= 0 {
+		bits = 0
+	} else if bits > 32 {
+		bits = 32
+	}
 	mask := uint32(0xFFFFFFFF) << (32 - bits)
 	parts := []string{
 		fmt.Sprintf("%d", (mask>>24)&0xFF),

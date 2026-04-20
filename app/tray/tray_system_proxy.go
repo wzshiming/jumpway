@@ -6,6 +6,7 @@ import (
 
 	"fyne.io/systray"
 	"github.com/wzshiming/jumpway"
+	"github.com/wzshiming/jumpway/config"
 	"github.com/wzshiming/jumpway/i18n"
 	"github.com/wzshiming/jumpway/log"
 	"github.com/wzshiming/sysproxy"
@@ -68,8 +69,24 @@ func (a *App) ItemProxyMode(system, global, manual *systray.MenuItem) {
 				return
 			}
 
-			tunAddr := netip.MustParsePrefix("198.18.0.1/15")
-			tp, err := jumpway.RunTUNProxy(context.Background(), "jumpway0", tunAddr, a.Dialer)
+			tunName := "jumpway0"
+			tunAddrStr := "198.18.0.1/15"
+			if conf, err := config.LoadConfig(); err == nil {
+				if conf.TUN.Name != "" {
+					tunName = conf.TUN.Name
+				}
+				if conf.TUN.Address != "" {
+					tunAddrStr = conf.TUN.Address
+				}
+			}
+
+			tunAddr, err := netip.ParsePrefix(tunAddrStr)
+			if err != nil {
+				log.Error(err, i18n.GlobalProxy())
+				return
+			}
+
+			tp, err := jumpway.RunTUNProxy(context.Background(), tunName, tunAddr, a.Dialer)
 			if err != nil {
 				log.Error(err, i18n.GlobalProxy())
 				return
