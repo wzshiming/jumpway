@@ -8,7 +8,9 @@ import (
 	"strings"
 )
 
-// tunRouteTable is the routing table number for TUN bypass routes.
+// tunRouteTable is the routing table number used for the TUN bypass table.
+// This table holds the original default route so that fwmark'd proxy packets
+// reach the real interface instead of looping through the TUN device.
 const tunRouteTable = "100"
 
 func configureTUN(name string, addr netip.Prefix) error {

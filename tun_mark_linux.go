@@ -10,6 +10,8 @@ import (
 )
 
 // tunFWMark is the firewall mark used to exempt proxy traffic from TUN routing.
+// 0x6a77 is "jw" (JumpWay) in ASCII — chosen to be unique and unlikely to
+// conflict with other applications' fwmark usage.
 const tunFWMark = 0x6a77
 
 // NewMarkedDialer returns a bridge.Dialer that sets SO_MARK on outgoing
