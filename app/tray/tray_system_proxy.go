@@ -2,14 +2,17 @@ package tray
 
 import (
 	"context"
+	"net"
 	"net/netip"
+	"net/url"
 
 	"fyne.io/systray"
 	"github.com/wzshiming/bridge"
 	"github.com/wzshiming/bridge/chain"
+	"github.com/wzshiming/bridge/config"
 	"github.com/wzshiming/hostmatcher"
 	"github.com/wzshiming/jumpway"
-	"github.com/wzshiming/jumpway/config"
+	appconfig "github.com/wzshiming/jumpway/config"
 	"github.com/wzshiming/jumpway/i18n"
 	"github.com/wzshiming/jumpway/log"
 	"github.com/wzshiming/sysproxy"
@@ -67,13 +70,13 @@ func (a *App) ItemProxyMode(system, global, manual *systray.MenuItem) {
 				log.Error(err, "sysproxy.OffHTTP")
 			}
 
-			conf, err := config.LoadConfig()
+			conf, err := appconfig.LoadConfig()
 			if err != nil {
 				log.Error(err, i18n.GlobalProxy())
 				return
 			}
 
-			tunName := "jumpway0"
+			tunName := jumpway.DefaultTUNName()
 			tunAddrStr := "198.18.0.1/15"
 			if conf.TUN.Name != "" {
 				tunName = conf.TUN.Name
@@ -96,7 +99,10 @@ func (a *App) ItemProxyMode(system, global, manual *systray.MenuItem) {
 				return
 			}
 
-			tp, err := jumpway.RunTUNProxy(context.Background(), tunName, tunAddr, tunDialer)
+			// Extract proxy server IPs from config for bypass routing.
+			bypassAddrs := extractProxyAddrs(conf.GetWay())
+
+			tp, err := jumpway.RunTUNProxy(context.Background(), tunName, tunAddr, tunDialer, bypassAddrs)
 			if err != nil {
 				log.Error(err, i18n.GlobalProxy())
 				return
@@ -136,7 +142,7 @@ func (a *App) ItemProxyMode(system, global, manual *systray.MenuItem) {
 // buildTUNDialer builds a dialer chain for TUN proxy using a marked base
 // dialer. On Linux, the marked dialer sets SO_MARK so that outgoing proxy
 // connections bypass the TUN routing rules and go through the real interface.
-func buildTUNDialer(conf *config.Config) (bridge.Dialer, error) {
+func buildTUNDialer(conf *appconfig.Config) (bridge.Dialer, error) {
 	markedBase := jumpway.NewMarkedDialer()
 
 	dialer := jumpway.NewLogDialer(markedBase, func(ctx context.Context, network, address string) {
@@ -159,6 +165,50 @@ func buildTUNDialer(conf *config.Config) (bridge.Dialer, error) {
 	}
 
 	return dialer, nil
+}
+
+// extractProxyAddrs parses proxy server IP addresses from bridge config nodes.
+// These IPs are used for bypass routing so the proxy's own connections don't
+// get routed back through the TUN device (relevant on macOS and Windows).
+func extractProxyAddrs(nodes []config.Node) []netip.Addr {
+	seen := map[netip.Addr]struct{}{}
+	var addrs []netip.Addr
+	for _, node := range nodes {
+		for _, raw := range node.LB {
+			u, err := url.Parse(raw)
+			if err != nil {
+				continue
+			}
+			host := u.Hostname()
+			if host == "" {
+				continue
+			}
+			ip, err := netip.ParseAddr(host)
+			if err != nil {
+				// Hostname — try to resolve before TUN takes over routing.
+				ips, err := net.LookupHost(host)
+				if err != nil {
+					continue
+				}
+				for _, ipStr := range ips {
+					ip, err := netip.ParseAddr(ipStr)
+					if err != nil {
+						continue
+					}
+					if _, ok := seen[ip]; !ok {
+						seen[ip] = struct{}{}
+						addrs = append(addrs, ip)
+					}
+				}
+				continue
+			}
+			if _, ok := seen[ip]; !ok {
+				seen[ip] = struct{}{}
+				addrs = append(addrs, ip)
+			}
+		}
+	}
+	return addrs
 }
 
 type proxyMode uint

@@ -13,7 +13,7 @@ import (
 // reach the real interface instead of looping through the TUN device.
 const tunRouteTable = "100"
 
-func configureTUN(name string, addr netip.Prefix) error {
+func configureTUN(name string, addr netip.Prefix, bypassAddrs []netip.Addr) error {
 	// Assign IP address to TUN device and bring it up.
 	if err := exec.Command("ip", "addr", "add", addr.String(), "dev", name).Run(); err != nil {
 		return fmt.Errorf("set address: %w", err)
@@ -54,7 +54,7 @@ func configureTUN(name string, addr netip.Prefix) error {
 	return nil
 }
 
-func unconfigureTUN(name string) {
+func unconfigureTUN(name string, bypassAddrs []netip.Addr) {
 	// Remove split routes.
 	exec.Command("ip", "route", "del", "0.0.0.0/1", "dev", name).Run()
 	exec.Command("ip", "route", "del", "128.0.0.0/1", "dev", name).Run()

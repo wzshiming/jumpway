@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-func configureTUN(name string, addr netip.Prefix) error {
+func configureTUN(name string, addr netip.Prefix, bypassAddrs []netip.Addr) error {
 	ip := addr.Addr().String()
 	prefixLen := addr.Bits()
 	// Calculate a peer address for the point-to-point link.
@@ -29,6 +29,20 @@ func configureTUN(name string, addr netip.Prefix) error {
 		return fmt.Errorf("set address: %w", err)
 	}
 
+	// Add host routes for proxy server IPs via the original gateway so
+	// the proxy's own connections bypass the TUN split routes.
+	if len(bypassAddrs) > 0 {
+		origGW, err := defaultGatewayDarwin()
+		if err != nil {
+			return fmt.Errorf("get default gateway: %w", err)
+		}
+		for _, addr := range bypassAddrs {
+			if err := exec.Command("route", "add", "-host", addr.String(), origGW).Run(); err != nil {
+				return fmt.Errorf("add bypass route for %s: %w", addr, err)
+			}
+		}
+	}
+
 	// Split routes through the TUN device. These are more specific than
 	// the default 0.0.0.0/0 route so they capture all traffic.
 	if err := exec.Command("route", "add", "-net", "0.0.0.0/1", peerStr).Run(); err != nil {
@@ -41,10 +55,15 @@ func configureTUN(name string, addr netip.Prefix) error {
 	return nil
 }
 
-func unconfigureTUN(name string) {
+func unconfigureTUN(name string, bypassAddrs []netip.Addr) {
 	// Remove split routes.
 	exec.Command("route", "delete", "-net", "0.0.0.0/1").Run()
 	exec.Command("route", "delete", "-net", "128.0.0.0/1").Run()
+
+	// Remove bypass host routes.
+	for _, addr := range bypassAddrs {
+		exec.Command("route", "delete", "-host", addr.String()).Run()
+	}
 
 	exec.Command("ifconfig", name, "down").Run()
 }

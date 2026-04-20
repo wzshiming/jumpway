@@ -27,23 +27,30 @@ const (
 	tunNIC       = 1
 	tunMTU       = 1500
 	tunQueueSize = 1024
+	// tunOffset is the number of bytes reserved at the start of each buffer
+	// for platform-specific TUN headers. macOS utun needs 4 bytes (AF header),
+	// Linux with IFF_VNET_HDR needs 10 bytes (virtio_net_hdr). We use 16 to
+	// cover all platforms with room to spare.
+	tunOffset = 16
 )
 
 // TUNProxy manages a TUN-based global proxy that captures network traffic
 // through a TUN device and forwards it via the provided dialer.
 type TUNProxy struct {
-	dev    wgtun.Device
-	ep     *channel.Endpoint
-	stack  *stack.Stack
-	dialer bridge.Dialer
+	dev         wgtun.Device
+	ep          *channel.Endpoint
+	stack       *stack.Stack
+	dialer      bridge.Dialer
+	bypassAddrs []netip.Addr
 
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 }
 
 // RunTUNProxy creates a TUN device and forwards all TCP traffic through the dialer.
+// bypassAddrs are IP addresses that should bypass the TUN routing (e.g., proxy server IPs).
 // It returns a TUNProxy that can be stopped by calling Close().
-func RunTUNProxy(ctx context.Context, tunName string, tunAddr netip.Prefix, dialer bridge.Dialer) (*TUNProxy, error) {
+func RunTUNProxy(ctx context.Context, tunName string, tunAddr netip.Prefix, dialer bridge.Dialer, bypassAddrs []netip.Addr) (*TUNProxy, error) {
 	dev, err := wgtun.CreateTUN(tunName, tunMTU)
 	if err != nil {
 		return nil, fmt.Errorf("create TUN device: %w", err)
@@ -55,7 +62,7 @@ func RunTUNProxy(ctx context.Context, tunName string, tunAddr netip.Prefix, dial
 		return nil, fmt.Errorf("get TUN device name: %w", err)
 	}
 
-	err = configureTUN(name, tunAddr)
+	err = configureTUN(name, tunAddr, bypassAddrs)
 	if err != nil {
 		dev.Close()
 		return nil, fmt.Errorf("configure TUN device: %w", err)
@@ -104,11 +111,12 @@ func RunTUNProxy(ctx context.Context, tunName string, tunAddr netip.Prefix, dial
 
 	ctx, cancel := context.WithCancel(ctx)
 	tp := &TUNProxy{
-		dev:    dev,
-		ep:     ep,
-		stack:  s,
-		dialer: dialer,
-		cancel: cancel,
+		dev:         dev,
+		ep:          ep,
+		stack:       s,
+		dialer:      dialer,
+		bypassAddrs: bypassAddrs,
+		cancel:      cancel,
 	}
 
 	tcpForwarder := tcp.NewForwarder(s, 0, 65535, func(r *tcp.ForwarderRequest) {
@@ -142,7 +150,7 @@ func (tp *TUNProxy) Close() error {
 	tp.ep.Close()
 	tp.wg.Wait()
 	if name != "" {
-		unconfigureTUN(name)
+		unconfigureTUN(name, tp.bypassAddrs)
 	}
 	return nil
 }
@@ -155,7 +163,7 @@ func (tp *TUNProxy) tunToStack(ctx context.Context) {
 	bufs := make([][]byte, batchSize)
 	sizes := make([]int, batchSize)
 	for i := range bufs {
-		bufs[i] = make([]byte, tunMTU+header.EthernetMinimumSize)
+		bufs[i] = make([]byte, tunOffset+tunMTU+header.EthernetMinimumSize)
 	}
 
 	for {
@@ -165,7 +173,7 @@ func (tp *TUNProxy) tunToStack(ctx context.Context) {
 		default:
 		}
 
-		n, err := tp.dev.Read(bufs, sizes, 0)
+		n, err := tp.dev.Read(bufs, sizes, tunOffset)
 		if err != nil {
 			if ctx.Err() != nil {
 				return
@@ -177,7 +185,7 @@ func (tp *TUNProxy) tunToStack(ctx context.Context) {
 			if sizes[i] == 0 {
 				continue
 			}
-			pkt := bufs[i][:sizes[i]]
+			pkt := bufs[i][tunOffset : tunOffset+sizes[i]]
 			v := buffer.NewViewWithData(pkt)
 			tp.ep.InjectInbound(determineProtocol(pkt), stack.NewPacketBuffer(stack.PacketBufferOptions{
 				Payload: buffer.MakeWithView(v),
@@ -210,8 +218,13 @@ func (tp *TUNProxy) stackToTUN(ctx context.Context) {
 			continue
 		}
 
-		bufs := [][]byte{data}
-		if _, err := tp.dev.Write(bufs, 0); err != nil {
+		// Allocate a buffer with tunOffset bytes of headroom for
+		// platform-specific TUN headers (e.g., macOS AF header, Linux
+		// virtio_net_hdr). wireguard-go's Write expects this space.
+		buf := make([]byte, tunOffset+len(data))
+		copy(buf[tunOffset:], data)
+		bufs := [][]byte{buf}
+		if _, err := tp.dev.Write(bufs, tunOffset); err != nil {
 			if ctx.Err() != nil {
 				return
 			}
