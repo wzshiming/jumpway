@@ -28,6 +28,7 @@ type Config struct {
 	Contexts       []Context `yaml:"contexts"`
 	Proxy          Proxy     `yaml:"proxy"`
 	NoProxy        NoProxy   `yaml:"no_proxy"`
+	Tun            Tun       `yaml:"tun"`
 }
 
 func (c Config) GetWay() []config.Node {
@@ -53,6 +54,14 @@ type NoProxy struct {
 	List     []string `yaml:"list"`
 	FromEnv  []string `yaml:"from_env"`
 	FromFile []string `yaml:"from_file"`
+}
+
+type Tun struct {
+	Name         string `yaml:"name"`
+	MTU          uint32 `yaml:"mtu"`
+	Inet4Address string `yaml:"inet4_address"`
+	AutoRoute    bool   `yaml:"auto_route"`
+	Stack        string `yaml:"stack"`
 }
 
 func (n *NoProxy) GetList() []string {

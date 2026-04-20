@@ -38,6 +38,10 @@ func SystemProxy() string {
 	return fmt.Sprintf("System Proxy")
 }
 
+func GlobalProxy() string {
+	return fmt.Sprintf("Global Proxy")
+}
+
 func ProxyMode() string {
 	return fmt.Sprintf("Proxy Mode")
 }

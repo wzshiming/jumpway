@@ -15,6 +15,7 @@ A cross-platform proxy GUI client
 - [x] System Tray
     - [x] Power on
     - [x] System proxy
+    - [x] Global proxy ([sing-tun](https://github.com/SagerNet/sing-tun))
     - [x] Proxy export line to clipboard
         - [x] Shell
         - [x] Cmd
