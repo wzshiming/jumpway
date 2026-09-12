@@ -8,14 +8,14 @@ import (
 
 func (a *App) ItemDaemon(menu *systray.Menu) {
 	var item *systray.MenuItem
-	item = menu.AddCheckbox(i18n.Daemon(), daemon.DaemonIsRunning(), func() {
+	item = menu.AddCheckbox(i18n.Daemon(), daemon.IsRunning(), func() {
 		a.do(func() {
-			if daemon.DaemonIsRunning() {
+			if daemon.IsRunning() {
 				daemon.Remove()
 			} else {
 				daemon.Install()
 			}
-			item.SetChecked(daemon.DaemonIsRunning())
+			item.SetChecked(daemon.IsRunning())
 		})
 	})
 }

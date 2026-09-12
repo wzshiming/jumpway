@@ -50,8 +50,6 @@ func (a *App) ItemReloadConfig(menu *systray.Menu) {
 		}
 
 		a.Address = formatAddress(listener.Addr().String())
-
-		a.RawHost = host
 		a.UpdateStatus()
 		go func() {
 			dialer := jumpway.NewLogDialer(local.LOCAL, func(ctx context.Context, network, address string) {

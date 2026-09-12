@@ -35,8 +35,6 @@ func RunProxy(ctx context.Context, listener net.Listener, dialer bridge.Dialer) 
 		}
 		go host.ServeConn(conn)
 	}
-
-	return nil
 }
 
 var DefaultSize = 32 * 1024
@@ -52,7 +50,7 @@ func (b *bytesPool) Get() []byte {
 }
 
 func (b *bytesPool) Put(d []byte) {
-	if d == nil || len(d) < DefaultSize {
+	if cap(d) < DefaultSize {
 		return
 	}
 	b.Pool.Put(d)

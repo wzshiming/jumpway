@@ -14,7 +14,6 @@ import (
 
 type App struct {
 	Address      string
-	RawHost      string
 	Mode         string
 	Log          string
 	UpdateStatus func()
@@ -33,10 +32,14 @@ func NewApp() *App {
 
 func (a *App) Run() {
 	logdir := filepath.Join(config.GetConfigDir(), "logs")
-	os.MkdirAll(logdir, 0755)
+	err := os.MkdirAll(logdir, 0755)
+	if err != nil {
+		log.Error(err, i18n.RedirectLog())
+		return
+	}
 	logfile := filepath.Join(logdir, time.Now().Format("2006_01_02_15_04_05")+".log")
 	a.Log = logfile
-	err := log.Redirect(logfile)
+	err = log.Redirect(logfile)
 	if err != nil {
 		log.Error(err, i18n.RedirectLog())
 		return

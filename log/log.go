@@ -32,8 +32,12 @@ func Error(err error, msg string, keysAndValues ...interface{}) {
 	mut.RLock()
 	defer mut.RUnlock()
 
-	logger.Error(msg, append([]any{"err", err}, keysAndValues...))
-	e := sysnotify.Alert(jumpway.AppName+" "+msg, err.Error(), "")
+	logger.Error(msg, append([]any{"err", err}, keysAndValues...)...)
+	var detail string
+	if err != nil {
+		detail = err.Error()
+	}
+	e := sysnotify.Alert(jumpway.AppName+" "+msg, detail, "")
 	if e != nil {
 		logger.Error(i18n.Alert(msg), "err", e)
 	}

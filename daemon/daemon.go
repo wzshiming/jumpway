@@ -21,7 +21,7 @@ func init() {
 	globalDaemon = svc
 }
 
-func DaemonIsRunning() bool {
+func IsRunning() bool {
 	status, err := globalDaemon.Status()
 	if err != nil {
 		log.Info("daemon status", "status", err)

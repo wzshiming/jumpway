@@ -1,6 +1,6 @@
 #!/bin/sh
 
-mkdir -p release/JumpWay.app/Contents/{MacOS,Resources}
+mkdir -p release/JumpWay.app/Contents/MacOS release/JumpWay.app/Contents/Resources
 go build -o release/JumpWay.app/Contents/MacOS/JumpWay ./cmd/jumpway
 cp icon/icon_black.png release/JumpWay.app/Contents/Resources/JumpWay.icns
 ./tools/icns.sh

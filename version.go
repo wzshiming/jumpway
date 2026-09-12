@@ -1,6 +1,6 @@
 package jumpway
 
-var (
+const (
 	AppName        = "JumpWay"
 	AppDescription = AppName + " Service"
 )

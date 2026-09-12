@@ -2,7 +2,6 @@ package config
 
 import (
 	"bufio"
-	"crypto/tls"
 	_ "embed"
 	"fmt"
 	"io"
@@ -130,7 +129,9 @@ func InitConfig() error {
 	if err == nil && fi.Size() != 0 {
 		return nil
 	}
-	os.MkdirAll(filepath.Dir(configPath), 0755)
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		return err
+	}
 	return os.WriteFile(configPath, []byte(defaultConfig), 0644)
 }
 
@@ -159,8 +160,8 @@ func EditConfig() error {
 	return browser.OpenFile(configPath)
 }
 
-func getFile(filpath string) (io.ReadCloser, error) {
-	u, err := url.Parse(filpath)
+func getFile(filePath string) (io.ReadCloser, error) {
+	u, err := url.Parse(filePath)
 	if err != nil {
 		return nil, err
 	}
@@ -174,6 +175,10 @@ func getFile(filpath string) (io.ReadCloser, error) {
 		resp, err := httpCli.Do(req)
 		if err != nil {
 			return nil, err
+		}
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return nil, fmt.Errorf("unexpected status %s for %s", resp.Status, u.String())
 		}
 		return resp.Body, nil
 	case "file", "":
@@ -198,9 +203,6 @@ var httpCli *http.Client
 func init() {
 	httpCli = &http.Client{
 		Transport: httpcache.NewRoundTripper(&http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
-			},
 			DialContext: (&net.Dialer{
 				Timeout:   5 * time.Second,
 				KeepAlive: 5 * time.Second,

@@ -25,8 +25,7 @@ func Handler() http.Handler {
 	m.PathPrefix("/debug/pprof/").Handler(http.HandlerFunc(pprof.Index))
 	m.Handle("/swaggerui/openapi.json",
 		http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-			config := bytes.Replace(config, []byte(`"/"`), []byte(`"/apis/"`), -1)
-			http.ServeContent(rw, r, "openapi.json", time.Time{}, bytes.NewReader(config))
+			http.ServeContent(rw, r, "openapi.json", time.Time{}, bytes.NewReader(openapiJSON))
 		}))
 	m.PathPrefix("/swaggerui/").Handler(http.FileServer(http.FS(swaggerui.FS)))
 	apis := route.Router()
@@ -37,7 +36,7 @@ func Handler() http.Handler {
 }
 
 //go:embed openapi/openapi.json
-var config []byte
+var openapiJSON []byte
 
 //go:embed statics
 var fstmp embed.FS
@@ -45,6 +44,8 @@ var fstmp embed.FS
 var staticsFS fs.FS
 
 func init() {
+	// Rewrite the base path once so requests serve the prefixed spec directly.
+	openapiJSON = bytes.ReplaceAll(openapiJSON, []byte(`"/"`), []byte(`"/apis/"`))
 	f, err := fs.Sub(fstmp, "statics")
 	if err != nil {
 		os.Exit(2)
