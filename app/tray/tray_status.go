@@ -1,13 +1,14 @@
 package tray
 
 import (
-	"fyne.io/systray"
+	"github.com/gogpu/systray"
 	"github.com/wzshiming/jumpway/i18n"
 )
 
-func (a *App) ItemStatus(menu *systray.MenuItem) {
-	menu.Disable()
+func (a *App) ItemStatus(menu *systray.Menu) {
+	item := menu.Add("", nil)
+	item.SetDisabled(true)
 	a.UpdateStatus = func() {
-		menu.SetTitle(i18n.Status(a.Mode, a.Address))
+		item.SetLabel(i18n.Status(a.Mode, a.Address))
 	}
 }

@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"fyne.io/systray"
+	"github.com/gogpu/systray"
 	"github.com/wzshiming/jumpway/config"
 	"github.com/wzshiming/jumpway/i18n"
 	"github.com/wzshiming/jumpway/log"
@@ -18,10 +18,15 @@ type App struct {
 	Mode         string
 	Log          string
 	UpdateStatus func()
+
+	tray    *systray.SystemTray
+	actions chan func()
 }
 
 func NewApp() *App {
-	a := &App{}
+	a := &App{
+		actions: make(chan func()),
+	}
 	notify.On(os.Interrupt, a.Quit)
 	return a
 }
@@ -41,9 +46,32 @@ func (a *App) Run() {
 		log.Error(err, i18n.InitConfig())
 		return
 	}
-	systray.Run(a.onReady, a.onExit)
+
+	go func() {
+		for fn := range a.actions {
+			fn()
+		}
+	}()
+
+	a.tray = systray.New()
+	a.onReady()
+	err = a.tray.Run()
+	if err != nil {
+		log.Error(err, "Unable to run systray")
+	}
+	a.onExit()
 }
 
-func (App) Quit() {
-	systray.Quit()
+// do runs fn on a dedicated worker so menu callbacks neither block the UI
+// thread nor overlap with each other.
+func (a *App) do(fn func()) {
+	go func() {
+		a.actions <- fn
+	}()
+}
+
+func (a *App) Quit() {
+	if a.tray != nil {
+		a.tray.Remove()
+	}
 }

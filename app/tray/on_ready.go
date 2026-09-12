@@ -1,15 +1,9 @@
 package tray
 
 import (
-	"bytes"
-	"image/png"
-	"runtime"
-
-	"fyne.io/systray"
-	toicon "github.com/Kodeworks/golang-image-ico"
+	"github.com/gogpu/systray"
 	"github.com/wzshiming/jumpway/i18n"
 	"github.com/wzshiming/jumpway/icon"
-	"github.com/wzshiming/jumpway/log"
 	"github.com/wzshiming/systheme"
 )
 
@@ -24,64 +18,39 @@ func (a *App) onReady() {
 		ico = icon.Gray
 	}
 
-	if runtime.GOOS == "windows" {
-		buf := bytes.NewBuffer(nil)
-		img, err := png.Decode(bytes.NewReader(ico))
-		if err != nil {
-			log.Error(err, "Unable to decode icon")
-		} else {
-			err = toicon.Encode(buf, img)
-			if err != nil {
-				log.Error(err, "Unable to encode icon")
-			} else {
-				ico = buf.Bytes()
-				systray.SetTemplateIcon(ico, ico)
-			}
-		}
-	} else {
-		systray.SetTemplateIcon(ico, ico)
-	}
+	menu := systray.NewMenu()
 
-	systray.SetTitle("")
-	systray.SetTooltip("Jump Way")
+	a.ItemStatus(menu)
 
-	mStatus := systray.AddMenuItem("", "")
-	a.ItemStatus(mStatus)
+	menu.AddSeparator()
 
-	systray.AddSeparator()
+	a.ItemDaemon(menu)
 
-	mDaemon := systray.AddMenuItemCheckbox(i18n.Daemon(), "", false)
-	go a.ItemDaemon(mDaemon)
+	menu.AddSeparator()
 
-	systray.AddSeparator()
+	a.ItemProxyMode(menu)
+	a.ItemExportCommand(menu)
 
-	mManualMode := systray.AddMenuItemCheckbox(i18n.ManualProxy(), "", false)
-	mGlobalMode := systray.AddMenuItemCheckbox(i18n.SystemProxy(), "", false)
-	go a.ItemProxyMode(mGlobalMode, mManualMode)
+	menu.AddSeparator()
 
-	mExportCommand := systray.AddMenuItem(i18n.ExportCommand(), "")
-	go a.ItemExportCommand(mExportCommand)
-
-	systray.AddSeparator()
-
-	mConfig := systray.AddMenuItem(i18n.Config(), "")
+	mConfig := systray.NewMenu()
 	{
-		mEditConfig := mConfig.AddSubMenuItem(i18n.EditConfig(), "")
-		go a.ItemEditConfig(mEditConfig)
-		mReloadConfig := mConfig.AddSubMenuItem(i18n.ReloadConfig(), "")
-		go a.ItemReloadConfig(mReloadConfig)
-		mView := mConfig.AddSubMenuItem(i18n.ViewEditConfig(), "")
-		go a.ItemView(mView)
+		a.ItemEditConfig(mConfig)
+		a.ItemReloadConfig(mConfig)
+		a.ItemView(mConfig)
 	}
+	menu.AddSubmenu(i18n.Config(), mConfig)
 
-	systray.AddSeparator()
+	menu.AddSeparator()
 
-	mLog := systray.AddMenuItem(i18n.Log(), "")
-	go a.ItemLog(mLog)
+	a.ItemLog(menu)
+	a.ItemAbout(menu)
+	a.ItemQuit(menu)
 
-	mAbout := systray.AddMenuItem(i18n.About(), "")
-	go a.ItemAbout(mAbout)
-
-	mQuit := systray.AddMenuItem(i18n.Quit(), "")
-	go a.ItemQuit(mQuit)
+	a.tray.
+		SetIcon(ico).
+		SetTemplateIcon(ico).
+		SetTooltip("Jump Way").
+		SetMenu(menu).
+		Show()
 }

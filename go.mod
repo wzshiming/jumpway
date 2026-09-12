@@ -3,10 +3,9 @@ module github.com/wzshiming/jumpway
 go 1.25.0
 
 require (
-	fyne.io/systray v1.11.0
-	github.com/Kodeworks/golang-image-ico v0.0.0-20141118225523-73f0f4cfade9
 	github.com/Xuanwo/go-locale v1.1.0
 	github.com/atotto/clipboard v0.1.4
+	github.com/gogpu/systray v0.3.0
 	github.com/gorilla/handlers v1.5.2
 	github.com/gorilla/mux v1.8.1
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8
@@ -29,7 +28,8 @@ require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/aead/chacha20 v0.0.0-20180709150244-8b13a72661da // indirect
 	github.com/felixge/httpsnoop v1.0.3 // indirect
-	github.com/godbus/dbus/v5 v5.1.0 // indirect
+	github.com/go-webgpu/goffi v0.6.3 // indirect
+	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/kr/pretty v0.1.0 // indirect
 	github.com/wzshiming/commandproxy v0.2.0 // indirect
@@ -44,6 +44,6 @@ require (
 	golang.org/x/crypto v0.52.0 // indirect
 	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.45.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20180628173108-788fd7840127 // indirect
 )

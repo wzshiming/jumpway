@@ -1,26 +1,21 @@
 package tray
 
 import (
-	"fyne.io/systray"
+	"github.com/gogpu/systray"
 	"github.com/wzshiming/jumpway/daemon"
+	"github.com/wzshiming/jumpway/i18n"
 )
 
-func (a *App) ItemDaemon(menu *systray.MenuItem) {
-	check := func() {
-		if daemon.DaemonIsRunning() {
-			menu.Check()
-		} else {
-			menu.Uncheck()
-		}
-	}
-	check()
-
-	for range menu.ClickedCh {
-		if daemon.DaemonIsRunning() {
-			daemon.Remove()
-		} else {
-			daemon.Install()
-		}
-		check()
-	}
+func (a *App) ItemDaemon(menu *systray.Menu) {
+	var item *systray.MenuItem
+	item = menu.AddCheckbox(i18n.Daemon(), daemon.DaemonIsRunning(), func() {
+		a.do(func() {
+			if daemon.DaemonIsRunning() {
+				daemon.Remove()
+			} else {
+				daemon.Install()
+			}
+			item.SetChecked(daemon.DaemonIsRunning())
+		})
+	})
 }

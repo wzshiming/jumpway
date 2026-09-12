@@ -5,7 +5,7 @@ import (
 	"net"
 	"strconv"
 
-	"fyne.io/systray"
+	"github.com/gogpu/systray"
 	"github.com/wzshiming/bridge/chain"
 	"github.com/wzshiming/bridge/protocols/local"
 	"github.com/wzshiming/hostmatcher"
@@ -16,7 +16,7 @@ import (
 	"github.com/wzshiming/jumpway/utils"
 )
 
-func (a *App) ItemReloadConfig(menu *systray.MenuItem) {
+func (a *App) ItemReloadConfig(menu *systray.Menu) {
 	var cancel func()
 	var ctx context.Context
 	var listener net.Listener
@@ -80,11 +80,12 @@ func (a *App) ItemReloadConfig(menu *systray.MenuItem) {
 			}
 		}()
 	}
-	check()
 
-	for range menu.ClickedCh {
-		check()
-	}
+	menu.Add(i18n.ReloadConfig(), func() {
+		a.do(check)
+	})
+
+	a.do(check)
 }
 
 func formatAddress(address string) string {

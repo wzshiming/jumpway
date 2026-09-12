@@ -1,19 +1,19 @@
 package tray
 
 import (
-	"fyne.io/systray"
+	"github.com/gogpu/systray"
 	"github.com/wzshiming/jumpway/i18n"
 	"github.com/wzshiming/jumpway/log"
 	"github.com/wzshiming/sysproxy"
 )
 
-func (a *App) ItemProxyMode(global, manual *systray.MenuItem) {
-	var checked proxyMode
+func (a *App) ItemProxyMode(menu *systray.Menu) {
+	var global, manual *systray.MenuItem
 
 	check := func(checked proxyMode) {
 		if checked == systemMode {
-			global.Check()
-			manual.Uncheck()
+			global.SetChecked(true)
+			manual.SetChecked(false)
 			a.Mode = i18n.SystemProxy()
 			a.UpdateStatus()
 
@@ -28,8 +28,8 @@ func (a *App) ItemProxyMode(global, manual *systray.MenuItem) {
 				return
 			}
 		} else {
-			manual.Check()
-			global.Uncheck()
+			manual.SetChecked(true)
+			global.SetChecked(false)
 			a.Mode = i18n.ManualProxy()
 			a.UpdateStatus()
 
@@ -43,17 +43,22 @@ func (a *App) ItemProxyMode(global, manual *systray.MenuItem) {
 			}
 		}
 	}
-	check(checked)
-	for {
-		select {
-		case <-global.ClickedCh:
-			checked = systemMode
-		case <-manual.ClickedCh:
-			checked = manualMode
+
+	selectMode := func(checked proxyMode) func() {
+		return func() {
+			a.do(func() {
+				check(checked)
+				log.Info(i18n.ProxyMode(), "mode", checked)
+			})
 		}
-		check(checked)
-		log.Info(i18n.ProxyMode(), "mode", checked)
 	}
+
+	manual = menu.AddCheckbox(i18n.ManualProxy(), true, selectMode(manualMode))
+	global = menu.AddCheckbox(i18n.SystemProxy(), false, selectMode(systemMode))
+
+	a.do(func() {
+		check(manualMode)
+	})
 }
 
 type proxyMode uint

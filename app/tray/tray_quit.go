@@ -1,10 +1,10 @@
 package tray
 
 import (
-	"fyne.io/systray"
+	"github.com/gogpu/systray"
+	"github.com/wzshiming/jumpway/i18n"
 )
 
-func (a *App) ItemQuit(menu *systray.MenuItem) {
-	<-menu.ClickedCh
-	a.Quit()
+func (a *App) ItemQuit(menu *systray.Menu) {
+	menu.Add(i18n.Quit(), a.Quit)
 }
