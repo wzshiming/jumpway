@@ -185,7 +185,6 @@
    },
    "Node": {
     "required": [
-     "probe",
      "lb"
     ],
     "type": "object",
@@ -195,9 +194,6 @@
       "items": {
        "type": "string"
       }
-     },
-     "probe": {
-      "type": "string"
      }
     }
    },

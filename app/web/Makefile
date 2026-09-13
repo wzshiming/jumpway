@@ -1,16 +1,21 @@
 PACKAGES := github.com/wzshiming/jumpway/app/web/services/...
+# gotype v0.8.0 is pinned for generics in Go >=1.18 sources.
+GEN := $(abspath $(CURDIR)/../../tmp/gen)
 
 .PHONY: generate
 generate: route openapi
 
+$(GEN): $(wildcard ../../tools/gen/go.mod ../../tools/gen/go.sum ../../tools/gen/tools.go)
+	mkdir -p $(dir $(GEN)) && go -C ../../tools/gen build -o $(GEN) github.com/wzshiming/gen/cmd/gen
+
 .PHONY: client
-client:
-	mkdir -p client && gen client -o ./client/client_gen.go ${PACKAGES}
+client: $(GEN)
+	mkdir -p client && $(GEN) client -o ./client/client_gen.go $(PACKAGES)
 
 .PHONY: route
-route:
-	mkdir -p route && gen route -o ./route/route_gen.go ${PACKAGES}
+route: $(GEN)
+	mkdir -p route && $(GEN) route -o ./route/route_gen.go $(PACKAGES)
 
 .PHONY: openapi
-openapi:
-	mkdir -p openapi && gen openapi -o ./openapi/openapi.json ${PACKAGES}
+openapi: $(GEN)
+	mkdir -p openapi && $(GEN) openapi -o ./openapi/openapi.json $(PACKAGES)
