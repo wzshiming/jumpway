@@ -19,8 +19,8 @@ A cross-platform proxy GUI client
         - [x] Shell
         - [x] Cmd
         - [x] PowerShell
-- [ ] Configure the proxy with GUI
-    - [ ] Configure the multi-level proxy
+- [x] Configure the proxy with GUI (Web UI, see below)
+    - [x] Configure the multi-level proxy
     - [ ] Support to get SSH proxy configuration from `~/.ssh/config`
 - [x] Multi-level proxy [Bridge](https://github.com/wzshiming/bridge)
 - [x] Support multiple proxy protocols on a port [Any Proxy](https://github.com/wzshiming/anyproxy)
@@ -48,6 +48,16 @@ A cross-platform proxy GUI client
             - [x] chacha20
             - [x] chacha20-ietf
             - [x] salsa20
+
+## Configuration
+
+The configuration lives in `~/.jumpway/config.yaml`. Open the tray menu
+`Config` → `Web UI` (or browse to `http://127.0.0.1:1087/`, the proxy's own
+listen address) to edit it in the browser: the form covers the listen address,
+the contexts with their multi-level proxy hops and the no-proxy lists, and the
+`Advanced YAML` tab edits the file directly. `Save & Apply` validates the
+configuration, writes the file and reloads the proxy; when the listen port
+changes, the page links to the new address.
 
 ## Build
 

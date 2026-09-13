@@ -19,8 +19,8 @@
         - [x] Shell
         - [x] Cmd
         - [x] PowerShell
-- [ ] 图形界面配置代理
-    - [ ] 配置多级代理
+- [x] 图形界面配置代理（网页配置，见下文）
+    - [x] 配置多级代理
     - [ ] 支持从 `~/.ssh/config` 获取 SSH 代理
 - [x] 多级代理 [Bridge](https://github.com/wzshiming/bridge)
 - [x] 单端口支持多代理协议 [Any Proxy](https://github.com/wzshiming/anyproxy)
@@ -48,6 +48,14 @@
             - [x] chacha20
             - [x] chacha20-ietf
             - [x] salsa20
+
+## 配置
+
+配置文件位于 `~/.jumpway/config.yaml`。通过托盘菜单 `配置` → `网页配置`
+（或直接浏览器打开 `http://127.0.0.1:1087/`，即代理自身的监听地址）在浏览器中编辑：
+表单包含监听地址、上下文及其多级代理跳板节点、不走代理列表，`高级 YAML`
+标签页可直接编辑文件。`保存并应用` 会校验配置、写入文件并重载代理；
+修改监听端口后页面会给出新地址的链接。
 
 ## 构建
 
