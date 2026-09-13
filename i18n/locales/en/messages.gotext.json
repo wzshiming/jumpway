@@ -42,9 +42,9 @@
             "translation": "Reload Config"
         },
         {
-            "id": "View Edit Config",
-            "message": "View Edit Config",
-            "translation": "View Edit Config TODO"
+            "id": "Web UI",
+            "message": "Web UI",
+            "translation": "Web UI"
         },
         {
             "id": "Log",

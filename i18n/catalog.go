@@ -60,39 +60,38 @@ var messageKeyToIndex = map[string]int{
 	"Run Proxy":        15,
 	"System Proxy":     2,
 	"Use Proxy":        19,
-	"View Edit Config": 8,
+	"Web UI":           8,
 	"Write Clipboard":  14,
 }
 
 var enIndex = []uint32{ // 24 elements
 	0x00000000, 0x00000007, 0x00000014, 0x00000021,
 	0x0000002c, 0x0000004b, 0x00000052, 0x0000005e,
-	0x0000006c, 0x00000082, 0x00000086, 0x0000008c,
-	0x00000091, 0x0000009e, 0x000000aa, 0x000000ba,
-	0x000000c4, 0x000000c9, 0x000000d3, 0x000000db,
-	0x000000e5, 0x000000f2, 0x000000fe, 0x00000115,
+	0x0000006c, 0x00000073, 0x00000077, 0x0000007d,
+	0x00000082, 0x0000008f, 0x0000009b, 0x000000ab,
+	0x000000b5, 0x000000ba, 0x000000c4, 0x000000cc,
+	0x000000d6, 0x000000e3, 0x000000ef, 0x00000106,
 } // Size: 120 bytes
 
-const enData string = "" + // Size: 277 bytes
+const enData string = "" + // Size: 262 bytes
 	"\x02Daemon\x02Manual Proxy\x02System Proxy\x02Proxy Mode\x02Proxy Export" +
-	" Line To Clipboard\x02Config\x02Edit Config\x02Reload Config\x02View Edi" +
-	"t Config TODO\x02Log\x02About\x02Quit\x02Redirect Log\x02Init Config\x02" +
-	"Write Clipboard\x02Run Proxy\x02Args\x02Open File\x02Connect\x02Use Prox" +
-	"y\x02Listen %[1]s\x02Alert %[1]s\x02JumpWay %[1]s On %[2]s"
+	" Line To Clipboard\x02Config\x02Edit Config\x02Reload Config\x02Web UI" +
+	"\x02Log\x02About\x02Quit\x02Redirect Log\x02Init Config\x02Write Clipboa" +
+	"rd\x02Run Proxy\x02Args\x02Open File\x02Connect\x02Use Proxy\x02Listen %" +
+	"[1]s\x02Alert %[1]s\x02JumpWay %[1]s On %[2]s"
 
 var zhIndex = []uint32{ // 24 elements
 	0x00000000, 0x0000000d, 0x0000001a, 0x00000027,
 	0x00000034, 0x00000053, 0x0000005a, 0x00000067,
-	0x00000074, 0x00000091, 0x00000098, 0x0000009f,
-	0x000000a6, 0x000000b6, 0x000000cc, 0x000000df,
-	0x000000f5, 0x000000fc, 0x00000109, 0x00000110,
-	0x0000011d, 0x0000012a, 0x00000137, 0x0000014f,
+	0x00000074, 0x00000081, 0x00000088, 0x0000008f,
+	0x00000096, 0x000000a6, 0x000000bc, 0x000000cf,
+	0x000000e5, 0x000000ec, 0x000000f9, 0x00000100,
+	0x0000010d, 0x0000011a, 0x00000127, 0x0000013f,
 } // Size: 120 bytes
 
-const zhData string = "" + // Size: 335 bytes
+const zhData string = "" + // Size: 319 bytes
 	"\x02开机启动\x02手动代理\x02系统代理\x02代理模式\x02导出代理命令到剪切板\x02配置\x02编辑配置\x02重载配置\x02" +
-	"可视化编辑 开发中...\x02日志\x02关于\x02退出\x02重定向日志\x02初始化加载配置\x02导出到剪切板\x02启动代理服务" +
-	"器\x02参数\x02打开文件\x02连接\x02使用代理\x02监听 %[1]s\x02警告 %[1]s\x02JumpWay %[1]s" +
-	" 在 %[2]s"
+	"网页配置\x02日志\x02关于\x02退出\x02重定向日志\x02初始化加载配置\x02导出到剪切板\x02启动代理服务器\x02参数" +
+	"\x02打开文件\x02连接\x02使用代理\x02监听 %[1]s\x02警告 %[1]s\x02JumpWay %[1]s 在 %[2]s"
 
-	// Total table size 852 bytes (0KiB); checksum: 7F9B30FF
+	// Total table size 821 bytes (0KiB); checksum: 99165BC3

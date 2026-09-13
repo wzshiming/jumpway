@@ -58,8 +58,8 @@ func ReloadConfig() string {
 	return fmt.Sprintf("Reload Config")
 }
 
-func ViewEditConfig() string {
-	return fmt.Sprintf("View Edit Config")
+func WebUI() string {
+	return fmt.Sprintf("Web UI")
 }
 
 func Log() string {
