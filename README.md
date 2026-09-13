@@ -53,11 +53,18 @@ A cross-platform proxy GUI client
 
 The configuration lives in `~/.jumpway/config.yaml`. Open the tray menu
 `Config` → `Web UI` (or browse to `http://127.0.0.1:1087/`, the proxy's own
-listen address) to edit it in the browser: the form covers the listen address,
-the contexts with their multi-level proxy hops and the no-proxy lists, and the
-`Advanced YAML` tab edits the file directly. `Save & Apply` validates the
-configuration, writes the file and reloads the proxy; when the listen port
-changes, the page links to the new address.
+listen address) to manage it in the browser:
+
+- `Current`: pick the active context and switch to it
+- `Contexts`: one tab per context to rename it, edit its proxy hops and URLs
+  (with a URL builder), or delete it; `+` adds a context
+- `Listen address`: the host and port the proxy and this page listen on
+- `No proxy`: hosts, environment variables and files that bypass the proxy
+- `Advanced YAML`: edit the file directly
+
+Every save validates the change, writes the file and reloads the proxy; when
+the listen port changes, the page links to the new address. The same operations
+are available as a REST API under `/apis/configs/` (see `/swaggerui/`).
 
 ## Build
 
