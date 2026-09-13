@@ -60,6 +60,9 @@ func (a *App) ItemReloadConfig(menu *systray.Menu) {
 				log.Error(err, i18n.Connect(), "address", address)
 				return
 			}
+			dialer = jumpway.NewRetryDialer(dialer, jumpway.DefaultDialRetries, jumpway.DefaultDialBackoff, func(ctx context.Context, network, address string, attempt int, err error) {
+				log.Info(i18n.Connect(), "proxy", true, "address", address, "attempt", attempt, "err", err)
+			})
 			dialer = jumpway.NewLogDialer(dialer, func(ctx context.Context, network, address string) {
 				log.Info(i18n.Connect(), "proxy", true, "address", address)
 			})
