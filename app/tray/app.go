@@ -3,13 +3,15 @@ package tray
 import (
 	"context"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/gogpu/systray"
-	"github.com/wzshiming/jumpway/app/web/runtime"
+	"github.com/wzshiming/jumpway/app/web"
+	"github.com/wzshiming/jumpway/app/web/services/configs"
 	"github.com/wzshiming/jumpway/config"
 	"github.com/wzshiming/jumpway/i18n"
 	"github.com/wzshiming/jumpway/log"
@@ -26,24 +28,27 @@ type App struct {
 	actions  chan func()
 	cancel   context.CancelFunc
 	listener net.Listener
+	store    *config.Store
+	web      http.Handler
 
 	mu      sync.Mutex
 	running bool
 	lastErr error
 }
 
-var _ runtime.Runtime = (*App)(nil)
+var _ configs.Runtime = (*App)(nil)
 
-func NewApp() *App {
+func NewApp(store *config.Store) *App {
 	a := &App{
 		actions: make(chan func()),
+		store:   store,
 	}
 	notify.On(os.Interrupt, a.Quit)
 	return a
 }
 
 func (a *App) Run() {
-	logdir := filepath.Join(config.GetConfigDir(), "logs")
+	logdir := filepath.Join(a.store.Dir(), "logs")
 	err := os.MkdirAll(logdir, 0755)
 	if err != nil {
 		log.Error(err, i18n.RedirectLog())
@@ -56,7 +61,7 @@ func (a *App) Run() {
 		log.Error(err, i18n.RedirectLog())
 		return
 	}
-	err = config.InitConfig()
+	err = a.store.Init()
 	if err != nil {
 		log.Error(err, i18n.InitConfig())
 		return
@@ -68,7 +73,7 @@ func (a *App) Run() {
 		}
 	}()
 
-	runtime.Set(a)
+	a.web = web.NewHandler(configs.NewConfigsService(a.store, a))
 	a.tray = systray.New()
 	a.onReady()
 	err = a.tray.Run()
@@ -99,10 +104,10 @@ func (a *App) Reload() error {
 	return a.doSync(a.reload)
 }
 
-func (a *App) Status() runtime.Status {
+func (a *App) Status() configs.Status {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	status := runtime.Status{
+	status := configs.Status{
 		Address: a.Address,
 		Running: a.running,
 	}

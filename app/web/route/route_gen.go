@@ -10,7 +10,6 @@ import (
 	http "net/http"
 
 	mux "github.com/gorilla/mux"
-	githubComWzshimingJumpwayAppWebRuntime "github.com/wzshiming/jumpway/app/web/runtime"
 	githubComWzshimingJumpwayAppWebServicesConfigs "github.com/wzshiming/jumpway/app/web/services/configs"
 	githubComWzshimingJumpwayConfig "github.com/wzshiming/jumpway/config"
 )
@@ -196,7 +195,7 @@ func _operationPutConfigs(s *githubComWzshimingJumpwayAppWebServicesConfigs.Conf
 // _operationGetConfigsStatus Is the route of Status
 func _operationGetConfigsStatus(s *githubComWzshimingJumpwayAppWebServicesConfigs.ConfigsService, w http.ResponseWriter, r *http.Request) {
 	// responses github.com/wzshiming/jumpway/app/web/services/configs ConfigsService.Status.status
-	var _status *githubComWzshimingJumpwayAppWebRuntime.Status
+	var _status *githubComWzshimingJumpwayAppWebServicesConfigs.Status
 	// responses github.com/wzshiming/jumpway/app/web/services/configs ConfigsService.Status.err
 	var _err error
 

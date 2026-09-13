@@ -10,7 +10,6 @@ import (
 	"github.com/wzshiming/bridge/protocols/local"
 	"github.com/wzshiming/hostmatcher"
 	"github.com/wzshiming/jumpway"
-	"github.com/wzshiming/jumpway/config"
 	"github.com/wzshiming/jumpway/i18n"
 	"github.com/wzshiming/jumpway/log"
 	"github.com/wzshiming/jumpway/utils"
@@ -31,7 +30,7 @@ func (a *App) reload() error {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	a.cancel = cancel
-	conf, err := config.LoadConfig()
+	conf, err := a.store.Load()
 	if err != nil {
 		log.Error(err, i18n.ReloadConfig())
 		a.mu.Lock()
@@ -86,7 +85,7 @@ func (a *App) reload() error {
 			log.Info(i18n.Connect(), "proxy", true, "address", address)
 		})
 
-		if noProxy := conf.NoProxy.GetList(); len(noProxy) != 0 {
+		if noProxy := conf.NoProxy.GetList(a.store.Dir()); len(noProxy) != 0 {
 			matcher := hostmatcher.NewMatcher(noProxy)
 			subDialer := jumpway.NewLogDialer(local.LOCAL, func(ctx context.Context, network, address string) {
 				log.Info(i18n.Connect(), "proxy", false, "address", address)
@@ -94,7 +93,7 @@ func (a *App) reload() error {
 			dialer = chain.NewShuntDialer(dialer, subDialer, matcher)
 		}
 
-		err = jumpway.RunProxy(ctx, listener, dialer)
+		err = jumpway.RunProxy(ctx, listener, dialer, a.web)
 		if err != nil && !utils.IsClosedConnError(err) {
 			log.Error(err, i18n.RunProxy())
 			if ctx.Err() == nil {

@@ -3,9 +3,14 @@ package config
 import (
 	"bytes"
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -190,60 +195,153 @@ func TestValidate(t *testing.T) {
 	}
 }
 
-func setTestConfigDir(t *testing.T) {
-	t.Helper()
-	originalHome, originalDir, originalPath := homeDir, configDir, configPath
-	homeDir = t.TempDir()
-	configDir = filepath.Join(homeDir, ".jumpway")
-	configPath = filepath.Join(configDir, "config.yaml")
-	t.Cleanup(func() {
-		homeDir, configDir, configPath = originalHome, originalDir, originalPath
-	})
+func TestDefaultDir(t *testing.T) {
+	homeEnv := "HOME"
+	if runtime.GOOS == "windows" {
+		homeEnv = "USERPROFILE"
+	}
+	home := t.TempDir()
+	t.Setenv(homeEnv, home)
+	dir, err := DefaultDir()
+	if want := filepath.Join(home, ".jumpway"); err != nil || dir != want {
+		t.Fatalf("DefaultDir() = %q, %v; want %q, nil", dir, err, want)
+	}
+	t.Setenv(homeEnv, "")
+	if _, err := DefaultDir(); err == nil {
+		t.Fatal("DefaultDir() succeeded without a home directory")
+	}
 }
 
-func TestSetConfigDir(t *testing.T) {
-	setTestConfigDir(t)
+func TestStoreIsolation(t *testing.T) {
 	dir := t.TempDir()
-	SetConfigDir(dir)
-	if got := GetConfigDir(); got != dir {
-		t.Fatalf("GetConfigDir() = %q, want %q", got, dir)
+	store := NewStore(dir)
+	other := NewStore(t.TempDir())
+	if got := store.Dir(); got != dir {
+		t.Fatalf("Dir() = %q, want %q", got, dir)
+	}
+	if got, want := store.Path(), filepath.Join(dir, "config.yaml"); got != want {
+		t.Fatalf("Path() = %q, want %q", got, want)
 	}
 	const content = "proxy:\n  port: 1088\n"
-	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(content), 0o644); err != nil {
+	if err := store.SaveRaw([]byte(content)); err != nil {
 		t.Fatal(err)
 	}
-	data, err := LoadRawConfig()
-	if err != nil {
+	const otherContent = "proxy:\n  port: 1089\n"
+	if err := other.SaveRaw([]byte(otherContent)); err != nil {
 		t.Fatal(err)
 	}
-	if string(data) != content {
-		t.Fatalf("LoadRawConfig() = %q, want %q", data, content)
+	for candidate, want := range map[*Store]string{store: content, other: otherContent} {
+		data, err := candidate.LoadRaw()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(data) != want {
+			t.Fatalf("LoadRaw() = %q, want %q", data, want)
+		}
 	}
 }
 
-func TestSaveRawConfigAtomic(t *testing.T) {
-	t.Run("replace", func(t *testing.T) {
-		setTestConfigDir(t)
-		for _, content := range []string{"# first\nproxy:\n  port: 1080\n", "# latest\nproxy:\n  port: 0\n"} {
-			if err := SaveRawConfig([]byte(content)); err != nil {
+func TestStoreInit(t *testing.T) {
+	for _, name := range []string{"missing", "empty", "existing"} {
+		t.Run(name, func(t *testing.T) {
+			store := NewStore(filepath.Join(t.TempDir(), ".jumpway"))
+			want := defaultConfig
+			if name != "missing" {
+				content := ""
+				if name == "existing" {
+					content = "# keep this\nproxy:\n  port: 1088\n"
+					want = content
+				}
+				if err := store.SaveRaw([]byte(content)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := store.Init(); err != nil {
 				t.Fatal(err)
 			}
-			data, err := LoadRawConfig()
+			data, err := store.LoadRaw()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(data) != want {
+				t.Fatalf("LoadRaw() after Init() = %q, want %q", data, want)
+			}
+		})
+	}
+}
+
+func TestNoProxyGetListFromFiles(t *testing.T) {
+	home := t.TempDir()
+	homeEnv := "HOME"
+	if runtime.GOOS == "windows" {
+		homeEnv = "USERPROFILE"
+	}
+	t.Setenv(homeEnv, home)
+	if err := os.WriteFile(filepath.Join(home, "no_proxy.txt"), []byte("home.example\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, hostname := range []string{"first.example", "second.example"} {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "no_proxy.txt"), []byte(hostname+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		noProxy := NoProxy{FromFile: []string{"./no_proxy.txt", "~/no_proxy.txt"}}
+		want := []string{"home.example", hostname}
+		slices.Sort(want)
+		if got := noProxy.GetList(dir); !reflect.DeepEqual(got, want) {
+			t.Fatalf("GetList(%q) = %v, want %v", dir, got, want)
+		}
+	}
+}
+
+func TestNoProxyHTTPCacheIsolation(t *testing.T) {
+	var requests int
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		requests++
+		io.WriteString(writer, "cached.example\n")
+	}))
+	t.Cleanup(server.Close)
+	noProxy := NoProxy{FromFile: []string{server.URL + "/no_proxy.txt"}}
+	dirs := []string{t.TempDir(), t.TempDir()}
+	for _, dir := range dirs {
+		if got := noProxy.GetList(dir); !slices.Equal(got, []string{"cached.example"}) {
+			t.Fatalf("GetList(%q) = %v, want [cached.example]", dir, got)
+		}
+	}
+	server.Close()
+	if requests != len(dirs) {
+		t.Fatalf("HTTP requests = %d, want %d independent cache fills", requests, len(dirs))
+	}
+	for _, dir := range dirs {
+		if got := noProxy.GetList(dir); !slices.Equal(got, []string{"cached.example"}) {
+			t.Fatalf("cached GetList(%q) = %v, want [cached.example]", dir, got)
+		}
+	}
+}
+
+func TestStoreSaveRawAtomic(t *testing.T) {
+	t.Run("replace", func(t *testing.T) {
+		store := NewStore(t.TempDir())
+		for _, content := range []string{"# first\nproxy:\n  port: 1080\n", "# latest\nproxy:\n  port: 0\n"} {
+			if err := store.SaveRaw([]byte(content)); err != nil {
+				t.Fatal(err)
+			}
+			data, err := store.LoadRaw()
 			if err != nil {
 				t.Fatal(err)
 			}
 			if string(data) != content {
-				t.Fatalf("LoadRawConfig() = %q, want %q", data, content)
+				t.Fatalf("LoadRaw() = %q, want %q", data, content)
 			}
 		}
-		entries, err := os.ReadDir(configDir)
+		entries, err := os.ReadDir(store.Dir())
 		if err != nil {
 			t.Fatal(err)
 		}
 		if len(entries) != 1 || entries[0].Name() != "config.yaml" {
 			t.Fatalf("unexpected config directory entries: %v", entries)
 		}
-		info, err := os.Stat(configPath)
+		info, err := os.Stat(store.Path())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -252,13 +350,13 @@ func TestSaveRawConfigAtomic(t *testing.T) {
 		}
 	})
 	t.Run("concurrent", func(t *testing.T) {
-		setTestConfigDir(t)
+		store := NewStore(t.TempDir())
 		const saveCount = 16
 		contents := make([][]byte, saveCount)
 		for index := range contents {
 			contents[index] = bytes.Repeat([]byte{byte('a' + index)}, 64*1024)
 		}
-		if err := SaveRawConfig(contents[0]); err != nil {
+		if err := store.SaveRaw(contents[0]); err != nil {
 			t.Fatal(err)
 		}
 		start := make(chan struct{})
@@ -268,16 +366,16 @@ func TestSaveRawConfigAtomic(t *testing.T) {
 			go func() {
 				defer saves.Done()
 				<-start
-				if err := SaveRawConfig(content); err != nil {
-					t.Errorf("concurrent SaveRawConfig() failed: %v", err)
+				if err := store.SaveRaw(content); err != nil {
+					t.Errorf("concurrent SaveRaw() failed: %v", err)
 				}
 			}()
 		}
 		close(start)
 		for range saveCount {
-			data, err := LoadRawConfig()
+			data, err := store.LoadRaw()
 			if err != nil {
-				t.Errorf("concurrent LoadRawConfig() failed: %v", err)
+				t.Errorf("concurrent LoadRaw() failed: %v", err)
 				continue
 			}
 			matched := false
@@ -292,7 +390,7 @@ func TestSaveRawConfigAtomic(t *testing.T) {
 			}
 		}
 		saves.Wait()
-		entries, err := os.ReadDir(configDir)
+		entries, err := os.ReadDir(store.Dir())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -301,14 +399,14 @@ func TestSaveRawConfigAtomic(t *testing.T) {
 		}
 	})
 	t.Run("rename_failure", func(t *testing.T) {
-		setTestConfigDir(t)
-		if err := os.MkdirAll(configPath, 0o755); err != nil {
+		store := NewStore(t.TempDir())
+		if err := os.MkdirAll(store.Path(), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := SaveRawConfig([]byte("replacement")); err == nil {
-			t.Fatal("SaveRawConfig() succeeded with a directory as the destination")
+		if err := store.SaveRaw([]byte("replacement")); err == nil {
+			t.Fatal("SaveRaw() succeeded with a directory as the destination")
 		}
-		entries, err := os.ReadDir(configDir)
+		entries, err := os.ReadDir(store.Dir())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -318,8 +416,8 @@ func TestSaveRawConfigAtomic(t *testing.T) {
 	})
 }
 
-func TestSaveConfigRoundTrip(t *testing.T) {
-	setTestConfigDir(t)
+func TestStoreSaveRoundTrip(t *testing.T) {
+	store := NewStore(t.TempDir())
 	want := &Config{
 		CurrentContext: "a",
 		Contexts: []Context{{Name: "a", Way: []bridgeconfig.Node{
@@ -333,20 +431,20 @@ func TestSaveConfigRoundTrip(t *testing.T) {
 			FromFile: []string{"./no_proxy.txt"},
 		},
 	}
-	if err := SaveConfig(want); err != nil {
+	if err := store.Save(want); err != nil {
 		t.Fatal(err)
 	}
-	got, err := LoadConfig()
+	got, err := store.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("LoadConfig() = %#v, want %#v", got, want)
+		t.Fatalf("Load() = %#v, want %#v", got, want)
 	}
 	if !reflect.DeepEqual(got.Contexts[0].Way[0].LB, want.Contexts[0].Way[0].LB) {
 		t.Fatalf("single-node LB = %v, want %v", got.Contexts[0].Way[0].LB, want.Contexts[0].Way[0].LB)
 	}
-	data, err := LoadRawConfig()
+	data, err := store.LoadRaw()
 	if err != nil {
 		t.Fatal(err)
 	}

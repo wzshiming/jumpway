@@ -13,10 +13,11 @@ import (
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	"github.com/wzshiming/jumpway/app/web/route"
+	"github.com/wzshiming/jumpway/app/web/services/configs"
 	"github.com/wzshiming/openapiui/v2/swaggerui"
 )
 
-func Handler() http.Handler {
+func NewHandler(svc *configs.ConfigsService) http.Handler {
 	m := mux.NewRouter()
 	m.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
 	m.HandleFunc("/debug/pprof/profile", pprof.Profile)
@@ -28,7 +29,8 @@ func Handler() http.Handler {
 			http.ServeContent(rw, r, "openapi.json", time.Time{}, bytes.NewReader(openapiJSON))
 		}))
 	m.PathPrefix("/swaggerui/").Handler(http.FileServer(http.FS(swaggerui.FS)))
-	apis := route.Router()
+	// The generated Router builds a zero-value service; register the injected instance here.
+	var apis http.Handler = route.RouteConfigsService(mux.NewRouter(), svc)
 	apis = handlers.CombinedLoggingHandler(os.Stdout, apis)
 	m.PathPrefix("/apis/").Handler(http.StripPrefix("/apis", http.MaxBytesHandler(apis, 1<<20)))
 	m.PathPrefix("/").Handler(http.FileServer(http.FS(staticsFS)))

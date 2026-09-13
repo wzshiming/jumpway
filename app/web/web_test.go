@@ -6,11 +6,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/wzshiming/jumpway/app/web/runtime"
+	"github.com/wzshiming/jumpway/app/web/services/configs"
 	"github.com/wzshiming/jumpway/config"
 )
 
@@ -29,7 +28,7 @@ proxy:
 type fakeRuntime struct {
 	reloads int
 	err     error
-	status  runtime.Status
+	status  configs.Status
 }
 
 func (fake *fakeRuntime) Reload() error {
@@ -37,23 +36,18 @@ func (fake *fakeRuntime) Reload() error {
 	return fake.err
 }
 
-func (fake *fakeRuntime) Status() runtime.Status {
+func (fake *fakeRuntime) Status() configs.Status {
 	return fake.status
 }
 
-func setupConfigAPI(t *testing.T) (http.Handler, *fakeRuntime) {
+func setupConfigAPI(t *testing.T) (http.Handler, *fakeRuntime, *config.Store) {
 	t.Helper()
-	originalDir := config.GetConfigDir()
-	config.SetConfigDir(t.TempDir())
-	t.Cleanup(func() { config.SetConfigDir(originalDir) })
-	originalRuntime := runtime.Get()
+	store := config.NewStore(t.TempDir())
 	fake := &fakeRuntime{}
-	runtime.Set(fake)
-	t.Cleanup(func() { runtime.Set(originalRuntime) })
-	if err := os.WriteFile(filepath.Join(config.GetConfigDir(), "config.yaml"), []byte(testConfigYAML), 0o644); err != nil {
+	if err := os.WriteFile(store.Path(), []byte(testConfigYAML), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return Handler(), fake
+	return NewHandler(configs.NewConfigsService(store, fake)), fake, store
 }
 
 func requestAPI(t *testing.T, handler http.Handler, method, target, body string, wantStatus int) *httptest.ResponseRecorder {
@@ -70,9 +64,9 @@ func requestAPI(t *testing.T, handler http.Handler, method, target, body string,
 	return response
 }
 
-func assertConfigYAML(t *testing.T, want string) {
+func assertConfigYAML(t *testing.T, store *config.Store, want string) {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(config.GetConfigDir(), "config.yaml"))
+	data, err := os.ReadFile(store.Path())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +76,7 @@ func assertConfigYAML(t *testing.T, want string) {
 }
 
 func TestGetConfig(t *testing.T) {
-	handler, _ := setupConfigAPI(t)
+	handler, _, _ := setupConfigAPI(t)
 	response := requestAPI(t, handler, http.MethodGet, "/apis/configs", "", http.StatusOK)
 	var conf map[string]any
 	if err := json.Unmarshal(response.Body.Bytes(), &conf); err != nil {
@@ -139,7 +133,7 @@ func TestUpdateConfig(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			handler, fake := setupConfigAPI(t)
+			handler, fake, store := setupConfigAPI(t)
 			fake.err = test.reloadError
 			body := test.body
 			if body == "" {
@@ -166,7 +160,7 @@ func TestUpdateConfig(t *testing.T) {
 			if fake.reloads != test.wantReloads {
 				t.Fatalf("reloads = %d, want %d", fake.reloads, test.wantReloads)
 			}
-			conf, err := config.LoadConfig()
+			conf, err := store.Load()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -174,14 +168,14 @@ func TestUpdateConfig(t *testing.T) {
 				t.Fatalf("saved proxy.port = %d, want %d", conf.Proxy.Port, test.wantPort)
 			}
 			if test.wantReloads == 0 {
-				assertConfigYAML(t, testConfigYAML)
+				assertConfigYAML(t, store, testConfigYAML)
 			}
 		})
 	}
 }
 
 func TestUpdateConfigBodyTooLarge(t *testing.T) {
-	handler, fake := setupConfigAPI(t)
+	handler, fake, store := setupConfigAPI(t)
 	body := `{"proxy":{"port":1088}}`
 	body += strings.Repeat(" ", (2<<20)-len(body))
 	request := httptest.NewRequest(http.MethodPut, "/apis/configs", strings.NewReader(body))
@@ -194,11 +188,11 @@ func TestUpdateConfigBodyTooLarge(t *testing.T) {
 	if fake.reloads != 0 {
 		t.Errorf("reloads = %d, want 0", fake.reloads)
 	}
-	assertConfigYAML(t, testConfigYAML)
+	assertConfigYAML(t, store, testConfigYAML)
 }
 
 func TestRawConfig(t *testing.T) {
-	handler, fake := setupConfigAPI(t)
+	handler, fake, store := setupConfigAPI(t)
 	response := requestAPI(t, handler, http.MethodGet, "/apis/configs/raw", "", http.StatusOK)
 	var raw struct {
 		YAML string `json:"yaml"`
@@ -218,7 +212,7 @@ func TestRawConfig(t *testing.T) {
 	if fake.reloads != 1 {
 		t.Fatalf("reloads = %d, want 1", fake.reloads)
 	}
-	assertConfigYAML(t, raw.YAML)
+	assertConfigYAML(t, store, raw.YAML)
 }
 
 func TestUpdateRawConfigInvalid(t *testing.T) {
@@ -234,7 +228,7 @@ func TestUpdateRawConfigInvalid(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			handler, fake := setupConfigAPI(t)
+			handler, fake, store := setupConfigAPI(t)
 			response := requestAPI(t, handler, http.MethodPut, "/apis/configs/raw", test.body, http.StatusBadRequest)
 			if !strings.Contains(response.Body.String(), test.wantError) {
 				t.Fatalf("body = %q, want error containing %q", response.Body.String(), test.wantError)
@@ -242,7 +236,7 @@ func TestUpdateRawConfigInvalid(t *testing.T) {
 			if fake.reloads != 0 {
 				t.Fatalf("reloads = %d, want 0", fake.reloads)
 			}
-			assertConfigYAML(t, testConfigYAML)
+			assertConfigYAML(t, store, testConfigYAML)
 		})
 	}
 }
@@ -250,8 +244,8 @@ func TestUpdateRawConfigInvalid(t *testing.T) {
 func TestConfigStatus(t *testing.T) {
 	for _, errorMessage := range []string{"boom", ""} {
 		t.Run("error="+errorMessage, func(t *testing.T) {
-			handler, fake := setupConfigAPI(t)
-			fake.status = runtime.Status{Address: "127.0.0.1:1088", Running: true, Error: errorMessage}
+			handler, fake, _ := setupConfigAPI(t)
+			fake.status = configs.Status{Address: "127.0.0.1:1088", Running: true, Error: errorMessage}
 			response := requestAPI(t, handler, http.MethodGet, "/apis/configs/status", "", http.StatusOK)
 			var status map[string]any
 			if err := json.Unmarshal(response.Body.Bytes(), &status); err != nil {
@@ -273,6 +267,35 @@ func TestConfigStatus(t *testing.T) {
 }
 
 func TestUnknownAPIRoute(t *testing.T) {
-	handler, _ := setupConfigAPI(t)
+	handler, _, _ := setupConfigAPI(t)
 	requestAPI(t, handler, http.MethodGet, "/apis/nope", "", http.StatusNotFound)
+}
+
+func TestConfigAPIIsolation(t *testing.T) {
+	handler, fake, store := setupConfigAPI(t)
+	otherHandler, otherFake, otherStore := setupConfigAPI(t)
+	fake.status = configs.Status{Address: "127.0.0.1:1088", Running: true}
+	otherFake.status = configs.Status{Address: "127.0.0.1:1089", Error: "not running"}
+	requestAPI(t, handler, http.MethodPut, "/apis/configs", `{"proxy":{"port":1088}}`, http.StatusOK)
+	if fake.reloads != 1 || otherFake.reloads != 0 {
+		t.Fatalf("reloads = %d, %d; want 1, 0", fake.reloads, otherFake.reloads)
+	}
+	conf, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conf.Proxy.Port != 1088 {
+		t.Fatalf("saved proxy.port = %d, want 1088", conf.Proxy.Port)
+	}
+	assertConfigYAML(t, otherStore, testConfigYAML)
+	for candidate, want := range map[http.Handler]configs.Status{handler: fake.status, otherHandler: otherFake.status} {
+		response := requestAPI(t, candidate, http.MethodGet, "/apis/configs/status", "", http.StatusOK)
+		var got configs.Status
+		if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Fatalf("status = %#v, want %#v", got, want)
+		}
+	}
 }

@@ -4,19 +4,33 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/wzshiming/jumpway/app/web/runtime"
 	"github.com/wzshiming/jumpway/config"
 	"gopkg.in/yaml.v3"
 )
 
+// Status is what the web UI shows about the running proxy.
+type Status struct {
+	Address string `json:"address"`
+	Running bool   `json:"running"`
+	Error   string `json:"error,omitempty"`
+}
+
+// Runtime is the running proxy the service reloads and inspects.
+type Runtime interface {
+	Reload() error
+	Status() Status
+}
+
 // ConfigsService
 // #path:"/configs/"#
 type ConfigsService struct {
+	store   *config.Store
+	runtime Runtime
 }
 
 // NewConfigsService Create a new ConfigsService
-func NewConfigsService() (*ConfigsService, error) {
-	return &ConfigsService{}, nil
+func NewConfigsService(store *config.Store, runtime Runtime) *ConfigsService {
+	return &ConfigsService{store: store, runtime: runtime}
 }
 
 // Update the Config
@@ -25,16 +39,16 @@ func (s *ConfigsService) Update(conf *config.Config) (err error) {
 	if err := config.Validate(conf); err != nil {
 		return err
 	}
-	if err := config.SaveConfig(conf); err != nil {
+	if err := s.store.Save(conf); err != nil {
 		return err
 	}
-	return runtime.Get().Reload()
+	return s.runtime.Reload()
 }
 
 // Get the Config
 // #route:"GET /"#
 func (s *ConfigsService) Get() (conf *config.Config, err error) {
-	return config.LoadConfig()
+	return s.store.Load()
 }
 
 // RawConfig carries config.yaml verbatim.
@@ -45,7 +59,7 @@ type RawConfig struct {
 // GetRaw the config.yaml text
 // #route:"GET /raw"#
 func (s *ConfigsService) GetRaw() (raw *RawConfig, err error) {
-	data, err := config.LoadRawConfig()
+	data, err := s.store.LoadRaw()
 	if err != nil {
 		return nil, err
 	}
@@ -66,15 +80,15 @@ func (s *ConfigsService) UpdateRaw(raw *RawConfig) (err error) {
 	if err := config.Validate(&conf); err != nil {
 		return err
 	}
-	if err := config.SaveRawConfig(data); err != nil {
+	if err := s.store.SaveRaw(data); err != nil {
 		return err
 	}
-	return runtime.Get().Reload()
+	return s.runtime.Reload()
 }
 
 // Status of the running proxy
 // #route:"GET /status"#
-func (s *ConfigsService) Status() (status *runtime.Status, err error) {
-	st := runtime.Get().Status()
+func (s *ConfigsService) Status() (status *Status, err error) {
+	st := s.runtime.Status()
 	return &st, nil
 }
