@@ -17,76 +17,90 @@ import (
 )
 
 func (a *App) ItemReloadConfig(menu *systray.Menu) {
-	var cancel func()
-	var ctx context.Context
-	var listener net.Listener
-
-	check := func() {
-		log.Info(i18n.ReloadConfig())
-		if cancel != nil {
-			cancel()
-		}
-		ctx, cancel = context.WithCancel(context.Background())
-		conf, err := config.LoadConfig()
-		if err != nil {
-			log.Error(err, i18n.ReloadConfig())
-			return
-		}
-		port := conf.Proxy.Port
-		host := conf.Proxy.Host
-		if host == "" {
-			host = "127.0.0.1"
-		}
-
-		if listener != nil {
-			listener.Close()
-		}
-
-		address := net.JoinHostPort(host, strconv.FormatUint(uint64(port), 10))
-		listener, err = local.LOCAL.Listen(ctx, "tcp", address)
-		if err != nil {
-			log.Error(err, i18n.Listen(address))
-			return
-		}
-
-		a.Address = formatAddress(listener.Addr().String())
-		a.UpdateStatus()
-		go func() {
-			dialer := jumpway.NewLogDialer(local.LOCAL, func(ctx context.Context, network, address string) {
-				log.Info(i18n.UseProxy(), "address", address)
-			})
-			dialer, err := chain.Default.BridgeChainWithConfig(ctx, dialer, conf.GetWay()...)
-			if err != nil {
-				log.Error(err, i18n.Connect(), "address", address)
-				return
-			}
-			dialer = jumpway.NewRetryDialer(dialer, jumpway.DefaultDialRetries, jumpway.DefaultDialBackoff, func(ctx context.Context, network, address string, attempt int, err error) {
-				log.Info(i18n.Connect(), "proxy", true, "address", address, "attempt", attempt, "err", err)
-			})
-			dialer = jumpway.NewLogDialer(dialer, func(ctx context.Context, network, address string) {
-				log.Info(i18n.Connect(), "proxy", true, "address", address)
-			})
-
-			if noProxy := conf.NoProxy.GetList(); len(noProxy) != 0 {
-				matcher := hostmatcher.NewMatcher(noProxy)
-				subDialer := jumpway.NewLogDialer(local.LOCAL, func(ctx context.Context, network, address string) {
-					log.Info(i18n.Connect(), "proxy", false, "address", address)
-				})
-				dialer = chain.NewShuntDialer(dialer, subDialer, matcher)
-			}
-
-			err = jumpway.RunProxy(ctx, listener, dialer)
-			if err != nil && !utils.IsClosedConnError(err) {
-				log.Error(err, i18n.RunProxy())
-			}
-		}()
-	}
-
 	menu.Add(i18n.ReloadConfig(), func() {
-		a.do(check)
+		a.do(func() { _ = a.reload() })
 	})
 
-	a.do(check)
+	a.do(func() { _ = a.reload() })
+}
+
+func (a *App) reload() error {
+	log.Info(i18n.ReloadConfig())
+	if a.cancel != nil {
+		a.cancel()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	a.cancel = cancel
+	conf, err := config.LoadConfig()
+	if err != nil {
+		log.Error(err, i18n.ReloadConfig())
+		a.mu.Lock()
+		a.running, a.lastErr = false, err
+		a.mu.Unlock()
+		return err
+	}
+	port := conf.Proxy.Port
+	host := conf.Proxy.Host
+	if host == "" {
+		host = "127.0.0.1"
+	}
+
+	if a.listener != nil {
+		a.listener.Close()
+	}
+
+	address := net.JoinHostPort(host, strconv.FormatUint(uint64(port), 10))
+	listener, err := local.LOCAL.Listen(ctx, "tcp", address)
+	a.listener = listener
+	if err != nil {
+		log.Error(err, i18n.Listen(address))
+		a.mu.Lock()
+		a.running, a.lastErr = false, err
+		a.mu.Unlock()
+		return err
+	}
+
+	a.mu.Lock()
+	a.Address = formatAddress(listener.Addr().String())
+	a.running, a.lastErr = true, nil
+	a.mu.Unlock()
+	a.UpdateStatus()
+	go func() {
+		dialer := jumpway.NewLogDialer(local.LOCAL, func(ctx context.Context, network, address string) {
+			log.Info(i18n.UseProxy(), "address", address)
+		})
+		dialer, err := chain.Default.BridgeChainWithConfig(ctx, dialer, conf.GetWay()...)
+		if err != nil {
+			log.Error(err, i18n.Connect(), "address", address)
+			a.mu.Lock()
+			a.running, a.lastErr = false, err
+			a.mu.Unlock()
+			return
+		}
+		dialer = jumpway.NewRetryDialer(dialer, jumpway.DefaultDialRetries, jumpway.DefaultDialBackoff, func(ctx context.Context, network, address string, attempt int, err error) {
+			log.Info(i18n.Connect(), "proxy", true, "address", address, "attempt", attempt, "err", err)
+		})
+		dialer = jumpway.NewLogDialer(dialer, func(ctx context.Context, network, address string) {
+			log.Info(i18n.Connect(), "proxy", true, "address", address)
+		})
+
+		if noProxy := conf.NoProxy.GetList(); len(noProxy) != 0 {
+			matcher := hostmatcher.NewMatcher(noProxy)
+			subDialer := jumpway.NewLogDialer(local.LOCAL, func(ctx context.Context, network, address string) {
+				log.Info(i18n.Connect(), "proxy", false, "address", address)
+			})
+			dialer = chain.NewShuntDialer(dialer, subDialer, matcher)
+		}
+
+		err = jumpway.RunProxy(ctx, listener, dialer)
+		if err != nil && !utils.IsClosedConnError(err) {
+			log.Error(err, i18n.RunProxy())
+			a.mu.Lock()
+			a.running, a.lastErr = false, err
+			a.mu.Unlock()
+		}
+	}()
+	return nil
 }
 
 func formatAddress(address string) string {
