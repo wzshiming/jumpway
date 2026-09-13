@@ -100,6 +100,319 @@
     }
    }
   },
+  "/configs/contexts": {
+   "get": {
+    "tags": [
+     "ConfigsService"
+    ],
+    "summary": "ListContexts lists the contexts",
+    "description": "ListContexts lists the contexts\n\n\n#route:\"GET /contexts\"#",
+    "responses": {
+     "200": {
+      "description": "Response code is 200",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/Context"
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Response code is 400",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string",
+         "format": "error"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "ConfigsService"
+    ],
+    "summary": "CreateContext adds a context",
+    "description": "CreateContext adds a context\n\n\n#route:\"POST /contexts\"#",
+    "requestBody": {
+     "$ref": "#/components/requestBodies/c_body"
+    },
+    "responses": {
+     "400": {
+      "description": "Response code is 400",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string",
+         "format": "error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/configs/contexts/{name}": {
+   "get": {
+    "tags": [
+     "ConfigsService"
+    ],
+    "summary": "GetContext returns one context",
+    "description": "GetContext returns one context\n\n\n#route:\"GET /contexts/{name}\"#",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/name_path"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Response code is 200",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Context"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Response code is 400",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string",
+         "format": "error"
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "ConfigsService"
+    ],
+    "summary": "UpdateContext replaces one context (renames it when the body name differs)",
+    "description": "UpdateContext replaces one context (renames it when the body name differs)\n\n\n#route:\"PUT /contexts/{name}\"#",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/name_path"
+     }
+    ],
+    "requestBody": {
+     "$ref": "#/components/requestBodies/c_body"
+    },
+    "responses": {
+     "400": {
+      "description": "Response code is 400",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string",
+         "format": "error"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "ConfigsService"
+    ],
+    "summary": "DeleteContext removes one context",
+    "description": "DeleteContext removes one context\n\n\n#route:\"DELETE /contexts/{name}\"#",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/name_path"
+     }
+    ],
+    "responses": {
+     "400": {
+      "description": "Response code is 400",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string",
+         "format": "error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/configs/current-context": {
+   "get": {
+    "tags": [
+     "ConfigsService"
+    ],
+    "summary": "GetCurrentContext returns the name of the active context",
+    "description": "GetCurrentContext returns the name of the active context\n\n\n#route:\"GET /current-context\"#",
+    "responses": {
+     "200": {
+      "description": "Response code is 200",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CurrentContext"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Response code is 400",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string",
+         "format": "error"
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "ConfigsService"
+    ],
+    "summary": "SetCurrentContext switches the active context",
+    "description": "SetCurrentContext switches the active context\n\n\n#route:\"PUT /current-context\"#",
+    "requestBody": {
+     "$ref": "#/components/requestBodies/current_body"
+    },
+    "responses": {
+     "400": {
+      "description": "Response code is 400",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string",
+         "format": "error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/configs/no-proxy": {
+   "get": {
+    "tags": [
+     "ConfigsService"
+    ],
+    "summary": "GetNoProxy returns the bypass lists",
+    "description": "GetNoProxy returns the bypass lists\n\n\n#route:\"GET /no-proxy\"#",
+    "responses": {
+     "200": {
+      "description": "Response code is 200",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/NoProxy"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Response code is 400",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string",
+         "format": "error"
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "ConfigsService"
+    ],
+    "summary": "UpdateNoProxy replaces the bypass lists",
+    "description": "UpdateNoProxy replaces the bypass lists\n\n\n#route:\"PUT /no-proxy\"#",
+    "requestBody": {
+     "$ref": "#/components/requestBodies/noProxy_body"
+    },
+    "responses": {
+     "400": {
+      "description": "Response code is 400",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string",
+         "format": "error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/configs/proxy": {
+   "get": {
+    "tags": [
+     "ConfigsService"
+    ],
+    "summary": "GetProxy returns the listen address",
+    "description": "GetProxy returns the listen address\n\n\n#route:\"GET /proxy\"#",
+    "responses": {
+     "200": {
+      "description": "Response code is 200",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Proxy"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Response code is 400",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string",
+         "format": "error"
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "ConfigsService"
+    ],
+    "summary": "UpdateProxy changes the listen address",
+    "description": "UpdateProxy changes the listen address\n\n\n#route:\"PUT /proxy\"#",
+    "requestBody": {
+     "$ref": "#/components/requestBodies/proxy_body"
+    },
+    "responses": {
+     "400": {
+      "description": "Response code is 400",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string",
+         "format": "error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/configs/raw": {
    "get": {
     "tags": [
@@ -202,7 +515,7 @@
      "contexts": {
       "type": "array",
       "items": {
-       "$ref": "#/components/schemas/Context"
+       "$ref": "#/components/schemas/Context.1"
       }
      },
      "current_context": {
@@ -211,14 +524,14 @@
      "no_proxy": {
       "allOf": [
        {
-        "$ref": "#/components/schemas/NoProxy"
+        "$ref": "#/components/schemas/NoProxy.1"
        }
       ]
      },
      "proxy": {
       "allOf": [
        {
-        "$ref": "#/components/schemas/Proxy"
+        "$ref": "#/components/schemas/Proxy.1"
        }
       ]
      }
@@ -242,7 +555,64 @@
      }
     }
    },
+   "Context.1": {
+    "required": [
+     "name",
+     "way"
+    ],
+    "type": "object",
+    "properties": {
+     "name": {
+      "type": "string"
+     },
+     "way": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Node"
+      }
+     }
+    }
+   },
+   "CurrentContext": {
+    "required": [
+     "name"
+    ],
+    "type": "object",
+    "properties": {
+     "name": {
+      "type": "string"
+     }
+    }
+   },
    "NoProxy": {
+    "required": [
+     "list",
+     "from_env",
+     "from_file"
+    ],
+    "type": "object",
+    "properties": {
+     "from_env": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "from_file": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "list": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     }
+    }
+   },
+   "NoProxy.1": {
     "required": [
      "list",
      "from_env",
@@ -300,6 +670,22 @@
      }
     }
    },
+   "Proxy.1": {
+    "required": [
+     "host",
+     "port"
+    ],
+    "type": "object",
+    "properties": {
+     "host": {
+      "type": "string"
+     },
+     "port": {
+      "type": "integer",
+      "format": "uint32"
+     }
+    }
+   },
    "RawConfig": {
     "required": [
      "yaml"
@@ -333,12 +719,45 @@
    }
   },
   "responses": {
+   "c_body": {
+    "description": "Response code is 200",
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/Context"
+      }
+     }
+    }
+   },
    "conf_body": {
     "description": "Response code is 200",
     "content": {
      "application/json": {
       "schema": {
        "$ref": "#/components/schemas/Config"
+      }
+     }
+    }
+   },
+   "contexts_body": {
+    "description": "Response code is 200",
+    "content": {
+     "application/json": {
+      "schema": {
+       "type": "array",
+       "items": {
+        "$ref": "#/components/schemas/Context"
+       }
+      }
+     }
+    }
+   },
+   "current_body": {
+    "description": "Response code is 200",
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/CurrentContext"
       }
      }
     }
@@ -350,6 +769,26 @@
       "schema": {
        "type": "string",
        "format": "error"
+      }
+     }
+    }
+   },
+   "noProxy_body": {
+    "description": "Response code is 200",
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/NoProxy"
+      }
+     }
+    }
+   },
+   "proxy_body": {
+    "description": "Response code is 200",
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/Proxy"
       }
      }
     }
@@ -375,12 +814,60 @@
     }
    }
   },
+  "parameters": {
+   "name_path": {
+    "name": "name",
+    "in": "path",
+    "description": "\n\n#name:\"name\"#",
+    "required": true,
+    "explode": false,
+    "schema": {
+     "type": "string"
+    }
+   }
+  },
   "requestBodies": {
+   "c_body": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/Context"
+      }
+     }
+    }
+   },
    "conf_body": {
     "content": {
      "application/json": {
       "schema": {
        "$ref": "#/components/schemas/Config"
+      }
+     }
+    }
+   },
+   "current_body": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/CurrentContext"
+      }
+     }
+    }
+   },
+   "noProxy_body": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/NoProxy"
+      }
+     }
+    }
+   },
+   "proxy_body": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/Proxy"
       }
      }
     }
