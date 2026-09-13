@@ -180,7 +180,7 @@
 					</div>
 					<div class="field port-field">
 						<label for="proxy-port" data-i18n="port"></label>
-						<input id="proxy-port" type="number" step="1" inputmode="numeric" aria-describedby="listen-hint">
+						<input id="proxy-port" type="number" min="0" max="65535" step="1" inputmode="numeric" aria-describedby="listen-hint">
 					</div>
 				</div>
 				<p id="listen-hint" class="hint" data-i18n="listenHint"></p>

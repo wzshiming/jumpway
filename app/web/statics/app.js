@@ -19,6 +19,7 @@
       host: "Host",
       port: "Port",
       listenHint: "The web UI moves with the listen address. An empty host uses 127.0.0.1; port 0 chooses an available port.",
+      invalidPort: "Port must be a whole number between 0 and 65535.",
       contexts: "Contexts",
       contextName: "Context name",
       current: "Current",
@@ -98,6 +99,7 @@
       host: "主机",
       port: "端口",
       listenHint: "网页配置的地址会随监听地址改变。主机留空时使用 127.0.0.1；端口为 0 时自动分配可用端口。",
+      invalidPort: "端口必须是 0 到 65535 之间的整数。",
       contexts: "上下文管理",
       contextName: "上下文名称",
       current: "当前上下文",
@@ -390,7 +392,7 @@
     const add = clone("new-tab");
     selectContextTab(add, newContext);
     add.addEventListener("click", () => {
-      if (!newContext) navigate("#/contexts", { create: true });
+      if (!newContext) navigate("#/contexts", { create: true, replace: activeHash === "#/contexts" });
     });
     tabs.append(add);
     bindContextTabs(tabs);
@@ -411,7 +413,7 @@
       const body = { name: context.name.trim(), way: context.way.map(node => ({ lb: cleanLines(node.lb) })) };
       await write(originalName === null ? "/contexts" : contextPath(originalName), {
         method: originalName === null ? "POST" : "PUT", body
-      }, { after: () => navigate(contextRoute(body.name), { replace: true, confirmed: true, notify: "saved" }) });
+      }, { after: () => navigate(contextRoute(body.name || originalName), { replace: true, confirmed: true, notify: "saved" }) });
     });
     find("#delete-context").addEventListener("click", async () => {
       if (busy || !confirm(t("confirmDelete", { name: originalName }))) return;
@@ -429,7 +431,12 @@
     find("#proxy-host").value = text(proxy.host);
     find("#proxy-port").value = proxy.port ?? 0;
     bindEditor(form, () => {
-      const body = { host: find("#proxy-host").value.trim(), port: Number(find("#proxy-port").value) };
+      const port = Number(find("#proxy-port").value);
+      if (!Number.isInteger(port) || port < 0 || port > 65535) {
+        showError(new Error(t("invalidPort")), true);
+        return;
+      }
+      const body = { host: find("#proxy-host").value.trim(), port };
       return write("/proxy", { method: "PUT", body }, { mayMove: true, address: submittedAddress(body) });
     });
   }
