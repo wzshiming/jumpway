@@ -69,6 +69,7 @@
       saved: "Saved and applied.",
       reloaded: "Reloaded from disk.",
       movedTo: "The web UI has moved to",
+      movedUnknown: "Saved and applied. The listen address changed. Open the address shown in the tray status item.",
       unreachable: "Cannot reach JumpWay.",
       recoveryHint: "The proxy may have stopped. Use the tray's Edit Config to check ~/.jumpway/config.yaml, then Reload Config to restart it.",
       requestFailed: "The request could not be completed.",
@@ -141,6 +142,7 @@
       saved: "已保存并应用。",
       reloaded: "已从磁盘重新加载。",
       movedTo: "网页配置已移至",
+      movedUnknown: "已保存并应用。监听地址已改变，请打开托盘状态栏显示的新地址。",
       unreachable: "无法连接到 JumpWay。",
       recoveryHint: "代理可能已停止。请通过托盘菜单的“编辑配置”检查 ~/.jumpway/config.yaml，再点击“重新加载配置”启动代理。",
       requestFailed: "请求未能完成。",
@@ -228,6 +230,7 @@
     tabs: all("[role=tab]"), dirty: find("#dirty-badge"), activity: find("#activity"),
     error: find("#request-error"), errorText: find("#request-error-text"),
     unreachable: find("#unreachable-banner"), moved: find("#moved-banner"), movedLink: find("#moved-link"),
+    movedMessage: find("#moved-message"),
     statusDot: find("#status-dot"), statusLabel: find("#status-label"),
     statusAddress: find("#status-address"), statusError: find("#status-error"),
     builder: find("#url-builder"), builderForm: find("#builder-form"),
@@ -297,7 +300,7 @@
   function showError(error, persistent = false) {
     if (error instanceof TypeError || error.name === "AbortError") {
       requestUnreachable = requestUnreachable || persistent;
-      ui.unreachable.hidden = false;
+      ui.unreachable.hidden = !ui.moved.hidden && ui.movedLink.hidden;
       ui.statusDot.className = "status-dot unknown";
       ui.statusLabel.textContent = t("checking");
     } else {
@@ -316,22 +319,24 @@
   }
 
   function sameAddress(address) {
-    const canonical = value => {
-      const url = addressURL(value || "127.0.0.1");
-      if (!url) return "";
-      const host = url.hostname === "localhost" ? "127.0.0.1" : url.hostname;
-      return host + ":" + (url.port || "80");
-    };
-    return canonical(address) === canonical(location.host);
+    const listener = addressURL(address);
+    const page = addressURL(location.host);
+    if (!listener || !page) return false;
+    const host = url => url.hostname === "localhost" ? "127.0.0.1" : url.hostname;
+    return (listener.port || "80") === (page.port || "80")
+      && (host(listener) === "127.0.0.1" || host(listener) === host(page));
   }
 
   function showMoved(address) {
     const url = addressURL(address);
-    if (!url || sameAddress(address)) return;
+    if (!url || sameAddress(address)) return false;
     if (["en", "zh"].includes(override)) url.searchParams.set("lang", override);
+    ui.movedMessage.textContent = t("movedTo");
+    ui.movedLink.hidden = false;
     ui.movedLink.href = url.href;
     ui.movedLink.textContent = address;
     ui.moved.hidden = false;
+    return true;
   }
 
   function renderStatus(status) {
@@ -468,7 +473,7 @@
       try {
         const url = new URL(input.value);
         const protocol = url.protocol.slice(0, -1);
-        const aliases = { ss: "shadowsocks", socks5h: "socks5", socks4a: "socks4" };
+        const aliases = { ss: "shadowsocks" };
         const layout = builderLayouts.find(layout => layout.name === (aliases[protocol] || protocol));
         if (layout) {
           const decode = value => {
@@ -651,8 +656,14 @@
       acceptConfig(await api());
       if (activeTab === "yaml") ui.yaml.value = (await api("/raw")).yaml;
     } catch (error) {
-      showMoved(submittedAddress(payload));
-      showError(error, true);
+      const address = submittedAddress(payload);
+      if (!showMoved(address) && !address) {
+        ui.movedMessage.textContent = t("movedUnknown");
+        ui.movedLink.hidden = true;
+        ui.moved.hidden = false;
+      } else {
+        showError(error, true);
+      }
     } finally {
       setBusy(false);
     }
