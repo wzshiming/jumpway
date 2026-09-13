@@ -121,6 +121,38 @@
 		</footer>
 	</div>
 
+	<dialog id="url-builder" aria-labelledby="builder-title">
+		<form id="builder-form" autocomplete="off" novalidate>
+			<h2 id="builder-title" data-i18n="builderTitle"></h2>
+			<div class="field">
+				<label for="builder-protocol" data-i18n="protocol"></label>
+				<select id="builder-protocol" disabled></select>
+			</div>
+			<div id="builder-fields" class="builder-fields"></div>
+			<div class="builder-preview">
+				<label id="builder-preview-label" for="builder-preview" data-i18n="preview"></label>
+				<output id="builder-preview" aria-labelledby="builder-preview-label"></output>
+			</div>
+			<p id="builder-hint" class="hint" role="status"></p>
+			<div class="builder-actions">
+				<button id="builder-cancel" type="button" data-i18n="cancel"></button>
+				<button id="builder-use" class="primary" type="submit" data-i18n="useURL" aria-describedby="builder-hint" disabled></button>
+			</div>
+		</form>
+	</dialog>
+
+	<template id="builder-field-template">
+		<div class="field">
+			<label><span class="builder-field-name"></span> <span class="optional" data-i18n="optional" hidden></span></label>
+		</div>
+	</template>
+	<template id="builder-input-template">
+		<input type="text" spellcheck="false" autocomplete="off" autocapitalize="none">
+	</template>
+	<template id="builder-select-template">
+		<select></select>
+	</template>
+
 	<template id="context-template">
 		<article class="context-card">
 			<div class="context-header">
@@ -158,7 +190,9 @@
 				<input class="proxy-url" type="text" placeholder="socks5://user:pass@host:1080" spellcheck="false" autocomplete="off">
 			</div>
 			<div class="url-actions">
-				<span class="url-builder-slot" data-extension="url-builder" hidden></span>
+				<span class="url-builder-slot" data-extension="url-builder">
+					<button class="build-url" type="button" data-i18n="build" aria-haspopup="dialog" aria-controls="url-builder"></button>
+				</span>
 				<button class="remove-url danger" type="button" data-i18n="remove"></button>
 			</div>
 		</div>

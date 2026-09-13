@@ -35,6 +35,23 @@
       proxyURL: "Proxy URL",
       remove: "Remove",
       addURL: "+ URL",
+      build: "Build…",
+      builderTitle: "Build proxy URL",
+      protocol: "Protocol",
+      useURL: "Use URL",
+      cancel: "Cancel",
+      optional: "(optional)",
+      preview: "Preview",
+      builderHint: "Host and a numeric port are required.",
+      builderShadowsocksHint: "Host, a numeric port, encryption method, and password are required.",
+      builderLoading: "Loading protocols...",
+      builderLoadFailed: "Cannot load protocols. Close the dialog and try again.",
+      "field.username": "Username",
+      "field.password": "Password",
+      "field.host": "Host",
+      "field.port": "Port",
+      "field.identity": "Identity file",
+      "field.encrypto": "Encryption method",
       noProxy: "No proxy",
       hostsCIDRs: "Hosts / CIDRs",
       fromEnv: "From environment variables",
@@ -90,6 +107,23 @@
       proxyURL: "代理 URL",
       remove: "移除",
       addURL: "+ URL",
+      build: "拼装…",
+      builderTitle: "拼装代理 URL",
+      protocol: "协议",
+      useURL: "使用此 URL",
+      cancel: "取消",
+      optional: "（可选）",
+      preview: "预览",
+      builderHint: "主机和数字端口为必填项。",
+      builderShadowsocksHint: "主机、数字端口、加密方式和密码为必填项。",
+      builderLoading: "正在加载协议...",
+      builderLoadFailed: "无法加载协议，请关闭对话框后重试。",
+      "field.username": "用户名",
+      "field.password": "密码",
+      "field.host": "主机",
+      "field.port": "端口",
+      "field.identity": "私钥文件",
+      "field.encrypto": "加密方式",
       noProxy: "不走代理",
       hostsCIDRs: "主机 / CIDR",
       fromEnv: "从环境变量读取",
@@ -195,7 +229,11 @@
     error: find("#request-error"), errorText: find("#request-error-text"),
     unreachable: find("#unreachable-banner"), moved: find("#moved-banner"), movedLink: find("#moved-link"),
     statusDot: find("#status-dot"), statusLabel: find("#status-label"),
-    statusAddress: find("#status-address"), statusError: find("#status-error")
+    statusAddress: find("#status-address"), statusError: find("#status-error"),
+    builder: find("#url-builder"), builderForm: find("#builder-form"),
+    builderProtocol: find("#builder-protocol"), builderFields: find("#builder-fields"),
+    builderPreview: find("#builder-preview"), builderHint: find("#builder-hint"),
+    builderUse: find("#builder-use"), builderCancel: find("#builder-cancel")
   };
   let state = null;
   let currentIndex = -1;
@@ -205,6 +243,9 @@
   let loaded = false;
   let statusRequest = null;
   let requestUnreachable = false;
+  let builderLayouts = [];
+  let builderRequest = null;
+  let builderTarget = null;
   let toastTimer;
 
   function localize(root) {
@@ -347,6 +388,108 @@
     if (focus) find(focus)?.focus();
   }
 
+  function updateBuilderPreview() {
+    const layout = builderLayouts[ui.builderProtocol.selectedIndex];
+    if (!layout) return;
+    const values = Object.fromEntries(all("[name]", ui.builderFields).map(input => [input.name, input.value]));
+    const enc = encodeURIComponent;
+    const shadowsocks = layout.name === "shadowsocks";
+    const username = values.username || "";
+    const password = values.password || "";
+    const userinfo = shadowsocks ? enc(values.encrypto) + ":" + enc(password) + "@"
+      : username || password ? enc(username) + (password ? ":" + enc(password) : "") + "@" : "";
+    let host = values.host.trim();
+    if (host.includes(":") && !(host.startsWith("[") && host.endsWith("]"))) host = "[" + host + "]";
+    const port = values.port || text(layout.inputs.find(field => field.name === "port")?.value);
+    const scheme = layout.inputs.find(field => field.kind === "span").value;
+    let url = scheme + userinfo + host + ":" + port;
+    if (layout.name === "ssh" && values.identity) url += "?identity_file=" + enc(values.identity);
+    ui.builderPreview.textContent = url;
+    ui.builderUse.disabled = !host || !/^\d+$/.test(port) || (shadowsocks && (!values.encrypto || !password));
+    ui.builderHint.textContent = t(shadowsocks ? "builderShadowsocksHint" : "builderHint");
+    ui.builderHint.hidden = !ui.builderUse.disabled;
+  }
+
+  function renderBuilderFields(values = {}) {
+    const layout = builderLayouts[ui.builderProtocol.selectedIndex];
+    ui.builderFields.replaceChildren(...layout.inputs.filter(field => field.kind !== "span").map(field => {
+      const row = clone("builder-field");
+      const input = clone(field.kind === "select" ? "builder-select" : "builder-input");
+      input.id = "builder-" + field.name;
+      input.name = field.name;
+      input.required = !field.option && !(field.name === "port" && field.value);
+      find("label", row).htmlFor = input.id;
+      find(".builder-field-name", row).textContent = t("field." + field.name);
+      find(".optional", row).hidden = !field.option;
+      if (field.kind === "select") {
+        input.replaceChildren(...field.items.map(value => new Option(value, value)));
+      } else {
+        input.type = field.kind === "password" ? "password" : "text";
+        if (field.kind === "file") input.placeholder = "~/.ssh/id_ed25519";
+        if (field.name === "port") {
+          input.inputMode = "numeric";
+          input.pattern = "[0-9]+";
+          input.placeholder = text(field.value);
+        }
+      }
+      input.value = text(values[field.name] ?? field.value);
+      row.append(input);
+      return row;
+    }));
+    updateBuilderPreview();
+  }
+
+  async function openURLBuilder(input) {
+    if (busy || ui.builder.open) return;
+    builderTarget = input;
+    ui.builderFields.replaceChildren();
+    ui.builderPreview.textContent = "";
+    ui.builderProtocol.replaceChildren();
+    ui.builderProtocol.disabled = true;
+    ui.builderUse.disabled = true;
+    ui.builderHint.textContent = t("builderLoading");
+    ui.builderHint.hidden = false;
+    ui.builder.showModal();
+    try {
+      if (!builderRequest) {
+        builderRequest = fetch("/data/proxy_layouts.json", { headers: { Accept: "application/json" } })
+          .then(response => {
+            if (!response.ok) throw new Error(t("builderLoadFailed"));
+            return response.json();
+          }).catch(error => {
+            builderRequest = null;
+            throw error;
+          });
+      }
+      builderLayouts = await builderRequest;
+      if (!ui.builder.open || builderTarget !== input) return;
+      ui.builderProtocol.replaceChildren(...builderLayouts.map(layout => new Option(layout.name, layout.name)));
+      let values = {};
+      try {
+        const url = new URL(input.value);
+        const protocol = url.protocol.slice(0, -1);
+        const aliases = { ss: "shadowsocks", socks5h: "socks5", socks4a: "socks4" };
+        const layout = builderLayouts.find(layout => layout.name === (aliases[protocol] || protocol));
+        if (layout) {
+          const decode = value => {
+            try { return decodeURIComponent(value); } catch { return value; }
+          };
+          ui.builderProtocol.value = layout.name;
+          values = {
+            username: decode(url.username), password: decode(url.password),
+            host: url.hostname, port: url.port || undefined,
+            identity: url.searchParams.get("identity_file") ?? "", encrypto: decode(url.username)
+          };
+        }
+      } catch {}
+      ui.builderProtocol.disabled = false;
+      renderBuilderFields(values);
+      find("input, select", ui.builderFields)?.focus();
+    } catch {
+      if (ui.builder.open && builderTarget === input) ui.builderHint.textContent = t("builderLoadFailed");
+    }
+  }
+
   function renderURL(value, contextIndex, hopIndex, urlIndex) {
     const row = clone("url");
     const input = find("input", row);
@@ -356,6 +499,7 @@
     row.dataset.context = contextIndex;
     row.dataset.hop = hopIndex;
     row.dataset.url = urlIndex;
+    find(".build-url", row).addEventListener("click", () => openURLBuilder(input));
     find(".remove-url", row).addEventListener("click", () => changeForm(() => {
       const urls = state.contexts[contextIndex].way[hopIndex].lb;
       urls.splice(urlIndex, 1);
@@ -486,7 +630,7 @@
   }
 
   async function save() {
-    if (busy || !loaded) return;
+    if (busy || !loaded || ui.builder.open) return;
     const payload = activeTab === "yaml" ? { yaml: ui.yaml.value } : serialize();
     setBusy(true, "saving");
     clearErrors();
@@ -524,6 +668,22 @@
       ui.yaml.addEventListener(event, () => {
         if (!busy && loaded) setDirty(true);
       });
+      ui.builderFields.addEventListener(event, updateBuilderPreview);
+    });
+    ui.builderProtocol.addEventListener("change", () => renderBuilderFields());
+    ui.builderCancel.addEventListener("click", () => ui.builder.close());
+    ui.builder.addEventListener("close", () => {
+      const input = builderTarget;
+      builderTarget = null;
+      input?.focus();
+    });
+    ui.builderForm.addEventListener("submit", event => {
+      event.preventDefault();
+      updateBuilderPreview();
+      if (ui.builderUse.disabled || !builderTarget || busy) return;
+      builderTarget.value = ui.builderPreview.textContent;
+      builderTarget.dispatchEvent(new Event("input", { bubbles: true }));
+      ui.builder.close();
     });
     find("#add-context").addEventListener("click", () => changeForm(() => {
       let number = 1;
