@@ -23,10 +23,10 @@ import (
 )
 
 type Config struct {
-	CurrentContext string    `yaml:"current_context"`
-	Contexts       []Context `yaml:"contexts"`
-	Proxy          Proxy     `yaml:"proxy"`
-	NoProxy        NoProxy   `yaml:"no_proxy"`
+	CurrentContext string    `yaml:"current_context" json:"current_context"`
+	Contexts       []Context `yaml:"contexts" json:"contexts"`
+	Proxy          Proxy     `yaml:"proxy" json:"proxy"`
+	NoProxy        NoProxy   `yaml:"no_proxy" json:"no_proxy"`
 }
 
 func (c Config) GetWay() []config.Node {
@@ -39,19 +39,19 @@ func (c Config) GetWay() []config.Node {
 }
 
 type Context struct {
-	Name string        `yaml:"name"`
-	Way  []config.Node `yaml:"way"`
+	Name string        `yaml:"name" json:"name"`
+	Way  []config.Node `yaml:"way" json:"way"`
 }
 
 type Proxy struct {
-	Host string `yaml:"host"`
-	Port uint32 `yaml:"port"`
+	Host string `yaml:"host" json:"host"`
+	Port uint32 `yaml:"port" json:"port"`
 }
 
 type NoProxy struct {
-	List     []string `yaml:"list"`
-	FromEnv  []string `yaml:"from_env"`
-	FromFile []string `yaml:"from_file"`
+	List     []string `yaml:"list" json:"list"`
+	FromEnv  []string `yaml:"from_env" json:"from_env"`
+	FromFile []string `yaml:"from_file" json:"from_file"`
 }
 
 func (n *NoProxy) GetList() []string {
@@ -148,12 +148,83 @@ func LoadConfig() (*Config, error) {
 	return &conf, nil
 }
 
+func Validate(conf *Config) error {
+	if conf == nil {
+		return fmt.Errorf("config is nil")
+	}
+	if conf.Proxy.Port > 65535 {
+		return fmt.Errorf("proxy.port %d is out of range (0-65535)", conf.Proxy.Port)
+	}
+	names := make(map[string]struct{}, len(conf.Contexts))
+	for contextIndex, ctx := range conf.Contexts {
+		if strings.TrimSpace(ctx.Name) == "" {
+			return fmt.Errorf("contexts[%d].name is empty", contextIndex)
+		}
+		if _, ok := names[ctx.Name]; ok {
+			return fmt.Errorf("duplicate context name %q", ctx.Name)
+		}
+		names[ctx.Name] = struct{}{}
+	}
+	if conf.CurrentContext != "" || len(conf.Contexts) > 0 {
+		if _, ok := names[conf.CurrentContext]; !ok {
+			return fmt.Errorf("current_context %q does not match any context", conf.CurrentContext)
+		}
+	}
+	for contextIndex, ctx := range conf.Contexts {
+		for nodeIndex, node := range ctx.Way {
+			if len(node.LB) == 0 {
+				return fmt.Errorf("contexts[%d].way[%d] has no proxy URL", contextIndex, nodeIndex)
+			}
+			for _, proxyURL := range node.LB {
+				if strings.TrimSpace(proxyURL) == "" {
+					return fmt.Errorf("contexts[%d].way[%d] contains an empty proxy URL", contextIndex, nodeIndex)
+				}
+				parsedURL, err := url.Parse(proxyURL)
+				if err != nil {
+					return fmt.Errorf("contexts[%d].way[%d]: invalid proxy URL %q: %w", contextIndex, nodeIndex, proxyURL, err)
+				}
+				if parsedURL.Scheme == "" {
+					return fmt.Errorf("contexts[%d].way[%d]: proxy URL %q has no scheme (e.g. socks5://host:1080)", contextIndex, nodeIndex, proxyURL)
+				}
+			}
+		}
+	}
+	return nil
+}
+
 func SaveConfig(conf *Config) error {
 	out, err := yaml.Marshal(conf)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(configPath, out, 0644)
+	return SaveRawConfig(out)
+}
+
+func LoadRawConfig() ([]byte, error) {
+	return os.ReadFile(configPath)
+}
+
+func SaveRawConfig(data []byte) error {
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return err
+	}
+	tmpFile, err := os.CreateTemp(configDir, "config.yaml.*.tmp")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmpFile.Name())
+	if _, err := tmpFile.Write(data); err != nil {
+		tmpFile.Close()
+		return err
+	}
+	if err := tmpFile.Chmod(0644); err != nil {
+		tmpFile.Close()
+		return err
+	}
+	if err := tmpFile.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpFile.Name(), configPath)
 }
 
 func EditConfig() error {
