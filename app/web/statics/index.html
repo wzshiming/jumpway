@@ -12,7 +12,7 @@
 	<div class="page">
 		<header class="header">
 			<div class="identity">
-				<h1><span data-i18n="appName">JumpWay</span> <span class="subtitle" data-i18n="configuration"></span></h1>
+				<h1 data-i18n="appName">JumpWay</h1>
 				<div class="runtime" aria-live="polite">
 					<span id="status-dot" class="status-dot unknown" aria-hidden="true"></span>
 					<span id="status-label" data-i18n="checking"></span>
@@ -22,94 +22,30 @@
 			</div>
 			<div class="header-actions">
 				<span id="dirty-badge" class="badge" data-i18n="unsaved" hidden></span>
-				<button id="reload" type="button" data-i18n="reload" disabled></button>
-				<button id="save" class="primary" type="button" data-i18n="save" disabled></button>
 			</div>
 		</header>
 
-		<main>
-			<div class="feedback" aria-live="polite">
-				<p id="activity" class="activity" role="status"></p>
-				<div id="moved-banner" class="message notice" role="status" hidden>
-					<span id="moved-message" data-i18n="movedTo"></span>
-					<a id="moved-link"></a>
-				</div>
-				<div id="unreachable-banner" class="message warning" role="status" hidden>
-					<strong data-i18n="unreachable"></strong>
-					<p data-i18n="recoveryHint"></p>
-				</div>
-				<div id="request-error" class="message error" role="alert" hidden>
-					<strong data-i18n="requestFailed"></strong>
-					<pre id="request-error-text"></pre>
-				</div>
+		<nav id="page-nav" class="page-nav" role="navigation" data-i18n-aria="navigation">
+			<a href="#/" data-page="current" data-i18n="current"></a>
+			<a href="#/contexts" data-page="contexts" data-i18n="contexts"></a>
+			<a href="#/proxy" data-page="proxy" data-i18n="listen"></a>
+			<a href="#/no-proxy" data-page="no-proxy" data-i18n="noProxy"></a>
+			<a href="#/yaml" data-page="yaml" data-i18n="yaml"></a>
+		</nav>
+
+		<div class="feedback">
+			<p id="activity" class="activity" role="status" aria-live="polite"></p>
+			<div id="moved-banner" class="message notice" role="status" hidden>
+				<span id="moved-message" data-i18n="movedTo"></span>
+				<a id="moved-link"></a>
 			</div>
-
-			<div class="tabs" role="tablist" data-i18n-aria="editorTabs">
-				<button id="form-tab" type="button" role="tab" aria-selected="true" aria-controls="form-panel" data-i18n="form"></button>
-				<button id="yaml-tab" type="button" role="tab" aria-selected="false" aria-controls="yaml-panel" tabindex="-1" data-i18n="yaml"></button>
+			<div id="unreachable-banner" class="message warning" role="status" hidden>
+				<strong data-i18n="unreachable"></strong>
+				<p data-i18n="recoveryHint"></p>
 			</div>
+		</div>
 
-			<section id="form-panel" role="tabpanel" aria-labelledby="form-tab" tabindex="0">
-				<form id="config-form" novalidate>
-					<fieldset id="form-fields" disabled>
-						<section class="section" aria-labelledby="listen-heading">
-							<div class="section-heading">
-								<h2 id="listen-heading" data-i18n="listen"></h2>
-							</div>
-							<div class="listen-fields">
-								<div class="field">
-									<label for="proxy-host" data-i18n="host"></label>
-									<input id="proxy-host" type="text" placeholder="127.0.0.1" spellcheck="false" autocomplete="off" aria-describedby="listen-hint">
-								</div>
-								<div class="field port-field">
-									<label for="proxy-port" data-i18n="port"></label>
-									<input id="proxy-port" type="number" min="0" max="65535" step="1" inputmode="numeric" aria-describedby="listen-hint">
-								</div>
-							</div>
-							<p id="listen-hint" class="hint" data-i18n="listenHint"></p>
-						</section>
-
-						<section class="section" aria-labelledby="contexts-heading">
-							<div class="section-heading">
-								<h2 id="contexts-heading" data-i18n="contexts"></h2>
-								<span id="context-count" class="count" aria-hidden="true"></span>
-							</div>
-							<div id="contexts" class="contexts"></div>
-							<p id="no-contexts" class="empty-state" data-i18n="noContexts" hidden></p>
-							<button id="add-context" class="add-button" type="button" data-i18n="addContext"></button>
-						</section>
-
-						<section class="section" aria-labelledby="no-proxy-heading">
-							<div class="section-heading">
-								<h2 id="no-proxy-heading" data-i18n="noProxy"></h2>
-							</div>
-							<div class="no-proxy-fields">
-								<div class="field">
-									<label for="no-proxy-list" data-i18n="hostsCIDRs"></label>
-									<textarea id="no-proxy-list" rows="7" spellcheck="false" aria-describedby="list-hint"></textarea>
-									<p id="list-hint" class="hint" data-i18n="listHint"></p>
-								</div>
-								<div class="field">
-									<label for="no-proxy-env" data-i18n="fromEnv"></label>
-									<textarea id="no-proxy-env" rows="7" spellcheck="false" aria-describedby="env-hint"></textarea>
-									<p id="env-hint" class="hint" data-i18n="envHint"></p>
-								</div>
-								<div class="field">
-									<label for="no-proxy-files" data-i18n="fromFiles"></label>
-									<textarea id="no-proxy-files" rows="7" spellcheck="false" aria-describedby="files-hint"></textarea>
-									<p id="files-hint" class="hint" data-i18n="filesHint"></p>
-								</div>
-							</div>
-						</section>
-					</fieldset>
-				</form>
-			</section>
-
-			<section id="yaml-panel" class="section" role="tabpanel" aria-labelledby="yaml-tab" tabindex="0" hidden>
-				<label for="yaml-source" class="yaml-label" data-i18n="yamlSource"></label>
-				<textarea id="yaml-source" class="yaml" spellcheck="false" autocomplete="off" wrap="off" disabled></textarea>
-			</section>
-		</main>
+		<main id="main" aria-busy="true"></main>
 
 		<footer>
 			<span data-i18n="appName"></span>
@@ -153,19 +89,142 @@
 		<select></select>
 	</template>
 
-	<template id="context-template">
-		<article class="context-card">
-			<div class="context-header">
-				<label class="current-label"><input type="radio" name="current"><span data-i18n="current"></span></label>
-				<div class="field context-name-field">
-					<label class="context-name-label" data-i18n="contextName"></label>
-					<input class="context-name" type="text" autocomplete="off" spellcheck="false">
-				</div>
-				<button class="delete-context danger" type="button" data-i18n="deleteContext"></button>
+	<template id="page-template">
+		<section class="section" aria-labelledby="page-heading">
+			<div class="section-heading"><h2 id="page-heading" tabindex="-1"></h2></div>
+			<div id="request-error" class="message error" role="alert" hidden>
+				<strong data-i18n="requestFailed"></strong>
+				<pre id="request-error-text"></pre>
+				<button id="retry" type="button" data-i18n="retry" hidden></button>
 			</div>
-			<div class="hops"></div>
-			<button class="add-hop add-button" type="button" data-i18n="addHop"></button>
+			<div id="page-content"></div>
+		</section>
+	</template>
+
+	<template id="current-template">
+		<form id="current-form" novalidate>
+			<fieldset id="page-fields">
+				<section id="active-context" class="active-context" aria-labelledby="active-name" hidden>
+					<span class="current-badge" data-i18n="currentBadge"></span>
+					<h3 id="active-name"></h3>
+					<p id="active-chain" class="chain-summary"></p>
+				</section>
+				<fieldset id="current-options">
+					<legend class="sr-only" data-i18n="contexts"></legend>
+					<div id="context-choices" class="context-choices"></div>
+					<div class="page-actions"><button id="switch" class="primary" type="submit" data-i18n="switch" disabled></button></div>
+				</fieldset>
+				<div id="no-contexts" class="empty-state" hidden>
+					<p data-i18n="noContexts"></p>
+					<a href="#/contexts" class="button" data-i18n="contexts"></a>
+				</div>
+			</fieldset>
+		</form>
+	</template>
+
+	<template id="choice-template">
+		<article class="context-choice">
+			<label class="context-option">
+				<input type="radio" name="current">
+				<span class="context-option-text">
+					<span class="choice-name"></span>
+					<span class="choice-chain chain-summary"></span>
+				</span>
+				<span class="current-badge" data-i18n="currentBadge" hidden></span>
+			</label>
+			<a class="edit-context" data-i18n="edit"></a>
 		</article>
+	</template>
+
+	<template id="contexts-template">
+		<div class="contexts-page">
+			<div id="context-tabs" class="tabs" role="tablist" data-i18n-aria="contextTabs"></div>
+			<section id="context-panel" role="tabpanel" tabindex="0">
+				<form id="context-form" novalidate>
+					<fieldset id="page-fields">
+						<h3 id="new-context-heading" data-i18n="newContext" hidden></h3>
+						<div class="field context-name-field">
+							<label for="context-name" data-i18n="contextName"></label>
+							<input id="context-name" class="context-name" type="text" autocomplete="off" spellcheck="false">
+						</div>
+						<div id="hops" class="hops"></div>
+						<button id="add-hop" class="add-hop add-button" type="button" data-i18n="addHop"></button>
+						<div class="page-actions">
+							<button id="save" class="primary" type="submit" data-i18n="save"></button>
+							<button id="delete-context" class="danger" type="button" data-i18n="deleteContext"></button>
+						</div>
+					</fieldset>
+				</form>
+			</section>
+		</div>
+	</template>
+
+	<template id="context-tab-template">
+		<button type="button" role="tab" aria-selected="false" aria-controls="context-panel" tabindex="-1">
+			<span class="tab-name"></span>
+			<span class="current-badge" data-i18n="currentBadge" hidden></span>
+		</button>
+	</template>
+
+	<template id="new-tab-template">
+		<button id="new-context-tab" type="button" role="tab" aria-selected="false" aria-controls="context-panel" tabindex="-1" data-i18n-aria="newContext" data-i18n-title="newContext">+</button>
+	</template>
+
+	<template id="proxy-template">
+		<form id="proxy-form" novalidate>
+			<fieldset id="page-fields">
+				<div class="listen-fields">
+					<div class="field">
+						<label for="proxy-host" data-i18n="host"></label>
+						<input id="proxy-host" type="text" placeholder="127.0.0.1" spellcheck="false" autocomplete="off" aria-describedby="listen-hint">
+					</div>
+					<div class="field port-field">
+						<label for="proxy-port" data-i18n="port"></label>
+						<input id="proxy-port" type="number" step="1" inputmode="numeric" aria-describedby="listen-hint">
+					</div>
+				</div>
+				<p id="listen-hint" class="hint" data-i18n="listenHint"></p>
+				<div class="page-actions"><button id="save" class="primary" type="submit" data-i18n="saveApply"></button></div>
+			</fieldset>
+		</form>
+	</template>
+
+	<template id="no-proxy-template">
+		<form id="no-proxy-form" novalidate>
+			<fieldset id="page-fields">
+				<div class="no-proxy-fields">
+					<div class="field">
+						<label for="no-proxy-list" data-i18n="hostsCIDRs"></label>
+						<textarea id="no-proxy-list" rows="8" spellcheck="false" aria-describedby="list-hint"></textarea>
+						<p id="list-hint" class="hint" data-i18n="listHint"></p>
+					</div>
+					<div class="field">
+						<label for="no-proxy-env" data-i18n="fromEnv"></label>
+						<textarea id="no-proxy-env" rows="8" spellcheck="false" aria-describedby="env-hint"></textarea>
+						<p id="env-hint" class="hint" data-i18n="envHint"></p>
+					</div>
+					<div class="field">
+						<label for="no-proxy-files" data-i18n="fromFiles"></label>
+						<textarea id="no-proxy-files" rows="8" spellcheck="false" aria-describedby="files-hint"></textarea>
+						<p id="files-hint" class="hint" data-i18n="filesHint"></p>
+					</div>
+				</div>
+				<div class="page-actions"><button id="save" class="primary" type="submit" data-i18n="saveApply"></button></div>
+			</fieldset>
+		</form>
+	</template>
+
+	<template id="yaml-template">
+		<form id="yaml-form" novalidate>
+			<fieldset id="page-fields">
+				<label for="yaml-source" class="yaml-label" data-i18n="yamlSource"></label>
+				<textarea id="yaml-source" class="yaml" spellcheck="false" autocomplete="off" wrap="off"></textarea>
+				<div class="page-actions">
+					<button id="save" class="primary" type="submit" data-i18n="saveApply"></button>
+					<button id="reload" type="button" data-i18n="reload"></button>
+				</div>
+			</fieldset>
+		</form>
 	</template>
 
 	<template id="hop-template">
