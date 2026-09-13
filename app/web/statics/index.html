@@ -1,11 +1,167 @@
-<html>
+<!doctype html>
+<html lang="en">
 <head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="color-scheme" content="light dark">
+	<title>JumpWay</title>
+	<link rel="stylesheet" href="/style.css">
+	<script src="/app.js" defer></script>
 </head>
 <body>
+	<div class="page">
+		<header class="header">
+			<div class="identity">
+				<h1><span data-i18n="appName">JumpWay</span> <span class="subtitle" data-i18n="configuration"></span></h1>
+				<div class="runtime" aria-live="polite">
+					<span id="status-dot" class="status-dot unknown" aria-hidden="true"></span>
+					<span id="status-label" data-i18n="checking"></span>
+					<a id="status-address" hidden></a>
+					<span id="status-error" class="runtime-error"></span>
+				</div>
+			</div>
+			<div class="header-actions">
+				<span id="dirty-badge" class="badge" data-i18n="unsaved" hidden></span>
+				<button id="reload" type="button" data-i18n="reload" disabled></button>
+				<button id="save" class="primary" type="button" data-i18n="save" disabled></button>
+			</div>
+		</header>
 
-TODO edit config<br/>
+		<main>
+			<div class="feedback" aria-live="polite">
+				<p id="activity" class="activity" role="status"></p>
+				<div id="moved-banner" class="message notice" role="status" hidden>
+					<span data-i18n="movedTo"></span>
+					<a id="moved-link"></a>
+				</div>
+				<div id="unreachable-banner" class="message warning" role="status" hidden>
+					<strong data-i18n="unreachable"></strong>
+					<p data-i18n="recoveryHint"></p>
+				</div>
+				<div id="request-error" class="message error" role="alert" hidden>
+					<strong data-i18n="requestFailed"></strong>
+					<pre id="request-error-text"></pre>
+				</div>
+			</div>
 
-<a href="/debug/pprof/">/debug/pprof/ - Debug Pprof</a><br/>
-<a href="/swaggerui/">/swaggerui/ - API Documents</a><br/>
+			<div class="tabs" role="tablist" data-i18n-aria="editorTabs">
+				<button id="form-tab" type="button" role="tab" aria-selected="true" aria-controls="form-panel" data-i18n="form"></button>
+				<button id="yaml-tab" type="button" role="tab" aria-selected="false" aria-controls="yaml-panel" tabindex="-1" data-i18n="yaml"></button>
+			</div>
+
+			<section id="form-panel" role="tabpanel" aria-labelledby="form-tab" tabindex="0">
+				<form id="config-form" novalidate>
+					<fieldset id="form-fields" disabled>
+						<section class="section" aria-labelledby="listen-heading">
+							<div class="section-heading">
+								<h2 id="listen-heading" data-i18n="listen"></h2>
+							</div>
+							<div class="listen-fields">
+								<div class="field">
+									<label for="proxy-host" data-i18n="host"></label>
+									<input id="proxy-host" type="text" placeholder="127.0.0.1" spellcheck="false" autocomplete="off" aria-describedby="listen-hint">
+								</div>
+								<div class="field port-field">
+									<label for="proxy-port" data-i18n="port"></label>
+									<input id="proxy-port" type="number" min="0" max="65535" step="1" inputmode="numeric" aria-describedby="listen-hint">
+								</div>
+							</div>
+							<p id="listen-hint" class="hint" data-i18n="listenHint"></p>
+						</section>
+
+						<section class="section" aria-labelledby="contexts-heading">
+							<div class="section-heading">
+								<h2 id="contexts-heading" data-i18n="contexts"></h2>
+								<span id="context-count" class="count" aria-hidden="true"></span>
+							</div>
+							<div id="contexts" class="contexts"></div>
+							<p id="no-contexts" class="empty-state" data-i18n="noContexts" hidden></p>
+							<button id="add-context" class="add-button" type="button" data-i18n="addContext"></button>
+						</section>
+
+						<section class="section" aria-labelledby="no-proxy-heading">
+							<div class="section-heading">
+								<h2 id="no-proxy-heading" data-i18n="noProxy"></h2>
+							</div>
+							<div class="no-proxy-fields">
+								<div class="field">
+									<label for="no-proxy-list" data-i18n="hostsCIDRs"></label>
+									<textarea id="no-proxy-list" rows="7" spellcheck="false" aria-describedby="list-hint"></textarea>
+									<p id="list-hint" class="hint" data-i18n="listHint"></p>
+								</div>
+								<div class="field">
+									<label for="no-proxy-env" data-i18n="fromEnv"></label>
+									<textarea id="no-proxy-env" rows="7" spellcheck="false" aria-describedby="env-hint"></textarea>
+									<p id="env-hint" class="hint" data-i18n="envHint"></p>
+								</div>
+								<div class="field">
+									<label for="no-proxy-files" data-i18n="fromFiles"></label>
+									<textarea id="no-proxy-files" rows="7" spellcheck="false" aria-describedby="files-hint"></textarea>
+									<p id="files-hint" class="hint" data-i18n="filesHint"></p>
+								</div>
+							</div>
+						</section>
+					</fieldset>
+				</form>
+			</section>
+
+			<section id="yaml-panel" class="section" role="tabpanel" aria-labelledby="yaml-tab" tabindex="0" hidden>
+				<label for="yaml-source" class="yaml-label" data-i18n="yamlSource"></label>
+				<textarea id="yaml-source" class="yaml" spellcheck="false" autocomplete="off" wrap="off" disabled></textarea>
+			</section>
+		</main>
+
+		<footer>
+			<span data-i18n="appName"></span>
+			<nav data-i18n-aria="resources">
+				<a href="/swaggerui/" data-i18n="apiDocs"></a>
+				<a href="/debug/pprof/" data-i18n="pprof"></a>
+				<a href="https://github.com/wzshiming/jumpway" target="_blank" rel="noopener noreferrer" data-i18n="github"></a>
+			</nav>
+		</footer>
+	</div>
+
+	<template id="context-template">
+		<article class="context-card">
+			<div class="context-header">
+				<label class="current-label"><input type="radio" name="current"><span data-i18n="current"></span></label>
+				<div class="field context-name-field">
+					<label class="context-name-label" data-i18n="contextName"></label>
+					<input class="context-name" type="text" autocomplete="off" spellcheck="false">
+				</div>
+				<button class="delete-context danger" type="button" data-i18n="deleteContext"></button>
+			</div>
+			<div class="hops"></div>
+			<button class="add-hop add-button" type="button" data-i18n="addHop"></button>
+		</article>
+	</template>
+
+	<template id="hop-template">
+		<section class="hop">
+			<div class="hop-header">
+				<h3 class="hop-title"></h3>
+				<div class="hop-actions">
+					<button class="hop-up" type="button" data-i18n="up"></button>
+					<button class="hop-down" type="button" data-i18n="down"></button>
+					<button class="delete-hop danger" type="button" data-i18n="deleteHop"></button>
+				</div>
+			</div>
+			<div class="url-rows"></div>
+			<button class="add-url add-button" type="button" data-i18n="addURL"></button>
+		</section>
+	</template>
+
+	<template id="url-template">
+		<div class="url-row">
+			<div class="field url-field">
+				<label class="url-label" data-i18n="proxyURL"></label>
+				<input class="proxy-url" type="text" placeholder="socks5://user:pass@host:1080" spellcheck="false" autocomplete="off">
+			</div>
+			<div class="url-actions">
+				<span class="url-builder-slot" data-extension="url-builder" hidden></span>
+				<button class="remove-url danger" type="button" data-i18n="remove"></button>
+			</div>
+		</div>
+	</template>
 </body>
 </html>
