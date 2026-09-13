@@ -99,36 +99,123 @@
      }
     }
    }
+  },
+  "/configs/raw": {
+   "get": {
+    "tags": [
+     "ConfigsService"
+    ],
+    "summary": "GetRaw the config.yaml text",
+    "description": "GetRaw the config.yaml text\n\n\n#route:\"GET /raw\"#",
+    "responses": {
+     "200": {
+      "description": "Response code is 200",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RawConfig"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Response code is 400",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string",
+         "format": "error"
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "ConfigsService"
+    ],
+    "summary": "UpdateRaw replaces config.yaml with the given text",
+    "description": "UpdateRaw replaces config.yaml with the given text\n\n\n#route:\"PUT /raw\"#",
+    "requestBody": {
+     "$ref": "#/components/requestBodies/raw_body"
+    },
+    "responses": {
+     "400": {
+      "description": "Response code is 400",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string",
+         "format": "error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/configs/status": {
+   "get": {
+    "tags": [
+     "ConfigsService"
+    ],
+    "summary": "Status of the running proxy",
+    "description": "Status of the running proxy\n\n\n#route:\"GET /status\"#",
+    "responses": {
+     "200": {
+      "description": "Response code is 200",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Status"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Response code is 400",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string",
+         "format": "error"
+        }
+       }
+      }
+     }
+    }
+   }
   }
  },
  "components": {
   "schemas": {
    "Config": {
     "required": [
-     "CurrentContext",
-     "Contexts",
-     "Proxy",
-     "NoProxy"
+     "current_context",
+     "contexts",
+     "proxy",
+     "no_proxy"
     ],
     "type": "object",
     "properties": {
-     "Contexts": {
+     "contexts": {
       "type": "array",
       "items": {
        "$ref": "#/components/schemas/Context"
       }
      },
-     "CurrentContext": {
+     "current_context": {
       "type": "string"
      },
-     "NoProxy": {
+     "no_proxy": {
       "allOf": [
        {
         "$ref": "#/components/schemas/NoProxy"
        }
       ]
      },
-     "Proxy": {
+     "proxy": {
       "allOf": [
        {
         "$ref": "#/components/schemas/Proxy"
@@ -139,15 +226,15 @@
    },
    "Context": {
     "required": [
-     "Name",
-     "Way"
+     "name",
+     "way"
     ],
     "type": "object",
     "properties": {
-     "Name": {
+     "name": {
       "type": "string"
      },
-     "Way": {
+     "way": {
       "type": "array",
       "items": {
        "$ref": "#/components/schemas/Node"
@@ -157,25 +244,25 @@
    },
    "NoProxy": {
     "required": [
-     "List",
-     "FromEnv",
-     "FromFile"
+     "list",
+     "from_env",
+     "from_file"
     ],
     "type": "object",
     "properties": {
-     "FromEnv": {
+     "from_env": {
       "type": "array",
       "items": {
        "type": "string"
       }
      },
-     "FromFile": {
+     "from_file": {
       "type": "array",
       "items": {
        "type": "string"
       }
      },
-     "List": {
+     "list": {
       "type": "array",
       "items": {
        "type": "string"
@@ -199,19 +286,50 @@
    },
    "Proxy": {
     "required": [
-     "Host",
-     "Port"
+     "host",
+     "port"
     ],
     "type": "object",
     "properties": {
-     "Host": {
+     "host": {
       "type": "string"
      },
-     "Port": {
+     "port": {
       "type": "integer",
       "format": "uint32"
      }
     }
+   },
+   "RawConfig": {
+    "required": [
+     "yaml"
+    ],
+    "type": "object",
+    "properties": {
+     "yaml": {
+      "type": "string"
+     }
+    },
+    "description": "RawConfig carries config.yaml verbatim.\n"
+   },
+   "Status": {
+    "required": [
+     "address",
+     "running"
+    ],
+    "type": "object",
+    "properties": {
+     "address": {
+      "type": "string"
+     },
+     "error": {
+      "type": "string"
+     },
+     "running": {
+      "type": "boolean"
+     }
+    },
+    "description": "Status is what the web UI shows about the running proxy.\n"
    }
   },
   "responses": {
@@ -235,6 +353,26 @@
       }
      }
     }
+   },
+   "raw_body": {
+    "description": "Response code is 200",
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/RawConfig"
+      }
+     }
+    }
+   },
+   "status_body": {
+    "description": "Response code is 200",
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/Status"
+      }
+     }
+    }
    }
   },
   "requestBodies": {
@@ -243,6 +381,15 @@
      "application/json": {
       "schema": {
        "$ref": "#/components/schemas/Config"
+      }
+     }
+    }
+   },
+   "raw_body": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/RawConfig"
       }
      }
     }

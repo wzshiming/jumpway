@@ -191,6 +191,26 @@ func setTestConfigDir(t *testing.T) {
 	})
 }
 
+func TestSetConfigDir(t *testing.T) {
+	setTestConfigDir(t)
+	dir := t.TempDir()
+	SetConfigDir(dir)
+	if got := GetConfigDir(); got != dir {
+		t.Fatalf("GetConfigDir() = %q, want %q", got, dir)
+	}
+	const content = "proxy:\n  port: 1088\n"
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	data, err := LoadRawConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != content {
+		t.Fatalf("LoadRawConfig() = %q, want %q", data, content)
+	}
+}
+
 func TestSaveRawConfigAtomic(t *testing.T) {
 	t.Run("replace", func(t *testing.T) {
 		setTestConfigDir(t)

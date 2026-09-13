@@ -124,6 +124,12 @@ func GetConfigDir() string {
 	return configDir
 }
 
+// SetConfigDir overrides the default ~/.jumpway location.
+func SetConfigDir(dir string) {
+	configDir = dir
+	configPath = filepath.Join(dir, "config.yaml")
+}
+
 func InitConfig() error {
 	fi, err := os.Stat(configPath)
 	if err == nil && fi.Size() != 0 {
