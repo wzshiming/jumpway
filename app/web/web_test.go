@@ -180,6 +180,23 @@ func TestUpdateConfig(t *testing.T) {
 	}
 }
 
+func TestUpdateConfigBodyTooLarge(t *testing.T) {
+	handler, fake := setupConfigAPI(t)
+	body := `{"proxy":{"port":1088}}`
+	body += strings.Repeat(" ", (2<<20)-len(body))
+	request := httptest.NewRequest(http.MethodPut, "/apis/configs", strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code < http.StatusBadRequest {
+		t.Errorf("status = %d, want >= 400", response.Code)
+	}
+	if fake.reloads != 0 {
+		t.Errorf("reloads = %d, want 0", fake.reloads)
+	}
+	assertConfigYAML(t, testConfigYAML)
+}
+
 func TestRawConfig(t *testing.T) {
 	handler, fake := setupConfigAPI(t)
 	response := requestAPI(t, handler, http.MethodGet, "/apis/configs/raw", "", http.StatusOK)

@@ -32,6 +32,7 @@ func TestValidate(t *testing.T) {
 		name      string
 		conf      *Config
 		wantError string
+		wantHint  string
 	}{
 		{
 			name: "default",
@@ -105,6 +106,12 @@ func TestValidate(t *testing.T) {
 			wantError: `contexts[0].way[0]: invalid proxy URL "socks5://[::1":`,
 		},
 		{
+			name:      "ip_without_scheme",
+			conf:      withWay(bridgeconfig.Node{LB: []string{"127.0.0.1:1080"}}),
+			wantError: "invalid proxy URL",
+			wantHint:  "socks5://host:1080",
+		},
+		{
 			name:      "no_scheme",
 			conf:      withWay(bridgeconfig.Node{LB: []string{"/just/a/path"}}),
 			wantError: `contexts[0].way[0]: proxy URL "/just/a/path" has no scheme (e.g. socks5://host:1080)`,
@@ -175,6 +182,9 @@ func TestValidate(t *testing.T) {
 				}
 			} else if err == nil || !strings.Contains(err.Error(), test.wantError) {
 				t.Fatalf("Validate() = %v, want error containing %q", err, test.wantError)
+			}
+			if test.wantHint != "" && (err == nil || !strings.Contains(err.Error(), test.wantHint)) {
+				t.Fatalf("Validate() = %v, want hint containing %q", err, test.wantHint)
 			}
 		})
 	}

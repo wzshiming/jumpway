@@ -187,7 +187,7 @@ func Validate(conf *Config) error {
 				}
 				parsedURL, err := url.Parse(proxyURL)
 				if err != nil {
-					return fmt.Errorf("contexts[%d].way[%d]: invalid proxy URL %q: %w", contextIndex, nodeIndex, proxyURL, err)
+					return fmt.Errorf("contexts[%d].way[%d]: invalid proxy URL %q: %w (e.g. socks5://host:1080)", contextIndex, nodeIndex, proxyURL, err)
 				}
 				if parsedURL.Scheme == "" {
 					return fmt.Errorf("contexts[%d].way[%d]: proxy URL %q has no scheme (e.g. socks5://host:1080)", contextIndex, nodeIndex, proxyURL)
@@ -224,6 +224,10 @@ func SaveRawConfig(data []byte) error {
 		return err
 	}
 	if err := tmpFile.Chmod(0644); err != nil {
+		tmpFile.Close()
+		return err
+	}
+	if err := tmpFile.Sync(); err != nil {
 		tmpFile.Close()
 		return err
 	}

@@ -72,9 +72,11 @@ func (a *App) reload() error {
 		dialer, err := chain.Default.BridgeChainWithConfig(ctx, dialer, conf.GetWay()...)
 		if err != nil {
 			log.Error(err, i18n.Connect(), "address", address)
-			a.mu.Lock()
-			a.running, a.lastErr = false, err
-			a.mu.Unlock()
+			if ctx.Err() == nil {
+				a.mu.Lock()
+				a.running, a.lastErr = false, err
+				a.mu.Unlock()
+			}
 			return
 		}
 		dialer = jumpway.NewRetryDialer(dialer, jumpway.DefaultDialRetries, jumpway.DefaultDialBackoff, func(ctx context.Context, network, address string, attempt int, err error) {
@@ -95,9 +97,11 @@ func (a *App) reload() error {
 		err = jumpway.RunProxy(ctx, listener, dialer)
 		if err != nil && !utils.IsClosedConnError(err) {
 			log.Error(err, i18n.RunProxy())
-			a.mu.Lock()
-			a.running, a.lastErr = false, err
-			a.mu.Unlock()
+			if ctx.Err() == nil {
+				a.mu.Lock()
+				a.running, a.lastErr = false, err
+				a.mu.Unlock()
+			}
 		}
 	}()
 	return nil

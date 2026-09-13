@@ -30,7 +30,7 @@ func Handler() http.Handler {
 	m.PathPrefix("/swaggerui/").Handler(http.FileServer(http.FS(swaggerui.FS)))
 	apis := route.Router()
 	apis = handlers.CombinedLoggingHandler(os.Stdout, apis)
-	m.PathPrefix("/apis/").Handler(http.StripPrefix("/apis", apis))
+	m.PathPrefix("/apis/").Handler(http.StripPrefix("/apis", http.MaxBytesHandler(apis, 1<<20)))
 	m.PathPrefix("/").Handler(http.FileServer(http.FS(staticsFS)))
 	return handlers.RecoveryHandler()(m)
 }
