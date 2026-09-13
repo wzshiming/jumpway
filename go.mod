@@ -10,8 +10,8 @@ require (
 	github.com/gorilla/mux v1.8.1
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8
 	github.com/takama/daemon v1.0.0
-	github.com/wzshiming/anyproxy v0.7.19
-	github.com/wzshiming/bridge v0.12.3
+	github.com/wzshiming/anyproxy v0.8.0
+	github.com/wzshiming/bridge v0.14.0
 	github.com/wzshiming/cmux v0.4.2
 	github.com/wzshiming/hostmatcher v0.0.3
 	github.com/wzshiming/httpcache v0.4.0
@@ -30,16 +30,15 @@ require (
 	github.com/felixge/httpsnoop v1.0.3 // indirect
 	github.com/go-webgpu/goffi v0.6.3 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
-	github.com/golang/snappy v0.0.4 // indirect
+	github.com/golang/snappy v1.0.0 // indirect
 	github.com/kr/pretty v0.1.0 // indirect
-	github.com/wzshiming/commandproxy v0.2.0 // indirect
-	github.com/wzshiming/emux v0.2.1 // indirect
+	github.com/wzshiming/commandproxy v0.2.1 // indirect
 	github.com/wzshiming/httpproxy v0.5.7 // indirect
 	github.com/wzshiming/shadowsocks v0.4.2 // indirect
-	github.com/wzshiming/socks4 v0.3.3 // indirect
-	github.com/wzshiming/socks5 v0.5.2 // indirect
-	github.com/wzshiming/sshd v0.2.4 // indirect
-	github.com/wzshiming/sshproxy v0.5.2 // indirect
+	github.com/wzshiming/socks4 v0.4.0 // indirect
+	github.com/wzshiming/socks5 v0.7.0 // indirect
+	github.com/wzshiming/sshd v0.2.5 // indirect
+	github.com/wzshiming/sshproxy v0.6.0 // indirect
 	github.com/wzshiming/trie v0.3.1 // indirect
 	golang.org/x/crypto v0.52.0 // indirect
 	golang.org/x/net v0.55.0 // indirect
