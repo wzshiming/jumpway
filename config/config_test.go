@@ -76,6 +76,11 @@ func TestValidate(t *testing.T) {
 			wantError: `duplicate context name "a"`,
 		},
 		{
+			name:      "slash_in_name",
+			conf:      &Config{CurrentContext: "a/b", Contexts: []Context{{Name: "a/b"}}},
+			wantError: `contexts[0].name "a/b" must not contain "/"`,
+		},
+		{
 			name:      "unknown_current_context",
 			conf:      &Config{CurrentContext: "missing", Contexts: []Context{{Name: "a"}}},
 			wantError: `current_context "missing" does not match any context`,

@@ -163,6 +163,10 @@ func Validate(conf *Config) error {
 		if strings.TrimSpace(ctx.Name) == "" {
 			return fmt.Errorf("contexts[%d].name is empty", contextIndex)
 		}
+		// Contexts are addressed as /apis/configs/contexts/{name}.
+		if strings.Contains(ctx.Name, "/") {
+			return fmt.Errorf("contexts[%d].name %q must not contain \"/\"", contextIndex, ctx.Name)
+		}
 		if _, ok := names[ctx.Name]; ok {
 			return fmt.Errorf("duplicate context name %q", ctx.Name)
 		}
