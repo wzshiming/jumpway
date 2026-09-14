@@ -9,6 +9,7 @@
       stopped: "Stopped",
       retrying: "Retrying ({attempt})",
       remote: "remote",
+      forward: "forward",
       reload: "Reload from disk",
       saveApply: "Save & Apply",
       unsaved: "Unsaved changes",
@@ -21,16 +22,24 @@
       host: "Host",
       port: "Port",
       invalidPort: "Port must be a whole number between 0 and 65535.",
+      invalidForwardPort: "Port must be a whole number between 1 and 65535.",
       rules: "Rules",
       rule: "Rule name",
       enabled: "Enabled",
       entry: "Entry",
-      outbound: "Outbound",
+      exit: "Exit",
+      mode: "Mode",
+      proxy: "Proxy",
+      portForward: "Port forward",
+      targetHost: "Target host",
+      targetPort: "Target port",
+      onExitNode: "on the exit node",
       listenThrough: "Listen through",
-      outboundChain: "Outbound chain",
+      exitChain: "Exit chain",
       username: "Username",
       password: "Password",
       credentialsHint: "Optional credentials for HTTP Basic / SOCKS5 clients. Usernames must not contain \":\".",
+      credentialsProxyOnly: "Credentials apply to proxy rules only",
       listenThroughHint: "Leave empty to open the port on this machine. Otherwise the first hop binds host:port on its side (SSH remote forwarding; the remote sshd binds loopback unless GatewayPorts is enabled) and the last hop is dialed from this machine. Only ssh://, cmd: and nc hops can bind.",
       deleteRule: "Delete",
       confirmDeleteRule: "Delete rule \"{name}\"?",
@@ -42,7 +51,7 @@
       hopExit: "exit node",
       hopBinds: "binds the port",
       hopDialed: "dialed from this machine",
-      hopsHint: "Hop 1 is the exit node, closest to the target; the last hop is dialed from this machine. Leave empty for a direct connection.",
+      hopsHint: "Hop 1 is the exit node; the last hop is dialed from this machine. Leave empty to connect directly from this machine.",
       chainLocal: "this machine",
       chainTarget: "target",
       up: "Up",
@@ -100,6 +109,7 @@
       stopped: "已停止",
       retrying: "重试中 ({attempt})",
       remote: "远端",
+      forward: "转发",
       reload: "从磁盘重新加载",
       saveApply: "保存并应用",
       unsaved: "未保存的修改",
@@ -112,16 +122,24 @@
       host: "主机",
       port: "端口",
       invalidPort: "端口必须是 0 到 65535 之间的整数。",
+      invalidForwardPort: "端口必须是 1 到 65535 之间的整数。",
       rules: "规则",
       rule: "规则名称",
       enabled: "启用",
       entry: "入口",
-      outbound: "出口",
+      exit: "出口",
+      mode: "模式",
+      proxy: "代理",
+      portForward: "端口转发",
+      targetHost: "目标主机",
+      targetPort: "目标端口",
+      onExitNode: "位于出口节点",
       listenThrough: "经由监听",
-      outboundChain: "出口链路",
+      exitChain: "出口链路",
       username: "用户名",
       password: "密码",
       credentialsHint: "HTTP Basic / SOCKS5 客户端的可选认证信息。用户名不能包含冒号（:）。",
+      credentialsProxyOnly: "凭据仅用于代理规则",
       listenThroughHint: "留空时在本机打开端口；否则由第一个节点在其所在机器上绑定主机和端口（SSH 远程端口转发；远端 sshd 默认仅绑定回环地址，启用 GatewayPorts 后才能绑定其他地址），最后一个节点由本机直接连接。只有 ssh://、cmd: 和 nc 节点支持监听。",
       deleteRule: "删除",
       confirmDeleteRule: "删除规则“{name}”吗？",
@@ -133,7 +151,7 @@
       hopExit: "出口节点",
       hopBinds: "绑定端口",
       hopDialed: "由本机连接",
-      hopsHint: "节点 1 是最靠近目标的出口节点，最后一个节点由本机直接连接。留空时直连目标。",
+      hopsHint: "节点 1 是出口节点，最后一个节点由本机连接。留空时由本机直接连接目标。",
       chainLocal: "本机",
       chainTarget: "目标",
       up: "上移",
@@ -376,23 +394,36 @@
     bindRuleTabs(tabs);
     if (!find("[aria-selected=true]", tabs)) add.tabIndex = 0;
     setBusy(true);
-    const rule = originalName === null ? { name: "", listen: { host: "127.0.0.1", port: 0 }, way: [] }
+    const rule = originalName === null ? { name: "", listen: { host: "127.0.0.1", port: 0 }, forward: { way: [] } }
       : await api(rulePath(originalName));
     find("#rule-name").value = rule.name;
     find("#rule-enabled").checked = !rule.disabled;
     for (const field of ["host", "port", "username", "password"]) {
       find("#listen-" + field).value = text(rule.listen[field]);
     }
+    const forward = rule.forward || {};
+    find("#mode-" + (forward.port ? "forward" : "proxy")).checked = true;
+    for (const field of ["host", "port"]) find("#target-" + field).value = text(forward[field]);
     find("#new-rule-heading").hidden = !newRule;
     find("#no-rules").hidden = entries.length !== 0;
     find("#delete-rule").hidden = newRule;
     const editors = {
       listen: createHopEditor({ container: find("#listen-editor"), model: normalizeWay(rule.listen.way),
         idPrefix: "listen", roles: { first: "hopBinds", last: "hopDialed" } }),
-      outbound: createHopEditor({ container: find("#outbound-editor"), model: normalizeWay(rule.way),
-        idPrefix: "outbound", roles: { first: "hopExit", last: "hopDialed" } })
+      forward: createHopEditor({ container: find("#exit-editor"), model: normalizeWay(forward.way),
+        idPrefix: "exit", roles: { first: "hopExit", last: "hopDialed" }, target: forwardTarget })
     };
     Object.values(editors).forEach(editor => editor.render());
+    const updateMode = () => {
+      const forwarding = find("#mode-forward").checked;
+      find("#target-fields").hidden = find("#target-fields").disabled = !forwarding;
+      for (const field of ["username", "password"]) find("#listen-" + field).disabled = forwarding;
+      find("#credentials-hint").textContent = t(forwarding ? "credentialsProxyOnly" : "credentialsHint");
+      editors.forward.updateSummary();
+    };
+    find("#rule-mode").addEventListener("change", updateMode);
+    find("#target-fields").addEventListener("input", editors.forward.updateSummary);
+    updateMode();
     bindEditor(find("#rule-form"), () => {
       const body = readRule(editors);
       return write(originalName === null ? "/rules" : rulePath(originalName), {
@@ -408,25 +439,40 @@
     });
   }
 
-  function readPort(input) {
+  function readPort(input, minimum = 0) {
     const port = Number(input.value);
-    if (!input.value.trim() || !Number.isInteger(port) || port < 0 || port > 65535) {
-      throw new Error(t("invalidPort"));
+    if (!input.value.trim() || !Number.isInteger(port) || port < minimum || port > 65535) {
+      throw new Error(t(minimum === 1 ? "invalidForwardPort" : "invalidPort"));
     }
     return port;
   }
 
   function readRule(editors) {
+    const forwarding = find("#mode-forward").checked;
     const listen = { host: find("#listen-host").value.trim(), port: readPort(find("#listen-port")) };
     for (const field of ["username", "password"]) {
-      const value = find("#listen-" + field).value;
-      if (value) listen[field] = value;
+      const value = forwarding ? "" : find("#listen-" + field).value;
+      if (value || forwarding) listen[field] = value;
     }
     const way = editors.listen.read();
     if (way.length) listen.way = way;
-    const rule = { name: find("#rule-name").value.trim(), listen, way: editors.outbound.read() };
+    const forward = { way: editors.forward.read() };
+    if (forwarding) {
+      forward.port = readPort(find("#target-port"), 1);
+      const host = find("#target-host").value.trim();
+      if (host) forward.host = host;
+    }
+    const rule = { name: find("#rule-name").value.trim(), listen, forward };
     if (!find("#rule-enabled").checked) rule.disabled = true;
     return rule;
+  }
+
+  function forwardTarget() {
+    const port = find("#target-port").value;
+    if (!find("#mode-forward").checked || !port) return "";
+    let host = find("#target-host").value.trim() || "127.0.0.1";
+    if (host.includes(":") && !host.startsWith("[")) host = "[" + host + "]";
+    return host + ":" + port;
   }
 
   async function loadWebUI() {
@@ -621,9 +667,10 @@
       chip.classList.add(state);
       chip.href = ruleRoute(rule.name);
       chip.title = text(rule.error);
-      find(".chip-label", chip).textContent = rule.name + " \u00b7 " + rule.address;
+      find(".chip-label", chip).textContent = rule.name + " \u00b7 " + rule.address + (rule.target ? " \u2192 " + rule.target : "");
       find(".chip-state", chip).textContent = t(state, { attempt: rule.attempt });
-      find(".remote-marker", chip).hidden = !rule.remote;
+      find(".rule-marker", chip).textContent = t(rule.target ? "forward" : "remote");
+      find(".rule-marker", chip).hidden = !rule.target && !rule.remote;
       if (busy) chip.setAttribute("aria-disabled", "true");
       return chip;
     }));
@@ -639,10 +686,10 @@
     return statusRequest;
   }
 
-  function chainSummary(way) {
-    if (!way.length) return t("direct");
+  function chainSummary(way, target = "") {
+    if (!way.length && !target) return t("direct");
     const hops = way.map((node, index) => t("hop", { number: index + 1 }));
-    return [t("chainLocal"), ...hops.reverse(), t("chainTarget")].join(" \u2192 ");
+    return [t("chainLocal"), ...hops.reverse(), target || t("chainTarget")].join(" \u2192 ");
   }
 
   function selectRuleTab(tab, selected) {
@@ -664,7 +711,7 @@
     });
   }
 
-  function createHopEditor({ container, model, idPrefix, roles: { first, last } }) {
+  function createHopEditor({ container, model, idPrefix, roles: { first, last }, target = () => "" }) {
     const hops = find(".hops", container);
     const add = find(".add-hop", container);
     const summary = find(".chain-summary", container);
@@ -692,7 +739,11 @@
 
     function render() {
       hops.replaceChildren(...model.map(renderHop));
-      if (summary) summary.textContent = chainSummary(model);
+      updateSummary();
+    }
+
+    function updateSummary() {
+      if (summary) summary.textContent = chainSummary(model, target());
     }
 
     function renderURL(value, hopIndex, urlIndex) {
@@ -747,7 +798,7 @@
       model.push({ lb: [""] });
       return "#" + idPrefix + "-url-" + (model.length - 1) + "-0";
     }));
-    return { render, read };
+    return { render, read, updateSummary };
   }
 
   function updateBuilderPreview() {

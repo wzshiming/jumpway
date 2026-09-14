@@ -145,13 +145,31 @@
 								<button class="add-hop add-button" type="button" data-i18n="addHop"></button>
 							</div>
 						</section>
-						<section class="rule-section" aria-labelledby="outbound-heading">
-							<h3 id="outbound-heading" data-i18n="outbound"></h3>
-							<div id="outbound-editor" class="hop-editor">
-								<h4 data-i18n="outboundChain"></h4>
-								<p id="outbound-hint" class="hint" data-i18n="hopsHint"></p>
+						<section class="rule-section" aria-labelledby="exit-heading">
+							<h3 id="exit-heading" data-i18n="exit"></h3>
+							<fieldset id="rule-mode" class="mode-field">
+								<legend data-i18n="mode"></legend>
+								<div class="mode-options">
+									<label><input id="mode-proxy" type="radio" name="mode" value="proxy" checked><span data-i18n="proxy"></span></label>
+									<label><input id="mode-forward" type="radio" name="mode" value="forward"><span data-i18n="portForward"></span></label>
+								</div>
+							</fieldset>
+							<fieldset id="target-fields" class="address-fields" disabled hidden>
+								<div class="field">
+									<label for="target-host" data-i18n="targetHost"></label>
+									<input id="target-host" type="text" placeholder="127.0.0.1" spellcheck="false" aria-describedby="target-host-hint">
+									<p id="target-host-hint" class="hint" data-i18n="onExitNode"></p>
+								</div>
+								<div class="field">
+									<label for="target-port" data-i18n="targetPort"></label>
+									<input id="target-port" type="number" min="1" max="65535" step="1" inputmode="numeric" required>
+								</div>
+							</fieldset>
+							<div id="exit-editor" class="hop-editor">
+								<h4 data-i18n="exitChain"></h4>
+								<p id="exit-hint" class="hint" data-i18n="hopsHint"></p>
 								<p class="chain-summary"></p>
-								<div class="hops" aria-describedby="outbound-hint"></div>
+								<div class="hops" aria-describedby="exit-hint"></div>
 								<button class="add-hop add-button" type="button" data-i18n="addHop"></button>
 							</div>
 						</section>
@@ -180,7 +198,7 @@
 			<span class="status-dot" aria-hidden="true"></span>
 			<span class="chip-label"></span>
 			<span class="chip-state"></span>
-			<span class="remote-marker" data-i18n="remote" hidden></span>
+			<span class="rule-marker" hidden></span>
 		</a>
 	</template>
 

@@ -63,7 +63,7 @@ h4 { font-size: 13px; font-weight: 600; }
 .rule-chip:hover { outline: 1px solid currentColor; }
 .chip-label { min-width: 0; overflow-wrap: anywhere; }
 .chip-state { font-weight: 600; }
-.remote-marker { padding-left: 8px; border-left: 1px solid var(--border); }
+.rule-marker { padding-left: 8px; border-left: 1px solid var(--border); }
 .header-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .badge { padding: 3px 7px; border-radius: 4px; background: var(--warning-soft); color: var(--warning); font-size: 12px; }
 
@@ -126,6 +126,14 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .enabled-field { display: flex; align-items: center; gap: 8px; min-height: 39px; margin: 0; }
 .rule-section { margin-top: 26px; padding-top: 20px; border-top: 1px solid var(--border); }
 .rule-section > h3 { margin-bottom: 14px; }
+.mode-field { margin-bottom: 16px; }
+.mode-field legend { margin-bottom: 6px; font-size: 13px; font-weight: 600; }
+.mode-options { display: inline-grid; grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 100%; border: 1px solid var(--border); border-radius: 5px; overflow: hidden; }
+.mode-options label { display: flex; align-items: center; gap: 8px; min-height: 39px; margin: 0; padding: 7px 12px; cursor: pointer; }
+.mode-options label + label { border-left: 1px solid var(--border); }
+.mode-options label:has(:checked) { background: var(--primary-soft); color: var(--primary); }
+.mode-options label:has(:focus-visible) { outline: 3px solid var(--focus); outline-offset: -3px; }
+.mode-options input { flex: 0 0 16px; width: 16px; min-height: 16px; height: 16px; margin: 0; accent-color: var(--primary); }
 .hop-editor { margin-top: 20px; }
 .hop-editor .chain-summary { margin-top: 8px; }
 .field { min-width: 0; }
