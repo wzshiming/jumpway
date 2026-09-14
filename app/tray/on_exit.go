@@ -5,5 +5,6 @@ import (
 )
 
 func (a *App) onExit() {
+	a.stop()
 	daemon.Stop()
 }

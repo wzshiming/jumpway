@@ -39,59 +39,63 @@ func init() {
 }
 
 var messageKeyToIndex = map[string]int{
-	"About":            10,
-	"Alert %s":         21,
-	"Args":             16,
-	"Config":           5,
-	"Connect":          18,
-	"Daemon":           0,
-	"Edit Config":      6,
-	"Export Command":   4,
-	"Init Config":      13,
-	"JumpWay %s On %s": 22,
-	"Listen %s":        20,
-	"Log":              9,
-	"Manual Proxy":     1,
-	"Open File":        17,
-	"Proxy Mode":       3,
-	"Quit":             11,
-	"Redirect Log":     12,
-	"Reload Config":    7,
-	"Run Proxy":        15,
-	"System Proxy":     2,
-	"Use Proxy":        19,
-	"Web UI":           8,
-	"Write Clipboard":  14,
+	"About":                 11,
+	"Alert %s":              22,
+	"Args":                  17,
+	"Config":                6,
+	"Connect":               19,
+	"Daemon":                0,
+	"Edit Config":           7,
+	"Export Command":        4,
+	"Init Config":           14,
+	"JumpWay %s On %s":      23,
+	"Listen %s":             21,
+	"Log":                   10,
+	"Manual Proxy":          1,
+	"No enabled local rule": 5,
+	"Open File":             18,
+	"Proxy Mode":            3,
+	"Quit":                  12,
+	"Redirect Log":          13,
+	"Reload Config":         8,
+	"Run Proxy":             16,
+	"System Proxy":          2,
+	"Use Proxy":             20,
+	"Web UI":                9,
+	"Write Clipboard":       15,
 }
 
-var enIndex = []uint32{ // 24 elements
+var enIndex = []uint32{ // 25 elements
 	0x00000000, 0x00000007, 0x00000014, 0x00000021,
-	0x0000002c, 0x0000004b, 0x00000052, 0x0000005e,
-	0x0000006c, 0x00000073, 0x00000077, 0x0000007d,
-	0x00000082, 0x0000008f, 0x0000009b, 0x000000ab,
-	0x000000b5, 0x000000ba, 0x000000c4, 0x000000cc,
-	0x000000d6, 0x000000e3, 0x000000ef, 0x00000106,
-} // Size: 120 bytes
+	0x0000002c, 0x0000004b, 0x00000061, 0x00000068,
+	0x00000074, 0x00000082, 0x00000089, 0x0000008d,
+	0x00000093, 0x00000098, 0x000000a5, 0x000000b1,
+	0x000000c1, 0x000000cb, 0x000000d0, 0x000000da,
+	0x000000e2, 0x000000ec, 0x000000f9, 0x00000105,
+	0x0000011c,
+} // Size: 124 bytes
 
-const enData string = "" + // Size: 262 bytes
+const enData string = "" + // Size: 284 bytes
 	"\x02Daemon\x02Manual Proxy\x02System Proxy\x02Proxy Mode\x02Proxy Export" +
-	" Line To Clipboard\x02Config\x02Edit Config\x02Reload Config\x02Web UI" +
-	"\x02Log\x02About\x02Quit\x02Redirect Log\x02Init Config\x02Write Clipboa" +
-	"rd\x02Run Proxy\x02Args\x02Open File\x02Connect\x02Use Proxy\x02Listen %" +
-	"[1]s\x02Alert %[1]s\x02JumpWay %[1]s On %[2]s"
+	" Line To Clipboard\x02No enabled local rule\x02Config\x02Edit Config\x02" +
+	"Reload Config\x02Web UI\x02Log\x02About\x02Quit\x02Redirect Log\x02Init " +
+	"Config\x02Write Clipboard\x02Run Proxy\x02Args\x02Open File\x02Connect" +
+	"\x02Use Proxy\x02Listen %[1]s\x02Alert %[1]s\x02JumpWay %[1]s On %[2]s"
 
-var zhIndex = []uint32{ // 24 elements
+var zhIndex = []uint32{ // 25 elements
 	0x00000000, 0x0000000d, 0x0000001a, 0x00000027,
-	0x00000034, 0x00000053, 0x0000005a, 0x00000067,
-	0x00000074, 0x00000081, 0x00000088, 0x0000008f,
-	0x00000096, 0x000000a6, 0x000000bc, 0x000000cf,
-	0x000000e5, 0x000000ec, 0x000000f9, 0x00000100,
-	0x0000010d, 0x0000011a, 0x00000127, 0x0000013f,
-} // Size: 120 bytes
+	0x00000034, 0x00000053, 0x0000006f, 0x00000076,
+	0x00000083, 0x00000090, 0x0000009d, 0x000000a4,
+	0x000000ab, 0x000000b2, 0x000000c2, 0x000000d8,
+	0x000000eb, 0x00000101, 0x00000108, 0x00000115,
+	0x0000011c, 0x00000129, 0x00000136, 0x00000143,
+	0x0000015b,
+} // Size: 124 bytes
 
-const zhData string = "" + // Size: 319 bytes
-	"\x02开机启动\x02手动代理\x02系统代理\x02代理模式\x02导出代理命令到剪切板\x02配置\x02编辑配置\x02重载配置\x02" +
-	"网页配置\x02日志\x02关于\x02退出\x02重定向日志\x02初始化加载配置\x02导出到剪切板\x02启动代理服务器\x02参数" +
-	"\x02打开文件\x02连接\x02使用代理\x02监听 %[1]s\x02警告 %[1]s\x02JumpWay %[1]s 在 %[2]s"
+const zhData string = "" + // Size: 347 bytes
+	"\x02开机启动\x02手动代理\x02系统代理\x02代理模式\x02导出代理命令到剪切板\x02没有启用的本地规则\x02配置\x02编辑配" +
+	"置\x02重载配置\x02网页配置\x02日志\x02关于\x02退出\x02重定向日志\x02初始化加载配置\x02导出到剪切板\x02启" +
+	"动代理服务器\x02参数\x02打开文件\x02连接\x02使用代理\x02监听 %[1]s\x02警告 %[1]s\x02JumpWay " +
+	"%[1]s 在 %[2]s"
 
-	// Total table size 821 bytes (0KiB); checksum: 99165BC3
+	// Total table size 879 bytes (0KiB); checksum: CF5E4220

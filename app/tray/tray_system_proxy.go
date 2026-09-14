@@ -1,6 +1,8 @@
 package tray
 
 import (
+	"errors"
+
 	"github.com/gogpu/systray"
 	"github.com/wzshiming/jumpway/i18n"
 	"github.com/wzshiming/jumpway/log"
@@ -12,17 +14,24 @@ func (a *App) ItemProxyMode(menu *systray.Menu) {
 
 	check := func(checked proxyMode) {
 		if checked == systemMode {
+			address := a.primaryAddress()
+			if address == "" {
+				log.Error(errors.New(i18n.NoLocalRule()), i18n.SystemProxy())
+				return
+			}
 			global.SetChecked(true)
 			manual.SetChecked(false)
+			a.mu.Lock()
 			a.Mode = i18n.SystemProxy()
-			a.UpdateStatus()
+			a.mu.Unlock()
+			a.updateStatus()
 
-			err := sysproxy.OnHTTPS(a.Address)
+			err := sysproxy.OnHTTPS(address)
 			if err != nil {
 				log.Error(err, "sysproxy.OnHTTPS")
 				return
 			}
-			err = sysproxy.OnHTTP(a.Address)
+			err = sysproxy.OnHTTP(address)
 			if err != nil {
 				log.Error(err, "sysproxy.OnHTTP")
 				return
@@ -30,8 +39,10 @@ func (a *App) ItemProxyMode(menu *systray.Menu) {
 		} else {
 			manual.SetChecked(true)
 			global.SetChecked(false)
+			a.mu.Lock()
 			a.Mode = i18n.ManualProxy()
-			a.UpdateStatus()
+			a.mu.Unlock()
+			a.updateStatus()
 
 			err := sysproxy.OffHTTPS()
 			if err != nil {

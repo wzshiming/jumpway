@@ -1,6 +1,7 @@
 package tray
 
 import (
+	"errors"
 	"fmt"
 	"net"
 
@@ -20,23 +21,43 @@ func (a *App) ItemExportCommand(menu *systray.Menu) {
 }
 
 func (a *App) exportCommandShell() {
-	command := fmt.Sprintf("export http_proxy=http://%s https_proxy=http://%s; ", a.Address, a.Address)
+	address := a.primaryAddress()
+	if address == "" {
+		log.Error(errors.New(i18n.NoLocalRule()), i18n.ExportCommand())
+		return
+	}
+	command := fmt.Sprintf("export http_proxy=http://%s https_proxy=http://%s; ", address, address)
 	a.writeClipboard(command)
 }
 
 func (a *App) exportCommandCmd() {
-	command := fmt.Sprintf("set http_proxy=http://%s && set https_proxy=http://%s", a.Address, a.Address)
+	address := a.primaryAddress()
+	if address == "" {
+		log.Error(errors.New(i18n.NoLocalRule()), i18n.ExportCommand())
+		return
+	}
+	command := fmt.Sprintf("set http_proxy=http://%s && set https_proxy=http://%s", address, address)
 	a.writeClipboard(command)
 }
 
 func (a *App) exportCommandPowerShell() {
-	command := fmt.Sprintf("$env:http_proxy='http://%s'; $env:https_proxy='http://%s'; ", a.Address, a.Address)
+	address := a.primaryAddress()
+	if address == "" {
+		log.Error(errors.New(i18n.NoLocalRule()), i18n.ExportCommand())
+		return
+	}
+	command := fmt.Sprintf("$env:http_proxy='http://%s'; $env:https_proxy='http://%s'; ", address, address)
 	a.writeClipboard(command)
 }
 
 func (a *App) exportCommandShellGit() {
-	host, port, _ := net.SplitHostPort(a.Address)
-	command := fmt.Sprintf("export GIT_SSH_COMMAND='ssh -o ProxyCommand=\"nc -x %s:%s %%h %%p\"' http_proxy=http://%s https_proxy=http://%s; ", host, port, a.Address, a.Address)
+	address := a.primaryAddress()
+	if address == "" {
+		log.Error(errors.New(i18n.NoLocalRule()), i18n.ExportCommand())
+		return
+	}
+	host, port, _ := net.SplitHostPort(address)
+	command := fmt.Sprintf("export GIT_SSH_COMMAND='ssh -o ProxyCommand=\"nc -x %s:%s %%h %%p\"' http_proxy=http://%s https_proxy=http://%s; ", host, port, address, address)
 	a.writeClipboard(command)
 }
 

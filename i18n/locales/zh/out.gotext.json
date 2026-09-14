@@ -27,6 +27,11 @@
             "translation": "导出代理命令到剪切板"
         },
         {
+            "id": "No enabled local rule",
+            "message": "No enabled local rule",
+            "translation": "没有启用的本地规则"
+        },
+        {
             "id": "Config",
             "message": "Config",
             "translation": "配置"

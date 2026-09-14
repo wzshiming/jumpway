@@ -3,8 +3,11 @@ package tray
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
-	"slices"
+	"net/http"
+	"sync"
+	"time"
 
 	"github.com/gogpu/systray"
 	"github.com/wzshiming/bridge/chain"
@@ -27,92 +30,207 @@ func (a *App) ItemReloadConfig(menu *systray.Menu) {
 
 func (a *App) reload() error {
 	log.Info(i18n.ReloadConfig())
-	if a.cancel != nil {
-		a.cancel()
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	a.cancel = cancel
 	conf, err := a.store.Load()
+	if err == nil {
+		err = config.Validate(conf)
+	}
 	if err != nil {
 		log.Error(err, i18n.ReloadConfig())
 		a.mu.Lock()
-		a.running, a.lastErr = false, err
+		a.lastErr = err
 		a.mu.Unlock()
+		a.updateStatus()
 		return err
 	}
-	index := slices.IndexFunc(conf.Rules, func(rule config.Rule) bool {
-		return !rule.Disabled && !rule.Listen.Remote()
-	})
-	if index == -1 {
-		err := errors.New("no enabled local rule")
-		log.Error(err, i18n.ReloadConfig())
-		a.mu.Lock()
-		a.running, a.lastErr = false, err
-		a.mu.Unlock()
-		return err
-	}
-	rule := conf.Rules[index]
-
-	if a.listener != nil {
-		a.listener.Close()
-	}
-
-	address := rule.Listen.Address()
-	listener, err := local.LOCAL.Listen(ctx, "tcp", address)
-	a.listener = listener
-	if err != nil {
-		log.Error(err, i18n.Listen(address))
-		a.mu.Lock()
-		a.running, a.lastErr = false, err
-		a.mu.Unlock()
-		return err
-	}
-
 	a.mu.Lock()
-	a.Address = formatAddress(listener.Addr().String())
-	a.running, a.lastErr = true, nil
+	previousCancel := a.cancel
 	a.mu.Unlock()
-	a.UpdateStatus()
-	go func() {
-		dialer := jumpway.NewLogDialer(local.LOCAL, func(ctx context.Context, network, address string) {
-			log.Info(i18n.UseProxy(), "address", address)
+	if previousCancel != nil {
+		previousCancel()
+	}
+	a.wg.Wait()
+	ctx, cancel := context.WithCancel(context.Background())
+	a.mu.Lock()
+	a.cancel = cancel
+	a.lastErr = nil
+	a.mu.Unlock()
+
+	a.listenWebUI(conf.WebUI.String())
+	noProxy := conf.NoProxy.GetList(a.store.Dir())
+	matcher := hostmatcher.NewMatcher(noProxy)
+	enabled := make([]config.Rule, 0, len(conf.Rules))
+	rules := make([]*ruleState, 0, len(conf.Rules))
+	for _, rule := range conf.Rules {
+		if rule.Disabled {
+			continue
+		}
+		enabled = append(enabled, rule)
+		rules = append(rules, &ruleState{
+			name:          rule.Name,
+			listenAddress: rule.Listen.Address(),
+			address:       rule.Listen.Address(),
+			remote:        rule.Listen.Remote(),
 		})
-		dialer, err := chain.Default.BridgeChainWithConfig(ctx, dialer, rule.Way...)
-		if err != nil {
-			log.Error(err, i18n.Connect(), "address", address)
-			if ctx.Err() == nil {
-				a.mu.Lock()
-				a.running, a.lastErr = false, err
-				a.mu.Unlock()
+	}
+	a.mu.Lock()
+	a.rules = rules
+	a.mu.Unlock()
+
+	timer := time.NewTimer(2 * time.Second)
+	defer timer.Stop()
+	firsts := make([]chan error, len(enabled))
+	for index, rule := range enabled {
+		state := rules[index]
+		first := make(chan error, 1)
+		firsts[index] = first
+		var once sync.Once
+		report := func(event jumpway.Event) {
+			if ctx.Err() != nil && utils.IsClosedConnError(event.Err) {
+				return
 			}
-			return
+			a.mu.Lock()
+			if event.Addr != nil {
+				state.address = event.Addr.String()
+				if !state.remote {
+					state.address = formatAddress(state.address)
+				}
+				state.running, state.attempt, state.err = true, 0, nil
+			} else {
+				state.running, state.attempt, state.err = false, event.Attempt, event.Err
+			}
+			address := state.address
+			a.mu.Unlock()
+			if event.Addr != nil {
+				log.Info(i18n.Listen(address), "rule", rule.Name)
+			} else {
+				log.Error(event.Err, i18n.Listen(address), "rule", rule.Name, "attempt", event.Attempt, "backoff", event.Backoff)
+			}
+			a.updateStatus()
+			once.Do(func() { first <- event.Err })
+		}
+		listenConfig, err := jumpway.NewListenConfig(ctx, rule.Listen.Way)
+		if err != nil {
+			report(jumpway.Event{Err: err, Attempt: 1})
+			continue
+		}
+		dialer := jumpway.NewLogDialer(local.LOCAL, func(ctx context.Context, network, address string) {
+			log.Info(i18n.UseProxy(), "address", address, "rule", rule.Name)
+		})
+		dialer, err = chain.Default.BridgeChainWithConfig(ctx, dialer, rule.Way...)
+		if err != nil {
+			report(jumpway.Event{Err: err, Attempt: 1})
+			continue
 		}
 		dialer = jumpway.NewRetryDialer(dialer, jumpway.DefaultDialRetries, jumpway.DefaultDialBackoff, func(ctx context.Context, network, address string, attempt int, err error) {
-			log.Info(i18n.Connect(), "proxy", true, "address", address, "attempt", attempt, "err", err)
+			log.Info(i18n.Connect(), "proxy", true, "address", address, "rule", rule.Name, "attempt", attempt, "err", err)
 		})
 		dialer = jumpway.NewLogDialer(dialer, func(ctx context.Context, network, address string) {
-			log.Info(i18n.Connect(), "proxy", true, "address", address)
+			log.Info(i18n.Connect(), "proxy", true, "address", address, "rule", rule.Name)
 		})
 
-		if noProxy := conf.NoProxy.GetList(a.store.Dir()); len(noProxy) != 0 {
-			matcher := hostmatcher.NewMatcher(noProxy)
+		if len(noProxy) != 0 {
 			subDialer := jumpway.NewLogDialer(local.LOCAL, func(ctx context.Context, network, address string) {
-				log.Info(i18n.Connect(), "proxy", false, "address", address)
+				log.Info(i18n.Connect(), "proxy", false, "address", address, "rule", rule.Name)
 			})
 			dialer = chain.NewShuntDialer(dialer, subDialer, matcher)
 		}
 
-		err = jumpway.RunProxy(ctx, listener, dialer, rule.Listen.User())
-		if err != nil && !utils.IsClosedConnError(err) {
-			log.Error(err, i18n.RunProxy())
-			if ctx.Err() == nil {
-				a.mu.Lock()
-				a.running, a.lastErr = false, err
-				a.mu.Unlock()
+		user := rule.Listen.User()
+		a.wg.Add(1)
+		go func() {
+			defer a.wg.Done()
+			jumpway.Serve(ctx, func(ctx context.Context) (net.Listener, error) {
+				return listenConfig.Listen(ctx, "tcp", rule.Listen.Address())
+			}, func(ctx context.Context, listener net.Listener) error {
+				return jumpway.RunProxy(ctx, listener, dialer, user)
+			}, report)
+		}()
+	}
+
+	var failures []error
+	timedOut := false
+	for index, first := range firsts {
+		var firstErr error
+		if !timedOut {
+			select {
+			case firstErr = <-first:
+			case <-timer.C:
+				timedOut = true
 			}
 		}
+		if timedOut {
+			select {
+			case firstErr = <-first:
+			default:
+			}
+		}
+		if firstErr != nil {
+			failures = append(failures, fmt.Errorf("rule %q: %w", enabled[index].Name, firstErr))
+		}
+	}
+	a.mu.Lock()
+	webErr := a.webErr
+	a.mu.Unlock()
+	if webErr != nil {
+		failures = append(failures, fmt.Errorf("web_ui: %w", webErr))
+	}
+	a.updateStatus()
+	return errors.Join(failures...)
+}
+
+func (a *App) listenWebUI(address string) {
+	a.mu.Lock()
+	if a.webListener != nil && a.webListenAddress == address {
+		a.mu.Unlock()
+		return
+	}
+	previousListener, previousServer := a.webListener, a.webServer
+	a.webListener, a.webServer = nil, nil
+	a.webListenAddress, a.webAddress = address, formatAddress(address)
+	a.webErr = nil
+	a.mu.Unlock()
+	if previousListener != nil {
+		previousListener.Close()
+	}
+	if previousServer != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			previousServer.Shutdown(ctx)
+			previousServer.Close()
+		}()
+	}
+	listener, err := local.LOCAL.Listen(context.Background(), "tcp", address)
+	if err != nil {
+		log.Error(err, i18n.Listen(address), "web_ui", true)
+		a.mu.Lock()
+		a.webErr = err
+		a.mu.Unlock()
+		return
+	}
+	server := &http.Server{Handler: a.web}
+	a.mu.Lock()
+	a.webListener, a.webServer = listener, server
+	a.webAddress, a.webErr = formatAddress(listener.Addr().String()), nil
+	boundAddress := a.webAddress
+	a.mu.Unlock()
+	log.Info(i18n.Listen(boundAddress), "web_ui", true)
+	go func() {
+		err := server.Serve(listener)
+		if err == nil || errors.Is(err, http.ErrServerClosed) {
+			return
+		}
+		a.mu.Lock()
+		current := a.webServer == server
+		if current {
+			a.webListener, a.webErr = nil, err
+		}
+		a.mu.Unlock()
+		if current {
+			log.Error(err, i18n.Listen(boundAddress), "web_ui", true)
+			a.updateStatus()
+		}
 	}()
-	return nil
 }
 
 func formatAddress(address string) string {

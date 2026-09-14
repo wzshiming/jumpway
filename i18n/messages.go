@@ -46,6 +46,10 @@ func ExportCommand() string {
 	return fmt.Sprintf("Export Command")
 }
 
+func NoLocalRule() string {
+	return fmt.Sprintf("No enabled local rule")
+}
+
 func Config() string {
 	return fmt.Sprintf("Config")
 }

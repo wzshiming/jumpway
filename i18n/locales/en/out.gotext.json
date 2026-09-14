@@ -27,6 +27,13 @@
             "translation": "Proxy Export Line To Clipboard"
         },
         {
+            "id": "No enabled local rule",
+            "message": "No enabled local rule",
+            "translation": "No enabled local rule",
+            "translatorComment": "Copied from source.",
+            "fuzzy": true
+        },
+        {
             "id": "Config",
             "message": "Config",
             "translation": "Config"
