@@ -102,7 +102,7 @@ func (a *App) reload() error {
 			dialer = chain.NewShuntDialer(dialer, subDialer, matcher)
 		}
 
-		err = jumpway.RunProxy(ctx, listener, dialer, a.web)
+		err = jumpway.RunProxy(ctx, listener, dialer, rule.Listen.User())
 		if err != nil && !utils.IsClosedConnError(err) {
 			log.Error(err, i18n.RunProxy())
 			if ctx.Err() == nil {

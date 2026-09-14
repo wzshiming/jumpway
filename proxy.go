@@ -3,22 +3,24 @@ package jumpway
 import (
 	"context"
 	"net"
-	"net/http"
+	"net/url"
 	"sync"
 
 	"github.com/wzshiming/anyproxy"
 	"github.com/wzshiming/bridge"
-	"github.com/wzshiming/cmux"
-	"github.com/wzshiming/cmux/pattern"
 )
 
-func RunProxy(ctx context.Context, listener net.Listener, dialer bridge.Dialer, web http.Handler) error {
+func RunProxy(ctx context.Context, listener net.Listener, dialer bridge.Dialer, user *url.Userinfo) error {
 	address := listener.Addr().String()
+	proxyAddress := address
+	if user != nil {
+		proxyAddress = user.String() + "@" + address
+	}
 	proxies := []string{
-		"http://" + address,
-		"socks5://" + address,
-		"socks4://" + address,
-		"ssh://" + address,
+		"http://" + proxyAddress,
+		"socks5://" + proxyAddress,
+		"socks4://" + proxyAddress,
+		"ssh://" + proxyAddress,
 	}
 	proxy, err := anyproxy.NewAnyProxy(ctx, proxies, &anyproxy.Config{
 		Dialer:    dialer,
@@ -29,34 +31,12 @@ func RunProxy(ctx context.Context, listener net.Listener, dialer bridge.Dialer, 
 	}
 
 	host := proxy.Match(address)
-	var serve cmux.Handler = host
-	if web != nil {
-		mux := cmux.NewCMux()
-		prefixes := make([]string, 0, len(pattern.Pattern[pattern.HTTP]))
-		for _, prefix := range pattern.Pattern[pattern.HTTP] {
-			prefixes = append(prefixes, prefix+"/")
-		}
-		server := &http.Server{
-			Handler: web,
-			BaseContext: func(net.Listener) context.Context {
-				return ctx
-			},
-		}
-		if err := mux.HandlePrefix(anyproxy.NewHttpServeConn(server), prefixes...); err != nil {
-			return err
-		}
-		if err := mux.NotFound(host); err != nil {
-			return err
-		}
-		serve = mux
-	}
-
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
 			return err
 		}
-		go serve.ServeConn(conn)
+		go host.ServeConn(conn)
 	}
 }
 
