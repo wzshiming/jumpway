@@ -24,8 +24,6 @@ func (a *App) ItemReloadConfig(menu *systray.Menu) {
 	menu.Add(i18n.ReloadConfig(), func() {
 		a.do(func() { _ = a.reload() })
 	})
-
-	a.do(func() { _ = a.reload() })
 }
 
 func (a *App) reload() error {
@@ -39,6 +37,7 @@ func (a *App) reload() error {
 		a.mu.Lock()
 		a.lastErr = err
 		a.mu.Unlock()
+		a.rebuildMenu()
 		a.updateStatus()
 		return err
 	}
@@ -187,6 +186,7 @@ func (a *App) reload() error {
 	if webErr != nil {
 		failures = append(failures, fmt.Errorf("web_ui: %w", webErr))
 	}
+	a.rebuildMenu()
 	a.updateStatus()
 	return errors.Join(failures...)
 }

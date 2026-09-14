@@ -32,6 +32,36 @@
             "translation": "没有启用的本地规则"
         },
         {
+            "id": "Running",
+            "message": "Running",
+            "translation": "运行中"
+        },
+        {
+            "id": "Retrying ({Attempt})",
+            "message": "Retrying ({Attempt})",
+            "translation": "重试中 ({Attempt})",
+            "placeholders": [
+                {
+                    "id": "Attempt",
+                    "string": "%[1]d",
+                    "type": "int",
+                    "underlyingType": "int",
+                    "argNum": 1,
+                    "expr": "attempt"
+                }
+            ]
+        },
+        {
+            "id": "Stopped",
+            "message": "Stopped",
+            "translation": "已停止"
+        },
+        {
+            "id": "Remote",
+            "message": "Remote",
+            "translation": "远端"
+        },
+        {
             "id": "Config",
             "message": "Config",
             "translation": "配置"
@@ -133,29 +163,6 @@
                     "underlyingType": "string",
                     "argNum": 1,
                     "expr": "message"
-                }
-            ]
-        },
-        {
-            "id": "JumpWay {Mode} On {Address}",
-            "message": "JumpWay {Mode} On {Address}",
-            "translation": "JumpWay {Mode} 在 {Address}",
-            "placeholders": [
-                {
-                    "id": "Mode",
-                    "string": "%[1]s",
-                    "type": "string",
-                    "underlyingType": "string",
-                    "argNum": 1,
-                    "expr": "mode"
-                },
-                {
-                    "id": "Address",
-                    "string": "%[2]s",
-                    "type": "string",
-                    "underlyingType": "string",
-                    "argNum": 2,
-                    "expr": "address"
                 }
             ]
         }

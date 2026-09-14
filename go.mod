@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/Xuanwo/go-locale v1.1.0
 	github.com/atotto/clipboard v0.1.4
+	github.com/go-webgpu/goffi v0.6.3
 	github.com/gogpu/systray v0.3.0
 	github.com/gorilla/handlers v1.5.2
 	github.com/gorilla/mux v1.8.1
@@ -29,7 +30,6 @@ require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/aead/chacha20 v0.0.0-20180709150244-8b13a72661da // indirect
 	github.com/felixge/httpsnoop v1.0.3 // indirect
-	github.com/go-webgpu/goffi v0.6.3 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
 	github.com/kr/pretty v0.1.0 // indirect

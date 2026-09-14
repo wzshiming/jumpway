@@ -50,6 +50,22 @@ func NoLocalRule() string {
 	return fmt.Sprintf("No enabled local rule")
 }
 
+func Running() string {
+	return fmt.Sprintf("Running")
+}
+
+func Retrying(attempt int) string {
+	return fmt.Sprintf("Retrying (%d)", attempt)
+}
+
+func Stopped() string {
+	return fmt.Sprintf("Stopped")
+}
+
+func Remote() string {
+	return fmt.Sprintf("Remote")
+}
+
 func Config() string {
 	return fmt.Sprintf("Config")
 }
@@ -116,8 +132,4 @@ func Listen(address string) string {
 
 func Alert(message string) string {
 	return fmt.Sprintf("Alert %s", message)
-}
-
-func Status(mode string, address string) string {
-	return fmt.Sprintf("JumpWay %s On %s", mode, address)
 }

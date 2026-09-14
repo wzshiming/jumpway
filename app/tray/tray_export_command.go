@@ -11,17 +11,16 @@ import (
 	"github.com/wzshiming/jumpway/log"
 )
 
-func (a *App) ItemExportCommand(menu *systray.Menu) {
+func (a *App) addExportCommands(menu *systray.Menu, rule ruleMenuEntry) *systray.MenuItem {
 	sub := systray.NewMenu()
-	sub.Add("Shell", func() { a.do(a.exportCommandShell) })
-	sub.Add("Cmd", func() { a.do(a.exportCommandCmd) })
-	sub.Add("PowerShell", func() { a.do(a.exportCommandPowerShell) })
-	sub.Add("Shell git", func() { a.do(a.exportCommandShellGit) })
-	menu.AddSubmenu(i18n.ExportCommand(), sub)
+	sub.Add("Shell", func() { a.do(func() { a.exportCommandShell(a.ruleAddress(rule.name)) }) })
+	sub.Add("Cmd", func() { a.do(func() { a.exportCommandCmd(a.ruleAddress(rule.name)) }) })
+	sub.Add("PowerShell", func() { a.do(func() { a.exportCommandPowerShell(a.ruleAddress(rule.name)) }) })
+	sub.Add("Shell git", func() { a.do(func() { a.exportCommandShellGit(a.ruleAddress(rule.name)) }) })
+	return menu.AddSubmenu(rule.label, sub)
 }
 
-func (a *App) exportCommandShell() {
-	address := a.primaryAddress()
+func (a *App) exportCommandShell(address string) {
 	if address == "" {
 		log.Error(errors.New(i18n.NoLocalRule()), i18n.ExportCommand())
 		return
@@ -30,8 +29,7 @@ func (a *App) exportCommandShell() {
 	a.writeClipboard(command)
 }
 
-func (a *App) exportCommandCmd() {
-	address := a.primaryAddress()
+func (a *App) exportCommandCmd(address string) {
 	if address == "" {
 		log.Error(errors.New(i18n.NoLocalRule()), i18n.ExportCommand())
 		return
@@ -40,8 +38,7 @@ func (a *App) exportCommandCmd() {
 	a.writeClipboard(command)
 }
 
-func (a *App) exportCommandPowerShell() {
-	address := a.primaryAddress()
+func (a *App) exportCommandPowerShell(address string) {
 	if address == "" {
 		log.Error(errors.New(i18n.NoLocalRule()), i18n.ExportCommand())
 		return
@@ -50,8 +47,7 @@ func (a *App) exportCommandPowerShell() {
 	a.writeClipboard(command)
 }
 
-func (a *App) exportCommandShellGit() {
-	address := a.primaryAddress()
+func (a *App) exportCommandShellGit(address string) {
 	if address == "" {
 		log.Error(errors.New(i18n.NoLocalRule()), i18n.ExportCommand())
 		return

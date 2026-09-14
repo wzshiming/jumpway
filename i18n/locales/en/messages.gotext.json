@@ -27,6 +27,36 @@
             "translation": "Proxy Export Line To Clipboard"
         },
         {
+            "id": "Running",
+            "message": "Running",
+            "translation": "Running"
+        },
+        {
+            "id": "Retrying ({Attempt})",
+            "message": "Retrying ({Attempt})",
+            "translation": "Retrying ({Attempt})",
+            "placeholders": [
+                {
+                    "id": "Attempt",
+                    "string": "%[1]d",
+                    "type": "int",
+                    "underlyingType": "int",
+                    "argNum": 1,
+                    "expr": "attempt"
+                }
+            ]
+        },
+        {
+            "id": "Stopped",
+            "message": "Stopped",
+            "translation": "Stopped"
+        },
+        {
+            "id": "Remote",
+            "message": "Remote",
+            "translation": "Remote"
+        },
+        {
             "id": "Config",
             "message": "Config",
             "translation": "Config"
@@ -128,29 +158,6 @@
                     "underlyingType": "string",
                     "argNum": 1,
                     "expr": "message"
-                }
-            ]
-        },
-        {
-            "id": "JumpWay {Mode} On {Address}",
-            "message": "JumpWay {Mode} On {Address}",
-            "translation": "JumpWay {Mode} On {Address}",
-            "placeholders": [
-                {
-                    "id": "Mode",
-                    "string": "%[1]s",
-                    "type": "string",
-                    "underlyingType": "string",
-                    "argNum": 1,
-                    "expr": "mode"
-                },
-                {
-                    "id": "Address",
-                    "string": "%[2]s",
-                    "type": "string",
-                    "underlyingType": "string",
-                    "argNum": 2,
-                    "expr": "address"
                 }
             ]
         }

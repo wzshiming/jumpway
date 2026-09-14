@@ -19,9 +19,8 @@ import (
 )
 
 type App struct {
-	Mode         string
-	Log          string
-	UpdateStatus func()
+	Mode string
+	Log  string
 
 	tray    *systray.SystemTray
 	actions chan func()
@@ -34,12 +33,15 @@ type App struct {
 	webListener net.Listener
 	webServer   *http.Server
 
-	mu               sync.Mutex
-	webListenAddress string
-	webAddress       string
-	webErr           error
-	lastErr          error
-	rules            []*ruleState
+	mu                 sync.Mutex
+	webListenAddress   string
+	webAddress         string
+	webErr             error
+	lastErr            error
+	rules              []*ruleState
+	menuItems          *menuItems
+	systemProxyRule    string
+	systemProxyAddress string
 }
 
 type ruleState struct {
@@ -173,15 +175,6 @@ func (a *App) webURL() string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return "http://" + a.webAddress
-}
-
-func (a *App) updateStatus() {
-	a.mu.Lock()
-	update := a.UpdateStatus
-	a.mu.Unlock()
-	if update != nil {
-		update()
-	}
 }
 
 func (a *App) stop() {
