@@ -34,6 +34,11 @@
       noContexts: "No contexts yet. Connections go direct.",
       noHops: "No hops: this context connects directly.",
       hop: "Hop {number}",
+      hopExit: "exit node",
+      hopEntry: "entry node",
+      hopsHint: "Hop 1 is the exit node, closest to the target; the last hop is dialed from this machine. Traffic: this machine \u2192 last hop \u2192 \u2026 \u2192 Hop 1 \u2192 target.",
+      chainLocal: "this machine",
+      chainTarget: "target",
       up: "Up",
       down: "Down",
       deleteHop: "Delete hop",
@@ -114,6 +119,11 @@
       noContexts: "尚无上下文，连接将直接访问，不走代理。",
       noHops: "没有跳板节点：此上下文使用直接连接。",
       hop: "跳板节点 {number}",
+      hopExit: "出口节点",
+      hopEntry: "入口节点",
+      hopsHint: "跳板节点 1 是出口节点（最靠近目标），最后一个节点由本机直接连接。流量方向：本机 \u2192 最后一个节点 \u2192 \u2026 \u2192 节点 1 \u2192 目标。",
+      chainLocal: "本机",
+      chainTarget: "目标",
       up: "上移",
       down: "下移",
       deleteHop: "删除节点",
@@ -622,9 +632,11 @@
     return statusRequest;
   }
 
+  // bridge dials the last node first, so the list runs from the exit node back to this machine.
   function chainSummary(context) {
-    return context.way.length ? context.way.map((node, index) =>
-      t("hop", { number: index + 1 }) + ": " + node.lb.join(", ")).join(" \u2192 ") : t("noHops");
+    if (!context.way.length) return t("noHops");
+    const hops = context.way.map((node, index) => t("hop", { number: index + 1 }) + ": " + node.lb.join(", "));
+    return [t("chainLocal"), ...hops.reverse(), t("chainTarget")].join(" \u2192 ");
   }
 
   function selectContextTab(tab, selected) {
@@ -695,7 +707,10 @@
     hop.id = "hop-" + hopIndex;
     const title = find(".hop-title", hop);
     title.id = hop.id + "-title";
-    title.textContent = t("hop", { number: hopIndex + 1 });
+    const roles = [t("hop", { number: hopIndex + 1 })];
+    if (hopIndex === 0) roles.push(t("hopExit"));
+    if (hopIndex === way.length - 1 && way.length > 1) roles.push(t("hopEntry"));
+    title.textContent = roles.join(" \u00b7 ");
     hop.setAttribute("aria-labelledby", title.id);
     const rows = find(".url-rows", hop);
     node.lb.forEach((url, urlIndex) => rows.append(renderURL(url, hopIndex, urlIndex)));

@@ -57,7 +57,8 @@ listen address) to manage it in the browser:
 
 - `Current`: pick the active context and switch to it
 - `Contexts`: one tab per context to rename it, edit its proxy hops and URLs
-  (with a URL builder), or delete it; `+` adds a context
+  (with a URL builder), or delete it; `+` adds a context. Hop 1 is the exit
+  node next to the target and the last hop is dialed from this machine
 - `Listen address`: the host and port the proxy and this page listen on
 - `No proxy`: hosts, environment variables and files that bypass the proxy
 - `Advanced YAML`: edit the file directly
