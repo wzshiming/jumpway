@@ -50,6 +50,17 @@ func NewConfigsService(store *config.Store, runtime Runtime) *ConfigsService {
 	return &ConfigsService{store: store, runtime: runtime}
 }
 
+// SavedPrefix starts every error whose config was written but whose reload failed; the UI keys on it.
+const SavedPrefix = "saved, but "
+
+// reload applies the saved config and marks reload failures as such.
+func (s *ConfigsService) reload() error {
+	if err := s.runtime.Reload(); err != nil {
+		return fmt.Errorf("%s%w", SavedPrefix, err)
+	}
+	return nil
+}
+
 // modify applies fn to the stored config, then validates, saves and reloads.
 func (s *ConfigsService) modify(fn func(conf *config.Config) error) error {
 	s.mu.Lock()
@@ -67,7 +78,7 @@ func (s *ConfigsService) modify(fn func(conf *config.Config) error) error {
 	if err := s.store.Save(conf); err != nil {
 		return err
 	}
-	return s.runtime.Reload()
+	return s.reload()
 }
 
 // Update the Config
@@ -81,7 +92,7 @@ func (s *ConfigsService) Update(conf *config.Config) (err error) {
 	if err := s.store.Save(conf); err != nil {
 		return err
 	}
-	return s.runtime.Reload()
+	return s.reload()
 }
 
 // Get the Config
@@ -257,7 +268,7 @@ func (s *ConfigsService) UpdateRaw(raw *RawConfig) (err error) {
 	if err := s.store.SaveRaw(data); err != nil {
 		return err
 	}
-	return s.runtime.Reload()
+	return s.reload()
 }
 
 // Status of the running proxy

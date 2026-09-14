@@ -1,6 +1,8 @@
 "use strict";
 
 (() => {
+  // Mirrors configs.SavedPrefix: the config was written, only the reload failed.
+  const SAVED_PREFIX = "saved, but ";
   const STR = {
     en: {
       appName: "JumpWay",
@@ -93,6 +95,7 @@
       loading: "Loading...",
       saving: "Saving and applying...",
       saved: "Saved and applied.",
+      savedWithErrors: "Saved, but applying it reported errors. The affected rules keep retrying.",
       reloaded: "Reloaded from disk.",
       retry: "Retry",
       movedTo: "The web UI has moved to",
@@ -193,6 +196,7 @@
       loading: "正在加载...",
       saving: "正在保存并应用...",
       saved: "已保存并应用。",
+      savedWithErrors: "已保存，但应用时出现错误。受影响的规则会持续重试。",
       reloaded: "已从磁盘重新加载。",
       retry: "重试",
       movedTo: "网页配置已移至",
@@ -266,6 +270,7 @@
   let busy = false;
   let movedAddress = "";
   let statusRequest = null;
+  let pendingWarning = null;
   let requestUnreachable = false;
   let builderLayouts = [];
   let builderRequest = null;
@@ -354,7 +359,11 @@
       const loaders = { rules: loadRules, "web-ui": loadWebUI, "no-proxy": loadNoProxy, yaml: loadYAML };
       await loaders[route.kind](route);
       page.loaded = true;
-      activity(notify, Boolean(notify));
+      if (pendingWarning) {
+        showError(pendingWarning, true);
+        activity("savedWithErrors");
+        pendingWarning = null;
+      } else activity(notify, Boolean(notify));
     } catch (error) {
       activity("");
       showError(error, true);
@@ -545,18 +554,27 @@
     setBusy(true);
     clearErrors();
     activity("saving");
+    let warning = null;
     try {
       if (statusRequest) await statusRequest.catch(() => {});
       await api(resource, request);
     } catch (error) {
-      activity("");
-      showError(error, true);
-      setBusy(false);
-      return;
+      // The service prefixes reload failures: the config is on disk, only applying it failed.
+      if (!(error.message || "").startsWith(SAVED_PREFIX)) {
+        activity("");
+        showError(error, true);
+        setBusy(false);
+        return;
+      }
+      warning = error;
     }
     setDirty(false);
     if (mayMove) movedAddress = address;
-    activity(toast, true);
+    if (warning) {
+      pendingWarning = warning;
+      activity("savedWithErrors");
+      showError(warning, true);
+    } else activity(toast, true);
     let moved = false;
     try {
       const status = await refreshStatus();
@@ -578,6 +596,7 @@
     } catch (error) {
       showError(error, true);
     } finally {
+      pendingWarning = null;
       setBusy(false);
     }
   }
@@ -669,8 +688,9 @@
       chip.title = text(rule.error);
       find(".chip-label", chip).textContent = rule.name + " \u00b7 " + rule.address + (rule.target ? " \u2192 " + rule.target : "");
       find(".chip-state", chip).textContent = t(state, { attempt: rule.attempt });
-      find(".rule-marker", chip).textContent = t(rule.target ? "forward" : "remote");
-      find(".rule-marker", chip).hidden = !rule.target && !rule.remote;
+      const markers = [rule.target ? "forward" : "", rule.remote ? "remote" : ""].filter(Boolean);
+      find(".rule-marker", chip).textContent = markers.map(key => t(key)).join(" \u00b7 ");
+      find(".rule-marker", chip).hidden = !markers.length;
       if (busy) chip.setAttribute("aria-disabled", "true");
       return chip;
     }));

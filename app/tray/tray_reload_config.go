@@ -115,7 +115,7 @@ func (a *App) reload() error {
 		}
 		listenConfig, err := jumpway.NewListenConfig(ctx, rule.Listen.Way)
 		if err != nil {
-			report(jumpway.Event{Err: err, Attempt: 1})
+			report(jumpway.Event{Err: err})
 			continue
 		}
 		dialer := jumpway.NewLogDialer(local.LOCAL, func(ctx context.Context, network, address string) {
@@ -127,7 +127,7 @@ func (a *App) reload() error {
 		}
 		dialer, err = forwardChain.BridgeChainWithConfig(ctx, dialer, rule.Forward.Way...)
 		if err != nil {
-			report(jumpway.Event{Err: err, Attempt: 1})
+			report(jumpway.Event{Err: err})
 			continue
 		}
 		dialer = jumpway.NewRetryDialer(dialer, jumpway.DefaultDialRetries, jumpway.DefaultDialBackoff, func(ctx context.Context, network, address string, attempt int, err error) {

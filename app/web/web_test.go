@@ -565,7 +565,7 @@ func TestUpdateConfig(t *testing.T) {
 			name:        "reload_failure_keeps_saved_config",
 			reloadError: errors.New("listen tcp: address already in use"),
 			wantStatus:  http.StatusBadRequest,
-			wantError:   "listen tcp: address already in use",
+			wantError:   "saved, but listen tcp: address already in use",
 			wantReloads: 1,
 			wantPort:    1098,
 		},
