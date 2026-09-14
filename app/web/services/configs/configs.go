@@ -23,6 +23,8 @@ type Status struct {
 type RuleStatus struct {
 	Name    string `json:"name"`
 	Address string `json:"address"`
+	// Target is the fixed destination for port-forward rules; empty for proxy rules.
+	Target  string `json:"target,omitempty"`
 	Remote  bool   `json:"remote"`
 	Running bool   `json:"running"`
 	Attempt int    `json:"attempt,omitempty"`

@@ -25,9 +25,10 @@ const testConfigYAML = "web_ui:\n" +
 	"    listen:\n" +
 	"      host: 127.0.0.1\n" +
 	"      port: 1087\n" +
-	"    way:\n" +
-	"      - lb:\n" +
-	"          - socks5://127.0.0.1:1080\n" +
+	"    forward:\n" +
+	"      way:\n" +
+	"        - lb:\n" +
+	"            - socks5://127.0.0.1:1080\n" +
 	"# keep me\n"
 
 type fakeRuntime struct {
@@ -116,9 +117,21 @@ func TestGetConfig(t *testing.T) {
 	if !ok || listen["host"] != "127.0.0.1" || listen["port"] != float64(1087) {
 		t.Fatalf("listen = %#v, want the seeded rule address", rule["listen"])
 	}
-	way, ok := rule["way"].([]any)
+	forward, ok := rule["forward"].(map[string]any)
+	if !ok {
+		t.Fatalf("forward = %#v, want an object", rule["forward"])
+	}
+	way, ok := forward["way"].([]any)
 	if !ok || len(way) != 1 || way[0] != "socks5://127.0.0.1:1080" {
-		t.Fatalf("way = %#v, want a single string node", rule["way"])
+		t.Fatalf("forward.way = %#v, want a single string node", forward["way"])
+	}
+	if _, ok := rule["way"]; ok {
+		t.Fatalf("rule contains removed way key: %#v", rule)
+	}
+	for _, key := range []string{"host", "port"} {
+		if _, ok := forward[key]; ok {
+			t.Errorf("proxy forward contains %q: %#v", key, forward)
+		}
 	}
 	if _, ok := conf["no_proxy"].(map[string]any); !ok {
 		t.Fatalf("no_proxy = %#v, want an object", conf["no_proxy"])
@@ -133,17 +146,17 @@ func TestGetConfig(t *testing.T) {
 func TestListRules(t *testing.T) {
 	handler, _, _ := setupConfigAPI(t)
 	rules := listRulesAPI(t, handler)
-	if len(rules) != 1 || rules[0].Name != "a" || len(rules[0].Way) != 1 || !slices.Equal(rules[0].Way[0].LB, []string{"socks5://127.0.0.1:1080"}) {
+	if len(rules) != 1 || rules[0].Name != "a" || len(rules[0].Forward.Way) != 1 || !slices.Equal(rules[0].Forward.Way[0].LB, []string{"socks5://127.0.0.1:1080"}) {
 		t.Fatalf("rules = %#v, want seeded rule a", rules)
 	}
 }
 
 func TestCreateRule(t *testing.T) {
 	handler, fake, store := setupConfigAPI(t)
-	requestAPI(t, handler, http.MethodPost, "/apis/configs/rules", `{"name":"b","listen":{"host":"::1","port":9000,"way":[{"lb":["ssh://user@host:22"]}],"username":"user","password":"secret"},"way":[{"lb":["socks5://h:1080"]}]}`, http.StatusOK)
+	requestAPI(t, handler, http.MethodPost, "/apis/configs/rules", `{"name":"b","listen":{"host":"::1","port":9000,"way":[{"lb":["ssh://user@host:22"]}],"username":"user","password":"secret"},"forward":{"way":[{"lb":["socks5://h:1080"]}]}}`, http.StatusOK)
 	rules := listRulesAPI(t, handler)
-	if len(rules) != 2 || rules[0].Name != "a" || rules[1].Name != "b" || len(rules[1].Way) != 1 || !slices.Equal(rules[1].Way[0].LB, []string{"socks5://h:1080"}) {
-		t.Fatalf("rules = %#v, want a and b with the supplied way", rules)
+	if len(rules) != 2 || rules[0].Name != "a" || rules[1].Name != "b" || len(rules[1].Forward.Way) != 1 || !slices.Equal(rules[1].Forward.Way[0].LB, []string{"socks5://h:1080"}) {
+		t.Fatalf("rules = %#v, want a and b with the supplied forward.way", rules)
 	}
 	listen := rules[1].Listen
 	if listen.Address() != "[::1]:9000" || !listen.Remote() || !slices.Equal(listen.Way[0].LB, []string{"ssh://user@host:22"}) || listen.Username != "user" || listen.Password != "secret" {
@@ -161,6 +174,32 @@ func TestCreateRule(t *testing.T) {
 	}
 }
 
+func TestCreatePortForwardRule(t *testing.T) {
+	handler, fake, store := setupConfigAPI(t)
+	requestAPI(t, handler, http.MethodPost, "/apis/configs/rules", `{"name":"db","listen":{"port":15432},"forward":{"host":"10.0.0.5","port":5432,"way":[{"lb":["ssh://u@bastion:22"]}]}}`, http.StatusOK)
+	response := requestAPI(t, handler, http.MethodGet, "/apis/configs/rules/db", "", http.StatusOK)
+	var rule config.Rule
+	if err := json.Unmarshal(response.Body.Bytes(), &rule); err != nil {
+		t.Fatal(err)
+	}
+	if rule.Name != "db" || rule.Listen.Host != "" || rule.Listen.Port != 15432 || rule.Forward.Host != "10.0.0.5" || rule.Forward.Port != 5432 {
+		t.Fatalf("rule = %#v, want db forwarding 15432 to 10.0.0.5:5432", rule)
+	}
+	if len(rule.Forward.Way) != 1 || !slices.Equal(rule.Forward.Way[0].LB, []string{"ssh://u@bastion:22"}) {
+		t.Fatalf("forward.way = %#v, want the supplied SSH chain", rule.Forward.Way)
+	}
+	if fake.reloads != 1 {
+		t.Fatalf("reloads = %d, want 1", fake.reloads)
+	}
+	conf, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(conf.Rules) != 2 || !reflect.DeepEqual(conf.Rules[1], rule) || conf.Rules[0].Name != "a" || conf.WebUI.Port != 1088 {
+		t.Fatalf("saved config = %#v, want db and unchanged rule a and web UI", conf)
+	}
+}
+
 func TestCreateFirstRule(t *testing.T) {
 	handler, fake, store := setupConfigAPI(t)
 	if err := store.SaveRaw([]byte("web_ui:\n  host: 127.0.0.1\n  port: 1088\n")); err != nil {
@@ -169,7 +208,7 @@ func TestCreateFirstRule(t *testing.T) {
 	if rules := listRulesAPI(t, handler); len(rules) != 0 {
 		t.Fatalf("rules = %#v, want empty array", rules)
 	}
-	requestAPI(t, handler, http.MethodPost, "/apis/configs/rules", `{"name":"b","way":[{"lb":["socks5://h:1080"]}]}`, http.StatusOK)
+	requestAPI(t, handler, http.MethodPost, "/apis/configs/rules", `{"name":"b","forward":{"way":[{"lb":["socks5://h:1080"]}]}}`, http.StatusOK)
 	if fake.reloads != 1 {
 		t.Fatalf("reloads = %d, want 1", fake.reloads)
 	}
@@ -195,17 +234,21 @@ func TestRuleMutationInvalid(t *testing.T) {
 		{name: "blank_name", method: http.MethodPost, target: "/rules", body: `{"name":"  "}`, wantError: "rule name is empty"},
 		{name: "null_create", method: http.MethodPost, target: "/rules", body: `null`, wantError: "rule name is empty"},
 		{name: "slash_name", method: http.MethodPost, target: "/rules", body: `{"name":"a/b"}`, wantError: `rules[1].name "a/b" must not contain "/"`},
-		{name: "empty_create_way", method: http.MethodPost, target: "/rules", body: `{"name":"b","way":[{"lb":[]}]}`, wantError: "rules[1].way[0] has no proxy URL"},
-		{name: "invalid_create_way", method: http.MethodPost, target: "/rules", body: `{"name":"b","way":[{"lb":["socks5://[::1"]}]}`, wantError: "rules[1].way[0]: invalid proxy URL"},
+		{name: "empty_create_way", method: http.MethodPost, target: "/rules", body: `{"name":"b","forward":{"way":[{"lb":[]}]}}`, wantError: "rules[1].forward.way[0] has no proxy URL"},
+		{name: "invalid_create_way", method: http.MethodPost, target: "/rules", body: `{"name":"b","forward":{"way":[{"lb":["socks5://[::1"]}]}}`, wantError: "rules[1].forward.way[0]: invalid proxy URL"},
+		{name: "forward_way_no_scheme", method: http.MethodPost, target: "/rules", body: `{"name":"b","forward":{"way":[{"lb":["x"]}]}}`, wantError: `rules[1].forward.way[0]: proxy URL "x" has no scheme`},
 		{name: "invalid_listen_way", method: http.MethodPost, target: "/rules", body: `{"name":"b","listen":{"way":[{"lb":["ssh://[::1"]}]}}`, wantError: "rules[1].listen.way[0]: invalid proxy URL"},
 		{name: "listen_port", method: http.MethodPost, target: "/rules", body: `{"name":"b","listen":{"port":70000}}`, wantError: "rules[1].listen.port 70000"},
+		{name: "forward_port", method: http.MethodPost, target: "/rules", body: `{"name":"db","forward":{"port":70000}}`, wantError: "rules[1].forward.port 70000"},
+		{name: "forward_host_without_port", method: http.MethodPost, target: "/rules", body: `{"name":"db","forward":{"host":"10.0.0.5"}}`, wantError: "rules[1].forward.host is set but port is 0"},
+		{name: "port_forward_with_username", method: http.MethodPost, target: "/rules", body: `{"name":"db","listen":{"port":15432,"username":"user"},"forward":{"host":"10.0.0.5","port":5432}}`, wantError: "rules[1].listen.username is only used by proxy rules"},
 		{name: "password_without_username", method: http.MethodPost, target: "/rules", body: `{"name":"b","listen":{"password":"secret"}}`, wantError: "rules[1].listen.password is set but username is empty"},
 		{name: "web_ui_collision", method: http.MethodPost, target: "/rules", body: `{"name":"b","listen":{"port":1088}}`, wantError: "rules[1].listen address 127.0.0.1:1088 is already used by web_ui"},
 		{name: "rule_collision", method: http.MethodPost, target: "/rules", body: `{"name":"b","listen":{"port":1087}}`, wantError: `rules[1].listen address 127.0.0.1:1087 is already used by rule "a"`},
 		{name: "unknown_update", method: http.MethodPut, target: "/rules/zzz", body: `{"name":"b"}`, wantError: `rule "zzz" not found`},
 		{name: "null_update", method: http.MethodPut, target: "/rules/a", body: `null`, wantError: "rule is nil"},
 		{name: "blank_update_name", method: http.MethodPut, target: "/rules/a", body: `{"name":"  "}`, wantError: "rules[0].name is empty"},
-		{name: "invalid_update_way", method: http.MethodPut, target: "/rules/a", body: `{"way":[{"lb":["/no-scheme"]}]}`, wantError: "rules[0].way[0]: proxy URL"},
+		{name: "invalid_update_way", method: http.MethodPut, target: "/rules/a", body: `{"forward":{"way":[{"lb":["/no-scheme"]}]}}`, wantError: "rules[0].forward.way[0]: proxy URL"},
 		{name: "unknown_delete", method: http.MethodDelete, target: "/rules/zzz", wantError: `rule "zzz" not found`},
 	}
 	for _, test := range tests {
@@ -230,7 +273,7 @@ func TestGetRule(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Name != "a" || len(got.Way) != 1 || !slices.Equal(got.Way[0].LB, []string{"socks5://127.0.0.1:1080"}) {
+	if got.Name != "a" || len(got.Forward.Way) != 1 || !slices.Equal(got.Forward.Way[0].LB, []string{"socks5://127.0.0.1:1080"}) {
 		t.Fatalf("rule = %#v, want seeded rule a", got)
 	}
 	if got.Listen.Address() != "127.0.0.1:1087" || got.Disabled {
@@ -248,16 +291,16 @@ func TestUpdateRule(t *testing.T) {
 		body string
 		want string
 	}{
-		{name: "replace", body: `{"name":"a","disabled":true,"listen":{"port":9000},"way":[{"lb":["socks5://h:1080"]}]}`, want: "a"},
-		{name: "rename", body: `{"name":"a2","disabled":true,"listen":{"port":9000},"way":[{"lb":["socks5://h:1080"]}]}`, want: "a2"},
-		{name: "empty_name_keeps_path", body: `{"name":"","disabled":true,"listen":{"port":9000},"way":[{"lb":["socks5://h:1080"]}]}`, want: "a"},
+		{name: "replace", body: `{"name":"a","disabled":true,"listen":{"port":9000},"forward":{"way":[{"lb":["socks5://h:1080"]}]}}`, want: "a"},
+		{name: "rename", body: `{"name":"a2","disabled":true,"listen":{"port":9000},"forward":{"way":[{"lb":["socks5://h:1080"]}]}}`, want: "a2"},
+		{name: "empty_name_keeps_path", body: `{"name":"","disabled":true,"listen":{"port":9000},"forward":{"way":[{"lb":["socks5://h:1080"]}]}}`, want: "a"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			handler, fake, store := setupConfigAPI(t)
 			requestAPI(t, handler, http.MethodPut, "/apis/configs/rules/a", test.body, http.StatusOK)
 			rules := listRulesAPI(t, handler)
-			if len(rules) != 1 || rules[0].Name != test.want || len(rules[0].Way) != 1 || !slices.Equal(rules[0].Way[0].LB, []string{"socks5://h:1080"}) {
-				t.Fatalf("rules = %#v, want %q with replaced way", rules, test.want)
+			if len(rules) != 1 || rules[0].Name != test.want || len(rules[0].Forward.Way) != 1 || !slices.Equal(rules[0].Forward.Way[0].LB, []string{"socks5://h:1080"}) {
+				t.Fatalf("rules = %#v, want %q with replaced forward.way", rules, test.want)
 			}
 			if !rules[0].Disabled || rules[0].Listen.Address() != "127.0.0.1:9000" {
 				t.Fatalf("rule = %#v, want the disabled replacement listener", rules[0])
@@ -363,7 +406,7 @@ func TestCreateRulesConcurrent(t *testing.T) {
 		go func() {
 			defer workers.Done()
 			<-start
-			body := fmt.Sprintf(`{"name":"rule-%d","way":[{"lb":["socks5://h:1080"]}]}`, index)
+			body := fmt.Sprintf(`{"name":"rule-%d","forward":{"way":[{"lb":["socks5://h:1080"]}]}}`, index)
 			request := httptest.NewRequest(http.MethodPost, "/apis/configs/rules", strings.NewReader(body))
 			request.Header.Set("Content-Type", "application/json")
 			response := httptest.NewRecorder()
@@ -560,7 +603,7 @@ func TestUpdateConfig(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if conf.WebUI.Port != test.wantPort || len(conf.Rules) != 1 || conf.Rules[0].Name != "a" || len(conf.Rules[0].Way) != 1 {
+			if conf.WebUI.Port != test.wantPort || len(conf.Rules) != 1 || conf.Rules[0].Name != "a" || len(conf.Rules[0].Forward.Way) != 1 {
 				t.Fatalf("saved config = %#v, want web_ui.port %d and unchanged rule", conf, test.wantPort)
 			}
 			if test.wantReloads == 0 {
@@ -641,12 +684,14 @@ func TestConfigStatus(t *testing.T) {
 	for _, test := range []struct {
 		name    string
 		err     string
+		target  string
 		attempt int
 		remote  bool
 		running bool
 	}{
 		{name: "running", running: true},
 		{name: "retrying", err: "boom", attempt: 2, remote: true},
+		{name: "port_forward", target: "10.0.0.5:5432", running: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			handler, fake, _ := setupConfigAPI(t)
@@ -657,6 +702,7 @@ func TestConfigStatus(t *testing.T) {
 				Rules: []configs.RuleStatus{{
 					Name:    "a",
 					Address: "127.0.0.1:1087",
+					Target:  test.target,
 					Remote:  test.remote,
 					Running: test.running,
 					Attempt: test.attempt,
@@ -678,6 +724,14 @@ func TestConfigStatus(t *testing.T) {
 			rule, ok := rules[0].(map[string]any)
 			if !ok || rule["name"] != "a" || rule["address"] != "127.0.0.1:1087" || rule["remote"] != test.remote || rule["running"] != test.running {
 				t.Fatalf("rule status = %#v, want %#v", rules[0], fake.status.Rules[0])
+			}
+			target, present := rule["target"]
+			if test.target == "" {
+				if present {
+					t.Fatalf("rule status contains empty target: %#v", rule)
+				}
+			} else if target != test.target {
+				t.Fatalf("target = %#v, want %q", target, test.target)
 			}
 			for _, fields := range []map[string]any{status, rule} {
 				gotError, present := fields["error"]

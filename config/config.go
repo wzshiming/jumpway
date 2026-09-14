@@ -41,17 +41,17 @@ func (a Address) String() string {
 	return net.JoinHostPort(a.Host, fmt.Sprint(a.Port))
 }
 
-// Rule is one proxy entry: where it listens and the chain its traffic leaves through.
+// Rule is one entry: where connections come in and where they go out.
 type Rule struct {
-	Name     string              `yaml:"name" json:"name"`
-	Disabled bool                `yaml:"disabled,omitempty" json:"disabled,omitempty"`
-	Listen   Listen              `yaml:"listen" json:"listen"`
-	Way      []bridgeconfig.Node `yaml:"way" json:"way"`
+	Name     string  `yaml:"name" json:"name"`
+	Disabled bool    `yaml:"disabled,omitempty" json:"disabled,omitempty"`
+	Listen   Listen  `yaml:"listen,omitempty" json:"listen"`
+	Forward  Forward `yaml:"forward,omitempty" json:"forward"`
 }
 
-// Listen is the rule's entry; the first node in Way binds the port, or an empty Way binds locally.
+// Listen is the entry: Host:Port is bound by the first hop of Way, or by this machine when Way is empty.
 type Listen struct {
-	Host     string              `yaml:"host" json:"host"`
+	Host     string              `yaml:"host,omitempty" json:"host"`
 	Port     uint32              `yaml:"port" json:"port"`
 	Way      []bridgeconfig.Node `yaml:"way,omitempty" json:"way,omitempty"`
 	Username string              `yaml:"username,omitempty" json:"username,omitempty"`
@@ -74,6 +74,24 @@ func (l Listen) User() *url.Userinfo {
 		return url.UserPassword(l.Username, l.Password)
 	}
 	return url.User(l.Username)
+}
+
+// Forward is the exit: connections are dialed through Way (empty = from this machine) to Host:Port, or to the proxy client's own target when Port is 0.
+type Forward struct {
+	Host string              `yaml:"host,omitempty" json:"host,omitempty"`
+	Port uint32              `yaml:"port,omitempty" json:"port,omitempty"`
+	Way  []bridgeconfig.Node `yaml:"way,omitempty" json:"way,omitempty"`
+}
+
+// IsProxy reports whether the rule serves proxy protocols instead of forwarding to a fixed target.
+func (f Forward) IsProxy() bool { return f.Port == 0 }
+
+// Target is the fixed destination, empty in proxy mode; an empty Host means 127.0.0.1 on the exit node.
+func (f Forward) Target() string {
+	if f.IsProxy() {
+		return ""
+	}
+	return (Address{Host: f.Host, Port: f.Port}).String()
 }
 
 type NoProxy struct {
@@ -202,16 +220,25 @@ func Validate(conf *Config) error {
 		if rule.Listen.Port > 65535 {
 			return fmt.Errorf("rules[%d].listen.port %d is out of range (0-65535)", ruleIndex, rule.Listen.Port)
 		}
+		if rule.Forward.Port > 65535 {
+			return fmt.Errorf("rules[%d].forward.port %d is out of range (0-65535)", ruleIndex, rule.Forward.Port)
+		}
+		if rule.Forward.Host != "" && rule.Forward.IsProxy() {
+			return fmt.Errorf("rules[%d].forward.host is set but port is 0", ruleIndex)
+		}
 		if rule.Listen.Password != "" && rule.Listen.Username == "" {
 			return fmt.Errorf("rules[%d].listen.password is set but username is empty", ruleIndex)
 		}
 		if strings.Contains(rule.Listen.Username, ":") {
 			return fmt.Errorf("rules[%d].listen.username %q must not contain \":\"", ruleIndex, rule.Listen.Username)
 		}
+		if !rule.Forward.IsProxy() && rule.Listen.Username != "" {
+			return fmt.Errorf("rules[%d].listen.username is only used by proxy rules", ruleIndex)
+		}
 		if err := validateWay(fmt.Sprintf("rules[%d].listen.way", ruleIndex), rule.Listen.Way); err != nil {
 			return err
 		}
-		if err := validateWay(fmt.Sprintf("rules[%d].way", ruleIndex), rule.Way); err != nil {
+		if err := validateWay(fmt.Sprintf("rules[%d].forward.way", ruleIndex), rule.Forward.Way); err != nil {
 			return err
 		}
 		if rule.Disabled || rule.Listen.Remote() || rule.Listen.Port == 0 {

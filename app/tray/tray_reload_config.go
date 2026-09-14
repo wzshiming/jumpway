@@ -116,7 +116,7 @@ func (a *App) reload() error {
 		dialer := jumpway.NewLogDialer(local.LOCAL, func(ctx context.Context, network, address string) {
 			log.Info(i18n.UseProxy(), "address", address, "rule", rule.Name)
 		})
-		dialer, err = chain.Default.BridgeChainWithConfig(ctx, dialer, rule.Way...)
+		dialer, err = chain.Default.BridgeChainWithConfig(ctx, dialer, rule.Forward.Way...)
 		if err != nil {
 			report(jumpway.Event{Err: err, Attempt: 1})
 			continue

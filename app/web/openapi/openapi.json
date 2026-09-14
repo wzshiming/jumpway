@@ -513,6 +513,25 @@
      }
     }
    },
+   "Forward": {
+    "type": "object",
+    "properties": {
+     "host": {
+      "type": "string"
+     },
+     "port": {
+      "type": "integer",
+      "format": "uint32"
+     },
+     "way": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Node"
+      }
+     }
+    },
+    "description": "Forward is the exit: connections are dialed through Way (empty = from this machine) to Host:Port, or to the proxy client's own target when Port is 0.\n"
+   },
    "Listen": {
     "required": [
      "host",
@@ -540,7 +559,7 @@
       }
      }
     },
-    "description": "Listen is the rule's entry; the first node in Way binds the port, or an empty Way binds locally.\n"
+    "description": "Listen is the entry: Host:Port is bound by the first hop of Way, or by this machine when Way is empty.\n"
    },
    "NoProxy": {
     "required": [
@@ -628,12 +647,20 @@
     "required": [
      "name",
      "listen",
-     "way"
+     "forward"
     ],
     "type": "object",
     "properties": {
      "disabled": {
       "type": "boolean"
+     },
+     "forward": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/Forward"
+       }
+      ],
+      "description": "Forward is the exit: connections are dialed through Way (empty = from this machine) to Host:Port, or to the proxy client's own target when Port is 0.\n"
      },
      "listen": {
       "allOf": [
@@ -641,30 +668,32 @@
         "$ref": "#/components/schemas/Listen"
        }
       ],
-      "description": "Listen is the rule's entry; the first node in Way binds the port, or an empty Way binds locally.\n"
+      "description": "Listen is the entry: Host:Port is bound by the first hop of Way, or by this machine when Way is empty.\n"
      },
      "name": {
       "type": "string"
-     },
-     "way": {
-      "type": "array",
-      "items": {
-       "$ref": "#/components/schemas/Node"
-      }
      }
     },
-    "description": "Rule is one proxy entry: where it listens and the chain its traffic leaves through.\n"
+    "description": "Rule is one entry: where connections come in and where they go out.\n"
    },
    "Rule.1": {
     "required": [
      "name",
      "listen",
-     "way"
+     "forward"
     ],
     "type": "object",
     "properties": {
      "disabled": {
       "type": "boolean"
+     },
+     "forward": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/Forward"
+       }
+      ],
+      "description": "Forward is the exit: connections are dialed through Way (empty = from this machine) to Host:Port, or to the proxy client's own target when Port is 0.\n"
      },
      "listen": {
       "allOf": [
@@ -672,19 +701,13 @@
         "$ref": "#/components/schemas/Listen"
        }
       ],
-      "description": "Listen is the rule's entry; the first node in Way binds the port, or an empty Way binds locally.\n"
+      "description": "Listen is the entry: Host:Port is bound by the first hop of Way, or by this machine when Way is empty.\n"
      },
      "name": {
       "type": "string"
-     },
-     "way": {
-      "type": "array",
-      "items": {
-       "$ref": "#/components/schemas/Node"
-      }
      }
     },
-    "description": "Rule is one proxy entry: where it listens and the chain its traffic leaves through.\n"
+    "description": "Rule is one entry: where connections come in and where they go out.\n"
    },
    "RuleStatus": {
     "required": [
@@ -713,6 +736,10 @@
      },
      "running": {
       "type": "boolean"
+     },
+     "target": {
+      "type": "string",
+      "description": "Target is the fixed destination for port-forward rules; empty for proxy rules.\n"
      }
     },
     "description": "RuleStatus is one rule's listener state; Attempt counts consecutive failed listen attempts.\n"
