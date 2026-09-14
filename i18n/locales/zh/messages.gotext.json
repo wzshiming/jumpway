@@ -42,9 +42,9 @@
             "translation": "重载配置"
         },
         {
-            "id": "View Edit Config",
-            "message": "View Edit Config",
-            "translation": "可视化编辑 开发中..."
+            "id": "Web UI",
+            "message": "Web UI",
+            "translation": "网页配置"
         },
         {
             "id": "Log",

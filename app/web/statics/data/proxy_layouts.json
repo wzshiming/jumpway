@@ -111,11 +111,82 @@
     ]
   },
   {
+    "name": "socks4a",
+    "inputs": [
+      {
+        "kind": "span",
+        "value": "socks4a://"
+      },
+      {
+        "name": "username",
+        "kind": "text",
+        "option": true
+      },
+      {
+        "kind": "span",
+        "value": "@"
+      },
+      {
+        "name": "host",
+        "kind": "text"
+      },
+      {
+        "kind": "span",
+        "value": ":"
+      },
+      {
+        "name": "port",
+        "kind": "text",
+        "value": "1080"
+      }
+    ]
+  },
+  {
     "name": "socks5",
     "inputs": [
       {
         "kind": "span",
         "value": "socks5://"
+      },
+      {
+        "name": "username",
+        "kind": "text",
+        "option": true
+      },
+      {
+        "kind": "span",
+        "value": ":"
+      },
+      {
+        "name": "password",
+        "kind": "password",
+        "option": true
+      },
+      {
+        "kind": "span",
+        "value": "@"
+      },
+      {
+        "name": "host",
+        "kind": "text"
+      },
+      {
+        "kind": "span",
+        "value": ":"
+      },
+      {
+        "name": "port",
+        "kind": "text",
+        "value": "1080"
+      }
+    ]
+  },
+  {
+    "name": "socks5h",
+    "inputs": [
+      {
+        "kind": "span",
+        "value": "socks5h://"
       },
       {
         "name": "username",

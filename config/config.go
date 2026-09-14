@@ -23,10 +23,10 @@ import (
 )
 
 type Config struct {
-	CurrentContext string    `yaml:"current_context"`
-	Contexts       []Context `yaml:"contexts"`
-	Proxy          Proxy     `yaml:"proxy"`
-	NoProxy        NoProxy   `yaml:"no_proxy"`
+	CurrentContext string    `yaml:"current_context" json:"current_context"`
+	Contexts       []Context `yaml:"contexts" json:"contexts"`
+	Proxy          Proxy     `yaml:"proxy" json:"proxy"`
+	NoProxy        NoProxy   `yaml:"no_proxy" json:"no_proxy"`
 }
 
 func (c Config) GetWay() []config.Node {
@@ -39,22 +39,22 @@ func (c Config) GetWay() []config.Node {
 }
 
 type Context struct {
-	Name string        `yaml:"name"`
-	Way  []config.Node `yaml:"way"`
+	Name string        `yaml:"name" json:"name"`
+	Way  []config.Node `yaml:"way" json:"way"`
 }
 
 type Proxy struct {
-	Host string `yaml:"host"`
-	Port uint32 `yaml:"port"`
+	Host string `yaml:"host" json:"host"`
+	Port uint32 `yaml:"port" json:"port"`
 }
 
 type NoProxy struct {
-	List     []string `yaml:"list"`
-	FromEnv  []string `yaml:"from_env"`
-	FromFile []string `yaml:"from_file"`
+	List     []string `yaml:"list" json:"list"`
+	FromEnv  []string `yaml:"from_env" json:"from_env"`
+	FromFile []string `yaml:"from_file" json:"from_file"`
 }
 
-func (n *NoProxy) GetList() []string {
+func (n *NoProxy) GetList(configDir string) []string {
 	set := map[string]struct{}{}
 	for _, item := range n.List {
 		setEnv(set, item)
@@ -63,7 +63,7 @@ func (n *NoProxy) GetList() []string {
 		setEnv(set, os.Getenv(env))
 	}
 	for _, file := range n.FromFile {
-		f, err := getFile(file)
+		f, err := getFile(configDir, file)
 		if err != nil {
 			log.Error(err, i18n.OpenFile(), "file", file)
 			continue
@@ -100,43 +100,46 @@ func setEnv(set map[string]struct{}, val string) {
 	}
 }
 
-var (
-	homeDir    = ""
-	configDir  = ""
-	configPath = ""
+//go:embed config.yaml
+var defaultConfig string
 
-	//go:embed config.yaml
-	defaultConfig string
-)
+type Store struct {
+	dir, path string
+}
 
-func init() {
-	var err error
-	homeDir, err = os.UserHomeDir()
+func DefaultDir() (string, error) {
+	home, err := os.UserHomeDir()
 	if err != nil {
-		log.Error(err, "Get User Home Directory")
-		os.Exit(2)
+		return "", err
 	}
-	configDir = filepath.Join(homeDir, ".jumpway")
-	configPath = filepath.Join(configDir, "config.yaml")
+	return filepath.Join(home, ".jumpway"), nil
 }
 
-func GetConfigDir() string {
-	return configDir
+func NewStore(dir string) *Store {
+	return &Store{dir: dir, path: filepath.Join(dir, "config.yaml")}
 }
 
-func InitConfig() error {
-	fi, err := os.Stat(configPath)
+func (s *Store) Dir() string {
+	return s.dir
+}
+
+func (s *Store) Path() string {
+	return s.path
+}
+
+func (s *Store) Init() error {
+	fi, err := os.Stat(s.path)
 	if err == nil && fi.Size() != 0 {
 		return nil
 	}
-	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(s.path), 0755); err != nil {
 		return err
 	}
-	return os.WriteFile(configPath, []byte(defaultConfig), 0644)
+	return os.WriteFile(s.path, []byte(defaultConfig), 0644)
 }
 
-func LoadConfig() (*Config, error) {
-	data, err := os.ReadFile(configPath)
+func (s *Store) Load() (*Config, error) {
+	data, err := os.ReadFile(s.path)
 	if err != nil {
 		return nil, err
 	}
@@ -148,19 +151,98 @@ func LoadConfig() (*Config, error) {
 	return &conf, nil
 }
 
-func SaveConfig(conf *Config) error {
+func Validate(conf *Config) error {
+	if conf == nil {
+		return fmt.Errorf("config is nil")
+	}
+	if conf.Proxy.Port > 65535 {
+		return fmt.Errorf("proxy.port %d is out of range (0-65535)", conf.Proxy.Port)
+	}
+	names := make(map[string]struct{}, len(conf.Contexts))
+	for contextIndex, ctx := range conf.Contexts {
+		if strings.TrimSpace(ctx.Name) == "" {
+			return fmt.Errorf("contexts[%d].name is empty", contextIndex)
+		}
+		// Contexts are addressed as /apis/configs/contexts/{name}.
+		if strings.Contains(ctx.Name, "/") {
+			return fmt.Errorf("contexts[%d].name %q must not contain \"/\"", contextIndex, ctx.Name)
+		}
+		if _, ok := names[ctx.Name]; ok {
+			return fmt.Errorf("duplicate context name %q", ctx.Name)
+		}
+		names[ctx.Name] = struct{}{}
+	}
+	if conf.CurrentContext != "" || len(conf.Contexts) > 0 {
+		if _, ok := names[conf.CurrentContext]; !ok {
+			return fmt.Errorf("current_context %q does not match any context", conf.CurrentContext)
+		}
+	}
+	for contextIndex, ctx := range conf.Contexts {
+		for nodeIndex, node := range ctx.Way {
+			if len(node.LB) == 0 {
+				return fmt.Errorf("contexts[%d].way[%d] has no proxy URL", contextIndex, nodeIndex)
+			}
+			for _, proxyURL := range node.LB {
+				if strings.TrimSpace(proxyURL) == "" {
+					return fmt.Errorf("contexts[%d].way[%d] contains an empty proxy URL", contextIndex, nodeIndex)
+				}
+				parsedURL, err := url.Parse(proxyURL)
+				if err != nil {
+					return fmt.Errorf("contexts[%d].way[%d]: invalid proxy URL %q: %w (e.g. socks5://host:1080)", contextIndex, nodeIndex, proxyURL, err)
+				}
+				if parsedURL.Scheme == "" {
+					return fmt.Errorf("contexts[%d].way[%d]: proxy URL %q has no scheme (e.g. socks5://host:1080)", contextIndex, nodeIndex, proxyURL)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func (s *Store) Save(conf *Config) error {
 	out, err := yaml.Marshal(conf)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(configPath, out, 0644)
+	return s.SaveRaw(out)
 }
 
-func EditConfig() error {
-	return browser.OpenFile(configPath)
+func (s *Store) LoadRaw() ([]byte, error) {
+	return os.ReadFile(s.path)
 }
 
-func getFile(filePath string) (io.ReadCloser, error) {
+func (s *Store) SaveRaw(data []byte) error {
+	if err := os.MkdirAll(s.dir, 0755); err != nil {
+		return err
+	}
+	tmpFile, err := os.CreateTemp(s.dir, "config.yaml.*.tmp")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmpFile.Name())
+	if _, err := tmpFile.Write(data); err != nil {
+		tmpFile.Close()
+		return err
+	}
+	if err := tmpFile.Chmod(0644); err != nil {
+		tmpFile.Close()
+		return err
+	}
+	if err := tmpFile.Sync(); err != nil {
+		tmpFile.Close()
+		return err
+	}
+	if err := tmpFile.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpFile.Name(), s.path)
+}
+
+func (s *Store) Edit() error {
+	return browser.OpenFile(s.path)
+}
+
+func getFile(configDir, filePath string) (io.ReadCloser, error) {
 	u, err := url.Parse(filePath)
 	if err != nil {
 		return nil, err
@@ -172,7 +254,11 @@ func getFile(filePath string) (io.ReadCloser, error) {
 		if err != nil {
 			return nil, err
 		}
-		resp, err := httpCli.Do(req)
+		client := *httpCli
+		client.Transport = httpcache.NewRoundTripper(client.Transport, httpcache.WithStorer(
+			httpcache.DirectoryStorer(filepath.Join(configDir, "cache")),
+		))
+		resp, err := client.Do(req)
 		if err != nil {
 			return nil, err
 		}
@@ -184,7 +270,11 @@ func getFile(filePath string) (io.ReadCloser, error) {
 	case "file", "":
 		file := u.Path
 		if strings.HasPrefix(file, "~") {
-			file = filepath.Join(homeDir, file[1:])
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return nil, err
+			}
+			file = filepath.Join(home, file[1:])
 		} else if strings.HasPrefix(file, ".") {
 			file = filepath.Join(configDir, file[1:])
 		}
@@ -198,22 +288,16 @@ func getFile(filePath string) (io.ReadCloser, error) {
 	}
 }
 
-var httpCli *http.Client
-
-func init() {
-	httpCli = &http.Client{
-		Transport: httpcache.NewRoundTripper(&http.Transport{
-			DialContext: (&net.Dialer{
-				Timeout:   5 * time.Second,
-				KeepAlive: 5 * time.Second,
-			}).DialContext,
-			ForceAttemptHTTP2:     true,
-			MaxIdleConns:          100,
-			IdleConnTimeout:       90 * time.Second,
-			TLSHandshakeTimeout:   10 * time.Second,
-			ExpectContinueTimeout: 1 * time.Second,
-		}, httpcache.WithStorer(
-			httpcache.DirectoryStorer(filepath.Join(configDir, "cache")),
-		)),
-	}
+var httpCli = &http.Client{
+	Transport: &http.Transport{
+		DialContext: (&net.Dialer{
+			Timeout:   5 * time.Second,
+			KeepAlive: 5 * time.Second,
+		}).DialContext,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	},
 }

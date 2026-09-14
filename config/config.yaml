@@ -2,12 +2,10 @@ current_context: default
 contexts:
   - name: default
     way:
-      - probe:
-        lb:
+      - lb:
           - http://xxxx:8080
           - socks5://yyy:1080
-      - probe:
-        lb:
+      - lb:
           - socks4://zzzz:8000
 proxy:
   host: 127.0.0.1

@@ -10,11 +10,11 @@ import (
 )
 
 func (a *App) ItemView(menu *systray.Menu) {
-	menu.Add(i18n.ViewEditConfig(), func() {
+	menu.Add(i18n.WebUI(), func() {
 		a.do(func() {
 			err := browser.OpenURL(fmt.Sprintf("http://%s", a.Address))
 			if err != nil {
-				log.Error(err, i18n.ViewEditConfig())
+				log.Error(err, i18n.WebUI())
 			}
 		})
 	})
