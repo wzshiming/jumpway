@@ -7,36 +7,42 @@
       checking: "Status unknown",
       running: "Running",
       stopped: "Stopped",
+      retrying: "Retrying ({attempt})",
+      remote: "remote",
       reload: "Reload from disk",
-      save: "Save",
       saveApply: "Save & Apply",
       unsaved: "Unsaved changes",
       discardChanges: "Discard unsaved changes?",
       navigation: "Configuration pages",
-      contextTabs: "Context editors",
+      ruleTabs: "Rule editors",
       yaml: "Advanced YAML",
-      listen: "Listen address",
+      webUI: "Web UI",
+      webUIHint: "Address of this page and the REST API. Only local addresses make sense here.",
       host: "Host",
       port: "Port",
-      listenHint: "The web UI moves with the listen address. An empty host uses 127.0.0.1; port 0 chooses an available port.",
       invalidPort: "Port must be a whole number between 0 and 65535.",
-      contexts: "Contexts",
-      contextName: "Context name",
-      current: "Current",
-      currentBadge: "Current",
-      switch: "Switch",
-      switched: "Switched.",
-      edit: "Edit",
-      deleteContext: "Delete",
-      confirmDelete: "Delete context \"{name}\"?",
-      deleted: "Context deleted.",
-      newContext: "New context",
-      noContexts: "No contexts yet. Connections go direct.",
-      noHops: "No hops: this context connects directly.",
+      rules: "Rules",
+      rule: "Rule name",
+      enabled: "Enabled",
+      entry: "Entry",
+      outbound: "Outbound",
+      listenThrough: "Listen through",
+      outboundChain: "Outbound chain",
+      username: "Username",
+      password: "Password",
+      credentialsHint: "Optional credentials for HTTP Basic / SOCKS5 clients. Usernames must not contain \":\".",
+      listenThroughHint: "Leave empty to open the port on this machine. Otherwise the first hop binds host:port on its side (SSH remote forwarding; the remote sshd binds loopback unless GatewayPorts is enabled) and the last hop is dialed from this machine. Only ssh://, cmd: and nc hops can bind.",
+      deleteRule: "Delete",
+      confirmDeleteRule: "Delete rule \"{name}\"?",
+      deleted: "Rule deleted.",
+      newRule: "New rule",
+      noRules: "No rules yet.",
+      direct: "direct",
       hop: "Hop {number}",
       hopExit: "exit node",
-      hopEntry: "entry node",
-      hopsHint: "Hop 1 is the exit node, closest to the target; the last hop is dialed from this machine. Traffic: this machine \u2192 last hop \u2192 \u2026 \u2192 Hop 1 \u2192 target.",
+      hopBinds: "binds the port",
+      hopDialed: "dialed from this machine",
+      hopsHint: "Hop 1 is the exit node, closest to the target; the last hop is dialed from this machine. Leave empty for a direct connection.",
       chainLocal: "this machine",
       chainTarget: "target",
       up: "Up",
@@ -83,7 +89,7 @@
       movedTo: "The web UI has moved to",
       movedUnknown: "Saved and applied. The listen address changed. Open the address shown in the tray status item.",
       unreachable: "Cannot reach JumpWay.",
-      recoveryHint: "The proxy may have stopped. Use the tray's Edit Config to check ~/.jumpway/config.yaml, then Reload Config to restart it.",
+      recoveryHint: "The Web UI may have stopped. Use the tray's Edit Config to check ~/.jumpway/config.yaml, then Reload Config to restart it.",
       requestFailed: "The request could not be completed.",
       invalidResponse: "JumpWay returned an unreadable response. Try reloading from disk."
     },
@@ -92,36 +98,42 @@
       checking: "状态未知",
       running: "运行中",
       stopped: "已停止",
+      retrying: "重试中 ({attempt})",
+      remote: "远端",
       reload: "从磁盘重新加载",
-      save: "保存",
       saveApply: "保存并应用",
       unsaved: "未保存的修改",
       discardChanges: "放弃未保存的修改吗？",
       navigation: "配置页面",
-      contextTabs: "上下文编辑器",
+      ruleTabs: "规则编辑器",
       yaml: "高级 YAML",
-      listen: "监听地址",
+      webUI: "网页配置",
+      webUIHint: "本页面和 REST API 的地址。此处应使用本机地址。",
       host: "主机",
       port: "端口",
-      listenHint: "网页配置的地址会随监听地址改变。主机留空时使用 127.0.0.1；端口为 0 时自动分配可用端口。",
       invalidPort: "端口必须是 0 到 65535 之间的整数。",
-      contexts: "上下文管理",
-      contextName: "上下文名称",
-      current: "当前上下文",
-      currentBadge: "当前",
-      switch: "切换",
-      switched: "已切换。",
-      edit: "编辑",
-      deleteContext: "删除",
-      confirmDelete: "删除上下文“{name}”吗？",
-      deleted: "已删除上下文。",
-      newContext: "新建上下文",
-      noContexts: "尚无上下文，连接将直接访问，不走代理。",
-      noHops: "没有跳板节点：此上下文使用直接连接。",
+      rules: "规则",
+      rule: "规则名称",
+      enabled: "启用",
+      entry: "入口",
+      outbound: "出口",
+      listenThrough: "经由监听",
+      outboundChain: "出口链路",
+      username: "用户名",
+      password: "密码",
+      credentialsHint: "HTTP Basic / SOCKS5 客户端的可选认证信息。用户名不能包含冒号（:）。",
+      listenThroughHint: "留空时在本机打开端口；否则由第一个节点在其所在机器上绑定主机和端口（SSH 远程端口转发；远端 sshd 默认仅绑定回环地址，启用 GatewayPorts 后才能绑定其他地址），最后一个节点由本机直接连接。只有 ssh://、cmd: 和 nc 节点支持监听。",
+      deleteRule: "删除",
+      confirmDeleteRule: "删除规则“{name}”吗？",
+      deleted: "已删除规则。",
+      newRule: "新建规则",
+      noRules: "尚无规则。",
+      direct: "直连",
       hop: "跳板节点 {number}",
       hopExit: "出口节点",
-      hopEntry: "入口节点",
-      hopsHint: "跳板节点 1 是出口节点（最靠近目标），最后一个节点由本机直接连接。流量方向：本机 \u2192 最后一个节点 \u2192 \u2026 \u2192 节点 1 \u2192 目标。",
+      hopBinds: "绑定端口",
+      hopDialed: "由本机连接",
+      hopsHint: "节点 1 是最靠近目标的出口节点，最后一个节点由本机直接连接。留空时直连目标。",
       chainLocal: "本机",
       chainTarget: "目标",
       up: "上移",
@@ -168,7 +180,7 @@
       movedTo: "网页配置已移至",
       movedUnknown: "已保存并应用。监听地址已改变，请打开托盘状态栏显示的新地址。",
       unreachable: "无法连接到 JumpWay。",
-      recoveryHint: "代理可能已停止。请通过托盘菜单的“编辑配置”检查 ~/.jumpway/config.yaml，再点击“重新加载配置”启动代理。",
+      recoveryHint: "网页配置可能已停止。请通过托盘菜单的“编辑配置”检查 ~/.jumpway/config.yaml，再点击“重新加载配置”重新启动。",
       requestFailed: "请求未能完成。",
       invalidResponse: "JumpWay 返回了无法读取的响应，请尝试从磁盘重新加载。"
     }
@@ -207,14 +219,11 @@
   const text = value => String(value ?? "");
   const cleanLines = value => value.map(entry => text(entry).trim()).filter(Boolean);
 
-  function normalize(context) {
-    return {
-      name: text(context.name),
-      way: list(context.way).map(node => ({
-        lb: (typeof node === "string" ? node.split("|")
-          : Array.isArray(node) ? node : list(node?.lb)).map(text)
-      }))
-    };
+  function normalizeWay(way) {
+    return list(way).map(node => ({
+      lb: (typeof node === "string" ? node.split("|")
+        : Array.isArray(node) ? node : list(node?.lb)).map(text)
+    }));
   }
 
   const find = (selector, root = document) => root.querySelector(selector);
@@ -226,6 +235,7 @@
     movedMessage: find("#moved-message"),
     statusDot: find("#status-dot"), statusLabel: find("#status-label"),
     statusAddress: find("#status-address"), statusError: find("#status-error"),
+    statusRules: find("#rule-status"),
     builder: find("#url-builder"), builderForm: find("#builder-form"),
     builderProtocol: find("#builder-protocol"), builderFields: find("#builder-fields"),
     builderPreview: find("#builder-preview"), builderHint: find("#builder-hint"),
@@ -233,9 +243,10 @@
   };
   let page = null;
   let activeHash = "";
-  let newContext = false;
+  let newRule = false;
   let dirty = false;
   let busy = false;
+  let movedAddress = "";
   let statusRequest = null;
   let requestUnreachable = false;
   let builderLayouts = [];
@@ -253,9 +264,9 @@
     ui.main.setAttribute("aria-busy", String(value));
     const fields = find("#page-fields");
     if (fields) fields.disabled = value || !page.loaded;
-    const panel = find("#context-panel");
+    const panel = find("#rule-panel");
     if (panel) panel.setAttribute("aria-busy", String(value));
-    all("#context-tabs button, #retry").forEach(button => { button.disabled = value; });
+    all("#rule-tabs button, #retry").forEach(button => { button.disabled = value; });
     all("a[href^='#/']").forEach(link => {
       if (value) link.setAttribute("aria-disabled", "true");
       else link.removeAttribute("aria-disabled");
@@ -263,17 +274,17 @@
   }
 
   function routeFor(hash) {
-    const pages = { "#/": "current", "#/contexts": "contexts", "#/proxy": "proxy", "#/no-proxy": "no-proxy", "#/yaml": "yaml" };
+    const pages = { "#/": "rules", "#/rules": "rules", "#/web-ui": "web-ui", "#/no-proxy": "no-proxy", "#/yaml": "yaml" };
     if (Object.prototype.hasOwnProperty.call(pages, hash)) return { hash, kind: pages[hash], name: null };
-    const match = /^#\/contexts\/([^/]+)$/.exec(hash);
+    const match = /^#\/rules\/([^/]+)$/.exec(hash);
     if (match) {
-      try { return { hash, kind: "contexts", name: decodeURIComponent(match[1]) }; } catch {}
+      try { return { hash, kind: "rules", name: decodeURIComponent(match[1]) }; } catch {}
     }
-    return { hash: "#/", kind: "current", name: null };
+    return { hash: "#/", kind: "rules", name: null };
   }
 
-  const contextRoute = name => "#/contexts/" + encodeURIComponent(name);
-  const contextPath = name => "/contexts/" + encodeURIComponent(name);
+  const ruleRoute = name => "#/rules/" + encodeURIComponent(name);
+  const rulePath = name => "/rules/" + encodeURIComponent(name);
 
   function mayLeave() {
     return !busy && (!dirty || confirm(t("discardChanges")));
@@ -283,7 +294,7 @@
     if (!confirmed && !mayLeave()) return;
     const route = routeFor(hash);
     history[replace ? "replaceState" : "pushState"](null, "", route.hash);
-    newContext = create;
+    newRule = create;
     await renderRoute(route, notify);
   }
 
@@ -298,7 +309,7 @@
       return;
     }
     if (location.hash !== route.hash) history.replaceState(null, "", route.hash);
-    newContext = false;
+    newRule = false;
     await renderRoute(route);
   }
 
@@ -310,19 +321,19 @@
     if (ui.builder.open) ui.builder.close();
     ui.main.replaceChildren(clone("page"));
     ui.main.dataset.page = route.kind;
-    const title = { current: "current", contexts: "contexts", proxy: "listen", "no-proxy": "noProxy", yaml: "yaml" };
+    const title = { rules: "rules", "web-ui": "webUI", "no-proxy": "noProxy", yaml: "yaml" };
     find("#page-heading").textContent = t(title[route.kind]);
     document.title = t(title[route.kind]) + " | " + t("appName");
     all("[data-page]", ui.nav).forEach(link => {
       if (link.dataset.page === route.kind) link.setAttribute("aria-current", "page");
       else link.removeAttribute("aria-current");
     });
-    find("#retry").addEventListener("click", () => navigate(activeHash, { replace: true, create: newContext }));
+    find("#retry").addEventListener("click", () => navigate(activeHash, { replace: true, create: newRule }));
     clearErrors();
     setBusy(true);
     activity("loading");
     try {
-      const loaders = { current: loadCurrent, contexts: loadContexts, proxy: loadProxy, "no-proxy": loadNoProxy, yaml: loadYAML };
+      const loaders = { rules: loadRules, "web-ui": loadWebUI, "no-proxy": loadNoProxy, yaml: loadYAML };
       await loaders[route.kind](route);
       page.loaded = true;
       activity(notify, Boolean(notify));
@@ -333,121 +344,100 @@
     } finally {
       setBusy(false);
       if (focusPage) {
-        const target = route.kind === "contexts" ? find("#context-tabs [aria-selected=true]") : null;
+        const target = route.kind === "rules" ? find("#rule-tabs [aria-selected=true]") : null;
         (target || find("#page-heading")).focus();
       }
     }
   }
 
-  async function loadCurrent() {
-    const [current, contexts] = await Promise.all([api("/current-context"), api("/contexts")]);
-    const entries = list(contexts).map(normalize);
-    const form = clone("current");
-    find("#page-content").append(form);
-    const active = entries.find(context => context.name === current.name);
-    if (active) {
-      find("#active-context").hidden = false;
-      find("#active-name").textContent = active.name;
-      find("#active-chain").textContent = chainSummary(active);
-    }
-    find("#no-contexts").hidden = entries.length !== 0;
-    find("#current-options").hidden = entries.length === 0;
-    entries.forEach(context => {
-      const row = clone("choice");
-      const selected = context.name === current.name;
-      row.classList.toggle("is-current", selected);
-      find(".choice-name", row).textContent = context.name;
-      find(".choice-chain", row).textContent = chainSummary(context);
-      find(".current-badge", row).hidden = !selected;
-      const radio = find("input", row);
-      radio.value = context.name;
-      radio.checked = selected;
-      find(".edit-context", row).href = contextRoute(context.name);
-      find("#context-choices").append(row);
-    });
-    form.addEventListener("change", () => {
-      const changed = find("input[name=current]:checked")?.value !== current.name;
-      find("#switch").disabled = !changed;
-      setDirty(changed);
-    });
-    page.save = async () => {
-      const name = find("input[name=current]:checked")?.value;
-      if (name === undefined || name === current.name) return;
-      await write("/current-context", { method: "PUT", body: { name } }, {
-        toast: "switched", after: () => navigate("#/", { replace: true, confirmed: true, notify: "switched" })
-      });
-    };
-    form.addEventListener("submit", event => { event.preventDefault(); save(); });
-  }
-
-  async function loadContexts(route) {
-    const [contexts, current] = await Promise.all([api("/contexts"), api("/current-context")]);
-    const entries = list(contexts);
-    const originalName = route.name !== null ? route.name : newContext ? null : entries[0]?.name ?? null;
-    newContext = originalName === null;
-    const view = clone("contexts");
+  async function loadRules(route) {
+    const entries = list(await api("/rules"));
+    const originalName = route.name !== null ? route.name : newRule ? null : entries[0]?.name ?? null;
+    newRule = originalName === null;
+    const view = clone("rules");
     find("#page-content").append(view);
-    const tabs = find("#context-tabs");
-    entries.forEach((context, index) => {
-      const tab = clone("context-tab");
-      tab.id = "context-tab-" + index;
-      find(".tab-name", tab).textContent = context.name;
-      find(".current-badge", tab).hidden = context.name !== current.name;
-      selectContextTab(tab, context.name === originalName);
+    const tabs = find("#rule-tabs");
+    entries.forEach((rule, index) => {
+      const tab = clone("rule-tab");
+      tab.id = "rule-tab-" + index;
+      find(".tab-name", tab).textContent = rule.name;
+      selectRuleTab(tab, rule.name === originalName);
       tab.addEventListener("click", () => {
-        if (context.name !== originalName) navigate(contextRoute(context.name));
+        if (rule.name !== originalName) navigate(ruleRoute(rule.name));
       });
       tabs.append(tab);
     });
     const add = clone("new-tab");
-    selectContextTab(add, newContext);
+    selectRuleTab(add, newRule);
     add.addEventListener("click", () => {
-      if (!newContext) navigate("#/contexts", { create: true, replace: activeHash === "#/contexts" });
+      if (!newRule) navigate("#/rules", { create: true, replace: activeHash === "#/rules" });
     });
     tabs.append(add);
-    bindContextTabs(tabs);
+    bindRuleTabs(tabs);
+    if (!find("[aria-selected=true]", tabs)) add.tabIndex = 0;
     setBusy(true);
-    const context = originalName === null ? { name: "", way: [{ lb: [""] }] }
-      : normalize(await api(contextPath(originalName)));
-    page.context = context;
-    find("#context-name").value = context.name;
-    find("#new-context-heading").hidden = !newContext;
-    find("#delete-context").hidden = newContext;
-    renderHops();
-    find("#add-hop").addEventListener("click", () => changeContext(() => {
-      context.way.push({ lb: [""] });
-      return "#url-" + (context.way.length - 1) + "-0";
-    }));
-    bindEditor(find("#context-form"), async () => {
-      readContext();
-      const body = { name: context.name.trim(), way: context.way.map(node => ({ lb: cleanLines(node.lb) })) };
-      await write(originalName === null ? "/contexts" : contextPath(originalName), {
+    const rule = originalName === null ? { name: "", listen: { host: "127.0.0.1", port: 0 }, way: [] }
+      : await api(rulePath(originalName));
+    find("#rule-name").value = rule.name;
+    find("#rule-enabled").checked = !rule.disabled;
+    for (const field of ["host", "port", "username", "password"]) {
+      find("#listen-" + field).value = text(rule.listen[field]);
+    }
+    find("#new-rule-heading").hidden = !newRule;
+    find("#no-rules").hidden = entries.length !== 0;
+    find("#delete-rule").hidden = newRule;
+    const editors = {
+      listen: createHopEditor({ container: find("#listen-editor"), model: normalizeWay(rule.listen.way),
+        idPrefix: "listen", roles: { first: "hopBinds", last: "hopDialed" } }),
+      outbound: createHopEditor({ container: find("#outbound-editor"), model: normalizeWay(rule.way),
+        idPrefix: "outbound", roles: { first: "hopExit", last: "hopDialed" } })
+    };
+    Object.values(editors).forEach(editor => editor.render());
+    bindEditor(find("#rule-form"), () => {
+      const body = readRule(editors);
+      return write(originalName === null ? "/rules" : rulePath(originalName), {
         method: originalName === null ? "POST" : "PUT", body
-      }, { after: () => navigate(contextRoute(body.name || originalName), { replace: true, confirmed: true, notify: "saved" }) });
+      }, { after: () => navigate(ruleRoute(body.name), { replace: true, confirmed: true, notify: "saved" }) });
     });
-    find("#delete-context").addEventListener("click", async () => {
-      if (busy || !confirm(t("confirmDelete", { name: originalName }))) return;
+    find("#delete-rule").addEventListener("click", async () => {
+      if (busy || !confirm(t("confirmDeleteRule", { name: originalName }))) return;
       if (dirty && !confirm(t("discardChanges"))) return;
-      await write(contextPath(originalName), { method: "DELETE" }, {
-        toast: "deleted", after: () => navigate("#/contexts", { replace: true, confirmed: true, notify: "deleted" })
+      await write(rulePath(originalName), { method: "DELETE" }, {
+        toast: "deleted", after: () => navigate("#/rules", { replace: true, confirmed: true, notify: "deleted" })
       });
     });
   }
 
-  async function loadProxy() {
-    const proxy = await api("/proxy");
-    const form = clone("proxy");
+  function readPort(input) {
+    const port = Number(input.value);
+    if (!input.value.trim() || !Number.isInteger(port) || port < 0 || port > 65535) {
+      throw new Error(t("invalidPort"));
+    }
+    return port;
+  }
+
+  function readRule(editors) {
+    const listen = { host: find("#listen-host").value.trim(), port: readPort(find("#listen-port")) };
+    for (const field of ["username", "password"]) {
+      const value = find("#listen-" + field).value;
+      if (value) listen[field] = value;
+    }
+    const way = editors.listen.read();
+    if (way.length) listen.way = way;
+    const rule = { name: find("#rule-name").value.trim(), listen, way: editors.outbound.read() };
+    if (!find("#rule-enabled").checked) rule.disabled = true;
+    return rule;
+  }
+
+  async function loadWebUI() {
+    const address = await api("/web-ui");
+    const form = clone("web-ui");
     find("#page-content").append(form);
-    find("#proxy-host").value = text(proxy.host);
-    find("#proxy-port").value = proxy.port ?? 0;
+    find("#web-ui-host").value = text(address.host);
+    find("#web-ui-port").value = address.port ?? 0;
     bindEditor(form, () => {
-      const port = Number(find("#proxy-port").value);
-      if (!Number.isInteger(port) || port < 0 || port > 65535) {
-        showError(new Error(t("invalidPort")), true);
-        return;
-      }
-      const body = { host: find("#proxy-host").value.trim(), port };
-      return write("/proxy", { method: "PUT", body }, { mayMove: true, address: submittedAddress(body) });
+      const body = { host: find("#web-ui-host").value.trim(), port: readPort(find("#web-ui-port")) };
+      return write("/web-ui", { method: "PUT", body }, { mayMove: true, address: submittedAddress(body) });
     });
   }
 
@@ -496,8 +486,13 @@
     form.addEventListener("submit", event => { event.preventDefault(); save(); });
   }
 
-  function save() {
-    if (!busy && !ui.builder.open) page?.save?.();
+  async function save() {
+    if (busy || ui.builder.open) return;
+    try {
+      await page?.save?.();
+    } catch (error) {
+      showError(error, true);
+    }
   }
 
   async function write(resource, request, { toast = "saved", after, mayMove = false, address = "" } = {}) {
@@ -514,11 +509,12 @@
       return;
     }
     setDirty(false);
+    if (mayMove) movedAddress = address;
     activity(toast, true);
     let moved = false;
     try {
       const status = await refreshStatus();
-      moved = Boolean(status.address && !sameAddress(status.address));
+      moved = showMoved(movedAddress || status.address || "");
     } catch (error) {
       if (mayMove) {
         moved = showMoved(address);
@@ -599,12 +595,12 @@
     return true;
   }
 
-  function submittedAddress(proxy) {
-    if (!proxy.port) return "";
-    let host = proxy.host || "127.0.0.1";
+  function submittedAddress(address) {
+    if (!address.port) return "";
+    let host = address.host || "127.0.0.1";
     if (["0.0.0.0", "::", "[::]"].includes(host)) host = "127.0.0.1";
     if (host.includes(":") && !host.startsWith("[")) host = "[" + host + "]";
-    return host + ":" + proxy.port;
+    return host + ":" + address.port;
   }
 
   function renderStatus(status) {
@@ -617,9 +613,20 @@
     if (url) {
       ui.statusAddress.href = url.href;
       ui.statusAddress.textContent = status.address;
-      if (sameAddress(status.address)) ui.moved.hidden = true;
-      else showMoved(status.address);
+      if (!showMoved(movedAddress || status.address)) ui.moved.hidden = true;
     }
+    ui.statusRules.replaceChildren(...list(status.rules).map(rule => {
+      const chip = clone("rule-status");
+      const state = rule.running ? "running" : rule.attempt > 0 ? "retrying" : "stopped";
+      chip.classList.add(state);
+      chip.href = ruleRoute(rule.name);
+      chip.title = text(rule.error);
+      find(".chip-label", chip).textContent = rule.name + " \u00b7 " + rule.address;
+      find(".chip-state", chip).textContent = t(state, { attempt: rule.attempt });
+      find(".remote-marker", chip).hidden = !rule.remote;
+      if (busy) chip.setAttribute("aria-disabled", "true");
+      return chip;
+    }));
     ui.unreachable.hidden = !requestUnreachable;
   }
 
@@ -632,20 +639,19 @@
     return statusRequest;
   }
 
-  // bridge dials the last node first, so the list runs from the exit node back to this machine.
-  function chainSummary(context) {
-    if (!context.way.length) return t("noHops");
-    const hops = context.way.map((node, index) => t("hop", { number: index + 1 }) + ": " + node.lb.join(", "));
+  function chainSummary(way) {
+    if (!way.length) return t("direct");
+    const hops = way.map((node, index) => t("hop", { number: index + 1 }));
     return [t("chainLocal"), ...hops.reverse(), t("chainTarget")].join(" \u2192 ");
   }
 
-  function selectContextTab(tab, selected) {
+  function selectRuleTab(tab, selected) {
     tab.setAttribute("aria-selected", String(selected));
     tab.tabIndex = selected ? 0 : -1;
-    if (selected) find("#context-panel").setAttribute("aria-labelledby", tab.id);
+    if (selected) find("#rule-panel").setAttribute("aria-labelledby", tab.id);
   }
 
-  function bindContextTabs(strip) {
+  function bindRuleTabs(strip) {
     strip.addEventListener("keydown", event => {
       if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key) || busy) return;
       event.preventDefault();
@@ -658,80 +664,90 @@
     });
   }
 
-  function readContext() {
-    page.context.name = find("#context-name").value;
-    all(".hop", find("#hops")).forEach((hop, index) => {
-      page.context.way[index].lb = all(".proxy-url", hop).map(input => input.value);
-    });
-  }
+  function createHopEditor({ container, model, idPrefix, roles: { first, last } }) {
+    const hops = find(".hops", container);
+    const add = find(".add-hop", container);
+    const summary = find(".chain-summary", container);
+    add.id = idPrefix + "-add-hop";
 
-  function changeContext(change) {
-    if (busy) return;
-    readContext();
-    const focus = change();
-    setDirty(true);
-    renderHops();
-    if (focus) find(focus)?.focus();
-  }
-
-  function renderHops() {
-    const hops = find("#hops");
-    hops.replaceChildren(...page.context.way.map(renderHop));
-    if (!page.context.way.length) {
-      const empty = document.createElement("p");
-      empty.className = "hint";
-      empty.textContent = t("noHops");
-      hops.append(empty);
+    function readModel() {
+      all(".hop", hops).forEach((hop, index) => {
+        model[index].lb = all(".proxy-url", hop).map(input => input.value);
+      });
     }
-  }
 
-  function renderURL(value, hopIndex, urlIndex) {
-    const row = clone("url");
-    const input = find("input", row);
-    input.id = "url-" + hopIndex + "-" + urlIndex;
-    input.value = value;
-    find("label", row).htmlFor = input.id;
-    find(".build-url", row).addEventListener("click", () => openURLBuilder(input));
-    find(".remove-url", row).addEventListener("click", () => changeContext(() => {
-      const urls = page.context.way[hopIndex].lb;
-      urls.splice(urlIndex, 1);
-      return urls.length ? "#url-" + hopIndex + "-" + Math.min(urlIndex, urls.length - 1)
-        : "#hop-" + hopIndex + " .add-url";
-    }));
-    return row;
-  }
+    function read() {
+      readModel();
+      return model.map(node => ({ lb: cleanLines(node.lb) }));
+    }
 
-  function renderHop(node, hopIndex) {
-    const hop = clone("hop");
-    const way = page.context.way;
-    hop.id = "hop-" + hopIndex;
-    const title = find(".hop-title", hop);
-    title.id = hop.id + "-title";
-    const roles = [t("hop", { number: hopIndex + 1 })];
-    if (hopIndex === 0) roles.push(t("hopExit"));
-    if (hopIndex === way.length - 1 && way.length > 1) roles.push(t("hopEntry"));
-    title.textContent = roles.join(" \u00b7 ");
-    hop.setAttribute("aria-labelledby", title.id);
-    const rows = find(".url-rows", hop);
-    node.lb.forEach((url, urlIndex) => rows.append(renderURL(url, hopIndex, urlIndex)));
-    const move = offset => changeContext(() => {
-      const target = hopIndex + offset;
-      [way[hopIndex], way[target]] = [way[target], way[hopIndex]];
-      return "#hop-" + target + " .add-url";
-    });
-    find(".hop-up", hop).disabled = hopIndex === 0;
-    find(".hop-down", hop).disabled = hopIndex === way.length - 1;
-    find(".hop-up", hop).addEventListener("click", () => move(-1));
-    find(".hop-down", hop).addEventListener("click", () => move(1));
-    find(".delete-hop", hop).addEventListener("click", () => changeContext(() => {
-      way.splice(hopIndex, 1);
-      return "#add-hop";
+    function change(update) {
+      if (busy) return;
+      readModel();
+      const focus = update();
+      setDirty(true);
+      render();
+      if (focus) find(focus, container)?.focus();
+    }
+
+    function render() {
+      hops.replaceChildren(...model.map(renderHop));
+      if (summary) summary.textContent = chainSummary(model);
+    }
+
+    function renderURL(value, hopIndex, urlIndex) {
+      const row = clone("url");
+      const input = find("input", row);
+      input.id = idPrefix + "-url-" + hopIndex + "-" + urlIndex;
+      input.value = value;
+      find("label", row).htmlFor = input.id;
+      find(".build-url", row).addEventListener("click", () => openURLBuilder(input));
+      find(".remove-url", row).addEventListener("click", () => change(() => {
+        const urls = model[hopIndex].lb;
+        urls.splice(urlIndex, 1);
+        return urls.length ? "#" + idPrefix + "-url-" + hopIndex + "-" + Math.min(urlIndex, urls.length - 1)
+          : "#" + idPrefix + "-hop-" + hopIndex + " .add-url";
+      }));
+      return row;
+    }
+
+    function renderHop(node, hopIndex) {
+      const hop = clone("hop");
+      hop.id = idPrefix + "-hop-" + hopIndex;
+      const title = find(".hop-title", hop);
+      title.id = hop.id + "-title";
+      const labels = [t("hop", { number: hopIndex + 1 })];
+      if (hopIndex === 0) labels.push(t(first));
+      if (hopIndex === model.length - 1) labels.push(t(last));
+      title.textContent = labels.join(" \u00b7 ");
+      hop.setAttribute("aria-labelledby", title.id);
+      const rows = find(".url-rows", hop);
+      node.lb.forEach((url, urlIndex) => rows.append(renderURL(url, hopIndex, urlIndex)));
+      const move = offset => change(() => {
+        const target = hopIndex + offset;
+        [model[hopIndex], model[target]] = [model[target], model[hopIndex]];
+        return "#" + idPrefix + "-hop-" + target + " .add-url";
+      });
+      find(".hop-up", hop).disabled = hopIndex === 0;
+      find(".hop-down", hop).disabled = hopIndex === model.length - 1;
+      find(".hop-up", hop).addEventListener("click", () => move(-1));
+      find(".hop-down", hop).addEventListener("click", () => move(1));
+      find(".delete-hop", hop).addEventListener("click", () => change(() => {
+        model.splice(hopIndex, 1);
+        return "#" + add.id;
+      }));
+      find(".add-url", hop).addEventListener("click", () => change(() => {
+        node.lb.push("");
+        return "#" + idPrefix + "-url-" + hopIndex + "-" + (node.lb.length - 1);
+      }));
+      return hop;
+    }
+
+    add.addEventListener("click", () => change(() => {
+      model.push({ lb: [""] });
+      return "#" + idPrefix + "-url-" + (model.length - 1) + "-0";
     }));
-    find(".add-url", hop).addEventListener("click", () => changeContext(() => {
-      node.lb.push("");
-      return "#url-" + hopIndex + "-" + (node.lb.length - 1);
-    }));
-    return hop;
+    return { render, read };
   }
 
   function updateBuilderPreview() {
