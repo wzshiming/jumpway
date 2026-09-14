@@ -1,4 +1,4 @@
-name: Build Linux gtk3
+name: Build Linux
 
 on:
   push:
@@ -16,13 +16,8 @@ jobs:
       with:
         go-version-file: go.mod
 
-    - name: Build dependents
-      run: |
-        sudo apt-get update -y
-        sudo apt-get install libgtk-3-dev libappindicator3-dev -y
-
     - name: Build
-      run: ./tools/build_linux_gtk3.sh
+      run: ./tools/build_linux.sh
 
     - name: Upload Release Assets
       uses: wzshiming/action-upload-release-assets@v1

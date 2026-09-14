@@ -4,7 +4,7 @@ A cross-platform proxy GUI client
 
 [![Build Darwin](https://github.com/wzshiming/jumpway/actions/workflows/build_darwin.yml/badge.svg)](https://github.com/wzshiming/jumpway/actions/workflows/build_darwin.yml)
 [![Build Windows](https://github.com/wzshiming/jumpway/actions/workflows/build_windows.yml/badge.svg)](https://github.com/wzshiming/jumpway/actions/workflows/build_windows.yml)
-[![Build Linux gtk3](https://github.com/wzshiming/jumpway/actions/workflows/build_linux_gtk3.yaml/badge.svg)](https://github.com/wzshiming/jumpway/actions/workflows/build_linux_gtk3.yaml)
+[![Build Linux](https://github.com/wzshiming/jumpway/actions/workflows/build_linux.yml/badge.svg)](https://github.com/wzshiming/jumpway/actions/workflows/build_linux.yml)
 
 - [English](https://github.com/wzshiming/jumpway/blob/master/README.md)
 - [简体中文](https://github.com/wzshiming/jumpway/blob/master/README_cn.md)
@@ -77,9 +77,9 @@ are available as a REST API under `/apis/configs/` (see `/swaggerui/`).
 
 `.\tools\build_windows.bat`
 
-### Linux gtk3
+### Linux
 
-`./tools/build_linux_gtk3.sh`
+`./tools/build_linux.sh`
 
 ## License
 
