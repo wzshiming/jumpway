@@ -46,6 +46,7 @@ type ruleState struct {
 	name          string
 	listenAddress string
 	address       string
+	target        string
 	remote        bool
 	running       bool
 	attempt       int
@@ -137,6 +138,7 @@ func (a *App) Status() configs.Status {
 		state := configs.RuleStatus{
 			Name:    rule.name,
 			Address: rule.address,
+			Target:  rule.target,
 			Remote:  rule.remote,
 			Running: rule.running,
 			Attempt: rule.attempt,
@@ -154,7 +156,7 @@ func (a *App) primaryAddress() string {
 	defer a.mu.Unlock()
 	var fallback string
 	for _, rule := range a.rules {
-		if rule.remote {
+		if rule.remote || rule.target != "" {
 			continue
 		}
 		if rule.running {

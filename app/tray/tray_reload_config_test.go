@@ -22,6 +22,8 @@ import (
 	"github.com/wzshiming/bridge/chain"
 	bridgeconfig "github.com/wzshiming/bridge/config"
 	"github.com/wzshiming/bridge/protocols/local"
+	_ "github.com/wzshiming/bridge/protocols/socks5"
+	"github.com/wzshiming/hostmatcher"
 	"github.com/wzshiming/jumpway/app/web"
 	"github.com/wzshiming/jumpway/app/web/services/configs"
 	"github.com/wzshiming/jumpway/config"
@@ -115,6 +117,91 @@ func TestReloadAllRulesAndAuth(test *testing.T) {
 	}
 	for _, rule := range status.Rules {
 		assertListenerClosed(test, rule.Address)
+	}
+}
+
+func TestReloadForwardRule(test *testing.T) {
+	target := startEchoServer(test)
+	app := newTestApp(test, &config.Config{Rules: []config.Rule{{
+		Name:    "fwd",
+		Listen:  config.Listen{Host: "127.0.0.1"},
+		Forward: config.Forward{Host: "127.0.0.1", Port: uint32(target.Addr().(*net.TCPAddr).Port)},
+	}}})
+	if err := app.Reload(); err != nil {
+		test.Fatal(err)
+	}
+	status := app.Status()
+	if len(status.Rules) != 1 || status.Rules[0].Name != "fwd" || !status.Rules[0].Running {
+		test.Fatalf("unexpected forward status: %+v", status)
+	}
+	connection, err := net.DialTimeout("tcp", status.Rules[0].Address, time.Second)
+	if err != nil {
+		test.Fatal(err)
+	}
+	defer connection.Close()
+	if err := connection.SetDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		test.Fatal(err)
+	}
+	payload := "forward payload\n"
+	if _, err := io.WriteString(connection, payload); err != nil {
+		test.Fatal(err)
+	}
+	reply := make([]byte, len(payload))
+	if _, err := io.ReadFull(connection, reply); err != nil {
+		test.Fatalf("read forwarded payload: %v", err)
+	}
+	if string(reply) != payload {
+		test.Fatalf("forwarded payload = %q, want %q", reply, payload)
+	}
+	if status.Rules[0].Target != target.Addr().String() {
+		test.Fatalf("forward target = %q, want %q", status.Rules[0].Target, target.Addr().String())
+	}
+}
+
+func TestReloadForwardIgnoresNoProxy(test *testing.T) {
+	previousNoProxy := chain.NoProxy
+	chain.NoProxy = hostmatcher.NewMatcher([]string{"127.0.0.1"})
+	test.Cleanup(func() { chain.NoProxy = previousNoProxy })
+	target := startEchoServer(test)
+	app := newTestApp(test, &config.Config{
+		NoProxy: config.NoProxy{List: []string{"127.0.0.1"}},
+		Rules: []config.Rule{{
+			Name:   "fwd",
+			Listen: config.Listen{Host: "127.0.0.1"},
+			Forward: config.Forward{
+				Host: "127.0.0.1",
+				Port: uint32(target.Addr().(*net.TCPAddr).Port),
+				Way:  []bridgeconfig.Node{{LB: []string{"socks5://127.0.0.1:1"}}},
+			},
+		}},
+	})
+	if err := app.Reload(); err != nil {
+		test.Fatal(err)
+	}
+	status := app.Status()
+	if len(status.Rules) != 1 || !status.Rules[0].Running {
+		test.Fatalf("unexpected forward status: %+v", status)
+	}
+	connection, err := net.DialTimeout("tcp", status.Rules[0].Address, time.Second)
+	if err != nil {
+		test.Fatal(err)
+	}
+	defer connection.Close()
+	if err := connection.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		test.Fatal(err)
+	}
+	payload := "must not be echoed\n"
+	if _, err := io.WriteString(connection, payload); err != nil {
+		test.Fatal(err)
+	}
+	reply := make([]byte, len(payload))
+	received, err := connection.Read(reply)
+	if received != 0 || err == nil {
+		test.Fatalf("no_proxy bypassed the forward chain: reply=%q, err=%v", reply[:received], err)
+	}
+	var networkError net.Error
+	if errors.As(err, &networkError) && networkError.Timeout() {
+		test.Fatalf("forward connection timed out instead of closing: %v", err)
 	}
 }
 
@@ -331,14 +418,23 @@ func TestReloadWebUIMovePreservesResponse(test *testing.T) {
 func TestPrimaryAddressFallback(test *testing.T) {
 	app := &App{rules: []*ruleState{
 		{name: "remote", listenAddress: "0.0.0.0:10000", address: "0.0.0.0:10000", remote: true, running: true},
+		{name: "forward", listenAddress: "0.0.0.0:10002", address: "127.0.0.1:20002", target: "127.0.0.1:5432", running: true},
 		{name: "local", listenAddress: "0.0.0.0:10001", address: "127.0.0.1:20001"},
 	}}
 	if address := app.primaryAddress(); address != "127.0.0.1:10001" {
 		test.Fatalf("fallback address = %q", address)
 	}
-	app.rules = app.rules[:1]
+	app.rules[2].running = true
+	if address := app.primaryAddress(); address != "127.0.0.1:20001" {
+		test.Fatalf("running proxy address = %q", address)
+	}
+	app.rules = app.rules[:2]
 	if address := app.primaryAddress(); address != "" {
-		test.Fatalf("remote address used as local fallback: %q", address)
+		test.Fatalf("remote or forward address used as local proxy: %q", address)
+	}
+	app.rules[1].running = false
+	if address := app.primaryAddress(); address != "" {
+		test.Fatalf("remote or forward address used as local fallback: %q", address)
 	}
 	app.updateStatus()
 }
@@ -371,6 +467,20 @@ func occupyPort(test *testing.T) net.Listener {
 		test.Fatal(err)
 	}
 	test.Cleanup(func() { listener.Close() })
+	return listener
+}
+
+func startEchoServer(test *testing.T) net.Listener {
+	test.Helper()
+	listener := occupyPort(test)
+	go func() {
+		connection, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		defer connection.Close()
+		io.Copy(connection, connection)
+	}()
 	return listener
 }
 

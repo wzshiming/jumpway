@@ -69,6 +69,7 @@ func (a *App) reload() error {
 			name:          rule.Name,
 			listenAddress: rule.Listen.Address(),
 			address:       rule.Listen.Address(),
+			target:        rule.Forward.Target(),
 			remote:        rule.Listen.Remote(),
 		})
 	}
@@ -80,6 +81,7 @@ func (a *App) reload() error {
 	defer timer.Stop()
 	firsts := make([]chan error, len(enabled))
 	for index, rule := range enabled {
+		target := rule.Forward.Target()
 		state := rules[index]
 		first := make(chan error, 1)
 		firsts[index] = first
@@ -101,7 +103,11 @@ func (a *App) reload() error {
 			address := state.address
 			a.mu.Unlock()
 			if event.Addr != nil {
-				log.Info(i18n.Listen(address), "rule", rule.Name)
+				if target == "" {
+					log.Info(i18n.Listen(address), "rule", rule.Name)
+				} else {
+					log.Info(i18n.Listen(address), "rule", rule.Name, "target", target)
+				}
 			} else {
 				log.Error(event.Err, i18n.Listen(address), "rule", rule.Name, "attempt", event.Attempt, "backoff", event.Backoff)
 			}
@@ -116,7 +122,11 @@ func (a *App) reload() error {
 		dialer := jumpway.NewLogDialer(local.LOCAL, func(ctx context.Context, network, address string) {
 			log.Info(i18n.UseProxy(), "address", address, "rule", rule.Name)
 		})
-		dialer, err = chain.Default.BridgeChainWithConfig(ctx, dialer, rule.Forward.Way...)
+		forwardChain := *chain.Default
+		if target != "" {
+			forwardChain.DialerFunc = nil
+		}
+		dialer, err = forwardChain.BridgeChainWithConfig(ctx, dialer, rule.Forward.Way...)
 		if err != nil {
 			report(jumpway.Event{Err: err, Attempt: 1})
 			continue
@@ -128,21 +138,24 @@ func (a *App) reload() error {
 			log.Info(i18n.Connect(), "proxy", true, "address", address, "rule", rule.Name)
 		})
 
-		if len(noProxy) != 0 {
+		// Fixed targets must stay on their configured chain, including exit-node loopback addresses.
+		if target == "" && len(noProxy) != 0 {
 			subDialer := jumpway.NewLogDialer(local.LOCAL, func(ctx context.Context, network, address string) {
 				log.Info(i18n.Connect(), "proxy", false, "address", address, "rule", rule.Name)
 			})
 			dialer = chain.NewShuntDialer(dialer, subDialer, matcher)
 		}
 
-		user := rule.Listen.User()
 		a.wg.Add(1)
 		go func() {
 			defer a.wg.Done()
 			jumpway.Serve(ctx, func(ctx context.Context) (net.Listener, error) {
 				return listenConfig.Listen(ctx, "tcp", rule.Listen.Address())
 			}, func(ctx context.Context, listener net.Listener) error {
-				return jumpway.RunProxy(ctx, listener, dialer, user)
+				if target == "" {
+					return jumpway.RunProxy(ctx, listener, dialer, rule.Listen.User())
+				}
+				return jumpway.RunForward(ctx, listener, dialer, target)
 			}, report)
 		}()
 	}
