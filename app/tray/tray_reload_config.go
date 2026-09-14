@@ -2,14 +2,16 @@ package tray
 
 import (
 	"context"
+	"errors"
 	"net"
-	"strconv"
+	"slices"
 
 	"github.com/gogpu/systray"
 	"github.com/wzshiming/bridge/chain"
 	"github.com/wzshiming/bridge/protocols/local"
 	"github.com/wzshiming/hostmatcher"
 	"github.com/wzshiming/jumpway"
+	"github.com/wzshiming/jumpway/config"
 	"github.com/wzshiming/jumpway/i18n"
 	"github.com/wzshiming/jumpway/log"
 	"github.com/wzshiming/jumpway/utils"
@@ -38,17 +40,24 @@ func (a *App) reload() error {
 		a.mu.Unlock()
 		return err
 	}
-	port := conf.Proxy.Port
-	host := conf.Proxy.Host
-	if host == "" {
-		host = "127.0.0.1"
+	index := slices.IndexFunc(conf.Rules, func(rule config.Rule) bool {
+		return !rule.Disabled && !rule.Listen.Remote()
+	})
+	if index == -1 {
+		err := errors.New("no enabled local rule")
+		log.Error(err, i18n.ReloadConfig())
+		a.mu.Lock()
+		a.running, a.lastErr = false, err
+		a.mu.Unlock()
+		return err
 	}
+	rule := conf.Rules[index]
 
 	if a.listener != nil {
 		a.listener.Close()
 	}
 
-	address := net.JoinHostPort(host, strconv.FormatUint(uint64(port), 10))
+	address := rule.Listen.Address()
 	listener, err := local.LOCAL.Listen(ctx, "tcp", address)
 	a.listener = listener
 	if err != nil {
@@ -68,7 +77,7 @@ func (a *App) reload() error {
 		dialer := jumpway.NewLogDialer(local.LOCAL, func(ctx context.Context, network, address string) {
 			log.Info(i18n.UseProxy(), "address", address)
 		})
-		dialer, err := chain.Default.BridgeChainWithConfig(ctx, dialer, conf.GetWay()...)
+		dialer, err := chain.Default.BridgeChainWithConfig(ctx, dialer, rule.Way...)
 		if err != nil {
 			log.Error(err, i18n.Connect(), "address", address)
 			if ctx.Err() == nil {

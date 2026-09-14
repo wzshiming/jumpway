@@ -100,209 +100,6 @@
     }
    }
   },
-  "/configs/contexts": {
-   "get": {
-    "tags": [
-     "ConfigsService"
-    ],
-    "summary": "ListContexts lists the contexts",
-    "description": "ListContexts lists the contexts\n\n\n#route:\"GET /contexts\"#",
-    "responses": {
-     "200": {
-      "description": "Response code is 200",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "array",
-         "items": {
-          "$ref": "#/components/schemas/Context"
-         }
-        }
-       }
-      }
-     },
-     "400": {
-      "description": "Response code is 400",
-      "content": {
-       "text/plain": {
-        "schema": {
-         "type": "string",
-         "format": "error"
-        }
-       }
-      }
-     }
-    }
-   },
-   "post": {
-    "tags": [
-     "ConfigsService"
-    ],
-    "summary": "CreateContext adds a context",
-    "description": "CreateContext adds a context\n\n\n#route:\"POST /contexts\"#",
-    "requestBody": {
-     "$ref": "#/components/requestBodies/c_body"
-    },
-    "responses": {
-     "400": {
-      "description": "Response code is 400",
-      "content": {
-       "text/plain": {
-        "schema": {
-         "type": "string",
-         "format": "error"
-        }
-       }
-      }
-     }
-    }
-   }
-  },
-  "/configs/contexts/{name}": {
-   "get": {
-    "tags": [
-     "ConfigsService"
-    ],
-    "summary": "GetContext returns one context",
-    "description": "GetContext returns one context\n\n\n#route:\"GET /contexts/{name}\"#",
-    "parameters": [
-     {
-      "$ref": "#/components/parameters/name_path"
-     }
-    ],
-    "responses": {
-     "200": {
-      "description": "Response code is 200",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/Context"
-        }
-       }
-      }
-     },
-     "400": {
-      "description": "Response code is 400",
-      "content": {
-       "text/plain": {
-        "schema": {
-         "type": "string",
-         "format": "error"
-        }
-       }
-      }
-     }
-    }
-   },
-   "put": {
-    "tags": [
-     "ConfigsService"
-    ],
-    "summary": "UpdateContext replaces one context (renames it when the body name differs)",
-    "description": "UpdateContext replaces one context (renames it when the body name differs)\n\n\n#route:\"PUT /contexts/{name}\"#",
-    "parameters": [
-     {
-      "$ref": "#/components/parameters/name_path"
-     }
-    ],
-    "requestBody": {
-     "$ref": "#/components/requestBodies/c_body"
-    },
-    "responses": {
-     "400": {
-      "description": "Response code is 400",
-      "content": {
-       "text/plain": {
-        "schema": {
-         "type": "string",
-         "format": "error"
-        }
-       }
-      }
-     }
-    }
-   },
-   "delete": {
-    "tags": [
-     "ConfigsService"
-    ],
-    "summary": "DeleteContext removes one context",
-    "description": "DeleteContext removes one context\n\n\n#route:\"DELETE /contexts/{name}\"#",
-    "parameters": [
-     {
-      "$ref": "#/components/parameters/name_path"
-     }
-    ],
-    "responses": {
-     "400": {
-      "description": "Response code is 400",
-      "content": {
-       "text/plain": {
-        "schema": {
-         "type": "string",
-         "format": "error"
-        }
-       }
-      }
-     }
-    }
-   }
-  },
-  "/configs/current-context": {
-   "get": {
-    "tags": [
-     "ConfigsService"
-    ],
-    "summary": "GetCurrentContext returns the name of the active context",
-    "description": "GetCurrentContext returns the name of the active context\n\n\n#route:\"GET /current-context\"#",
-    "responses": {
-     "200": {
-      "description": "Response code is 200",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/CurrentContext"
-        }
-       }
-      }
-     },
-     "400": {
-      "description": "Response code is 400",
-      "content": {
-       "text/plain": {
-        "schema": {
-         "type": "string",
-         "format": "error"
-        }
-       }
-      }
-     }
-    }
-   },
-   "put": {
-    "tags": [
-     "ConfigsService"
-    ],
-    "summary": "SetCurrentContext switches the active context",
-    "description": "SetCurrentContext switches the active context\n\n\n#route:\"PUT /current-context\"#",
-    "requestBody": {
-     "$ref": "#/components/requestBodies/current_body"
-    },
-    "responses": {
-     "400": {
-      "description": "Response code is 400",
-      "content": {
-       "text/plain": {
-        "schema": {
-         "type": "string",
-         "format": "error"
-        }
-       }
-      }
-     }
-    }
-   }
-  },
   "/configs/no-proxy": {
    "get": {
     "tags": [
@@ -342,61 +139,6 @@
     "description": "UpdateNoProxy replaces the bypass lists\n\n\n#route:\"PUT /no-proxy\"#",
     "requestBody": {
      "$ref": "#/components/requestBodies/noProxy_body"
-    },
-    "responses": {
-     "400": {
-      "description": "Response code is 400",
-      "content": {
-       "text/plain": {
-        "schema": {
-         "type": "string",
-         "format": "error"
-        }
-       }
-      }
-     }
-    }
-   }
-  },
-  "/configs/proxy": {
-   "get": {
-    "tags": [
-     "ConfigsService"
-    ],
-    "summary": "GetProxy returns the listen address",
-    "description": "GetProxy returns the listen address\n\n\n#route:\"GET /proxy\"#",
-    "responses": {
-     "200": {
-      "description": "Response code is 200",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/Proxy"
-        }
-       }
-      }
-     },
-     "400": {
-      "description": "Response code is 400",
-      "content": {
-       "text/plain": {
-        "schema": {
-         "type": "string",
-         "format": "error"
-        }
-       }
-      }
-     }
-    }
-   },
-   "put": {
-    "tags": [
-     "ConfigsService"
-    ],
-    "summary": "UpdateProxy changes the listen address",
-    "description": "UpdateProxy changes the listen address\n\n\n#route:\"PUT /proxy\"#",
-    "requestBody": {
-     "$ref": "#/components/requestBodies/proxy_body"
     },
     "responses": {
      "400": {
@@ -468,6 +210,154 @@
     }
    }
   },
+  "/configs/rules": {
+   "get": {
+    "tags": [
+     "ConfigsService"
+    ],
+    "summary": "ListRules lists the rules",
+    "description": "ListRules lists the rules\n\n\n#route:\"GET /rules\"#",
+    "responses": {
+     "200": {
+      "description": "Response code is 200",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/Rule"
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Response code is 400",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string",
+         "format": "error"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "ConfigsService"
+    ],
+    "summary": "CreateRule adds a rule",
+    "description": "CreateRule adds a rule\n\n\n#route:\"POST /rules\"#",
+    "requestBody": {
+     "$ref": "#/components/requestBodies/r_body"
+    },
+    "responses": {
+     "400": {
+      "description": "Response code is 400",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string",
+         "format": "error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/configs/rules/{name}": {
+   "get": {
+    "tags": [
+     "ConfigsService"
+    ],
+    "summary": "GetRule returns one rule",
+    "description": "GetRule returns one rule\n\n\n#route:\"GET /rules/{name}\"#",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/name_path"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Response code is 200",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Rule"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Response code is 400",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string",
+         "format": "error"
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "ConfigsService"
+    ],
+    "summary": "UpdateRule replaces one rule (renames it when the body name differs)",
+    "description": "UpdateRule replaces one rule (renames it when the body name differs)\n\n\n#route:\"PUT /rules/{name}\"#",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/name_path"
+     }
+    ],
+    "requestBody": {
+     "$ref": "#/components/requestBodies/r_body"
+    },
+    "responses": {
+     "400": {
+      "description": "Response code is 400",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string",
+         "format": "error"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "ConfigsService"
+    ],
+    "summary": "DeleteRule removes one rule",
+    "description": "DeleteRule removes one rule\n\n\n#route:\"DELETE /rules/{name}\"#",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/name_path"
+     }
+    ],
+    "responses": {
+     "400": {
+      "description": "Response code is 400",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string",
+         "format": "error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/configs/status": {
    "get": {
     "tags": [
@@ -499,28 +389,107 @@
      }
     }
    }
+  },
+  "/configs/web-ui": {
+   "get": {
+    "tags": [
+     "ConfigsService"
+    ],
+    "summary": "GetWebUI returns the web UI listen address",
+    "description": "GetWebUI returns the web UI listen address\n\n\n#route:\"GET /web-ui\"#",
+    "responses": {
+     "200": {
+      "description": "Response code is 200",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Address"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Response code is 400",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string",
+         "format": "error"
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "ConfigsService"
+    ],
+    "summary": "UpdateWebUI changes the web UI listen address",
+    "description": "UpdateWebUI changes the web UI listen address\n\n\n#route:\"PUT /web-ui\"#",
+    "requestBody": {
+     "$ref": "#/components/requestBodies/address_body"
+    },
+    "responses": {
+     "400": {
+      "description": "Response code is 400",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string",
+         "format": "error"
+        }
+       }
+      }
+     }
+    }
+   }
   }
  },
  "components": {
   "schemas": {
+   "Address": {
+    "required": [
+     "host",
+     "port"
+    ],
+    "type": "object",
+    "properties": {
+     "host": {
+      "type": "string"
+     },
+     "port": {
+      "type": "integer",
+      "format": "uint32"
+     }
+    },
+    "description": "Address is a local TCP listen address; an empty Host means 127.0.0.1.\n"
+   },
+   "Address.1": {
+    "required": [
+     "host",
+     "port"
+    ],
+    "type": "object",
+    "properties": {
+     "host": {
+      "type": "string"
+     },
+     "port": {
+      "type": "integer",
+      "format": "uint32"
+     }
+    },
+    "description": "Address is a local TCP listen address; an empty Host means 127.0.0.1.\n"
+   },
    "Config": {
     "required": [
-     "current_context",
-     "contexts",
-     "proxy",
+     "web_ui",
+     "rules",
      "no_proxy"
     ],
     "type": "object",
     "properties": {
-     "contexts": {
-      "type": "array",
-      "items": {
-       "$ref": "#/components/schemas/Context.1"
-      }
-     },
-     "current_context": {
-      "type": "string"
-     },
      "no_proxy": {
       "allOf": [
        {
@@ -528,23 +497,40 @@
        }
       ]
      },
-     "proxy": {
+     "rules": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Rule.1"
+      }
+     },
+     "web_ui": {
       "allOf": [
        {
-        "$ref": "#/components/schemas/Proxy.1"
+        "$ref": "#/components/schemas/Address.1"
        }
-      ]
+      ],
+      "description": "Address is a local TCP listen address; an empty Host means 127.0.0.1.\n"
      }
     }
    },
-   "Context": {
+   "Listen": {
     "required": [
-     "name",
-     "way"
+     "host",
+     "port"
     ],
     "type": "object",
     "properties": {
-     "name": {
+     "host": {
+      "type": "string"
+     },
+     "password": {
+      "type": "string"
+     },
+     "port": {
+      "type": "integer",
+      "format": "uint32"
+     },
+     "username": {
       "type": "string"
      },
      "way": {
@@ -553,36 +539,8 @@
        "$ref": "#/components/schemas/Node"
       }
      }
-    }
-   },
-   "Context.1": {
-    "required": [
-     "name",
-     "way"
-    ],
-    "type": "object",
-    "properties": {
-     "name": {
-      "type": "string"
-     },
-     "way": {
-      "type": "array",
-      "items": {
-       "$ref": "#/components/schemas/Node"
-      }
-     }
-    }
-   },
-   "CurrentContext": {
-    "required": [
-     "name"
-    ],
-    "type": "object",
-    "properties": {
-     "name": {
-      "type": "string"
-     }
-    }
+    },
+    "description": "Listen is the rule's entry; the first node in Way binds the port, or an empty Way binds locally.\n"
    },
    "NoProxy": {
     "required": [
@@ -654,38 +612,6 @@
      }
     }
    },
-   "Proxy": {
-    "required": [
-     "host",
-     "port"
-    ],
-    "type": "object",
-    "properties": {
-     "host": {
-      "type": "string"
-     },
-     "port": {
-      "type": "integer",
-      "format": "uint32"
-     }
-    }
-   },
-   "Proxy.1": {
-    "required": [
-     "host",
-     "port"
-    ],
-    "type": "object",
-    "properties": {
-     "host": {
-      "type": "string"
-     },
-     "port": {
-      "type": "integer",
-      "format": "uint32"
-     }
-    }
-   },
    "RawConfig": {
     "required": [
      "yaml"
@@ -698,10 +624,104 @@
     },
     "description": "RawConfig carries config.yaml verbatim.\n"
    },
+   "Rule": {
+    "required": [
+     "name",
+     "listen",
+     "way"
+    ],
+    "type": "object",
+    "properties": {
+     "disabled": {
+      "type": "boolean"
+     },
+     "listen": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/Listen"
+       }
+      ],
+      "description": "Listen is the rule's entry; the first node in Way binds the port, or an empty Way binds locally.\n"
+     },
+     "name": {
+      "type": "string"
+     },
+     "way": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Node"
+      }
+     }
+    },
+    "description": "Rule is one proxy entry: where it listens and the chain its traffic leaves through.\n"
+   },
+   "Rule.1": {
+    "required": [
+     "name",
+     "listen",
+     "way"
+    ],
+    "type": "object",
+    "properties": {
+     "disabled": {
+      "type": "boolean"
+     },
+     "listen": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/Listen"
+       }
+      ],
+      "description": "Listen is the rule's entry; the first node in Way binds the port, or an empty Way binds locally.\n"
+     },
+     "name": {
+      "type": "string"
+     },
+     "way": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Node"
+      }
+     }
+    },
+    "description": "Rule is one proxy entry: where it listens and the chain its traffic leaves through.\n"
+   },
+   "RuleStatus": {
+    "required": [
+     "name",
+     "address",
+     "remote",
+     "running"
+    ],
+    "type": "object",
+    "properties": {
+     "address": {
+      "type": "string"
+     },
+     "attempt": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "error": {
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     },
+     "remote": {
+      "type": "boolean"
+     },
+     "running": {
+      "type": "boolean"
+     }
+    },
+    "description": "RuleStatus is one rule's listener state; Attempt counts consecutive failed listen attempts.\n"
+   },
    "Status": {
     "required": [
      "address",
-     "running"
+     "running",
+     "rules"
     ],
     "type": "object",
     "properties": {
@@ -711,20 +731,26 @@
      "error": {
       "type": "string"
      },
+     "rules": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/RuleStatus"
+      }
+     },
      "running": {
       "type": "boolean"
      }
     },
-    "description": "Status is what the web UI shows about the running proxy.\n"
+    "description": "Status is what the web UI shows about the running app: the web UI listener and every enabled rule.\n"
    }
   },
   "responses": {
-   "c_body": {
+   "address_body": {
     "description": "Response code is 200",
     "content": {
      "application/json": {
       "schema": {
-       "$ref": "#/components/schemas/Context"
+       "$ref": "#/components/schemas/Address"
       }
      }
     }
@@ -735,29 +761,6 @@
      "application/json": {
       "schema": {
        "$ref": "#/components/schemas/Config"
-      }
-     }
-    }
-   },
-   "contexts_body": {
-    "description": "Response code is 200",
-    "content": {
-     "application/json": {
-      "schema": {
-       "type": "array",
-       "items": {
-        "$ref": "#/components/schemas/Context"
-       }
-      }
-     }
-    }
-   },
-   "current_body": {
-    "description": "Response code is 200",
-    "content": {
-     "application/json": {
-      "schema": {
-       "$ref": "#/components/schemas/CurrentContext"
       }
      }
     }
@@ -783,22 +786,35 @@
      }
     }
    },
-   "proxy_body": {
-    "description": "Response code is 200",
-    "content": {
-     "application/json": {
-      "schema": {
-       "$ref": "#/components/schemas/Proxy"
-      }
-     }
-    }
-   },
    "raw_body": {
     "description": "Response code is 200",
     "content": {
      "application/json": {
       "schema": {
        "$ref": "#/components/schemas/RawConfig"
+      }
+     }
+    }
+   },
+   "rule_body": {
+    "description": "Response code is 200",
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/Rule"
+      }
+     }
+    }
+   },
+   "rules_body": {
+    "description": "Response code is 200",
+    "content": {
+     "application/json": {
+      "schema": {
+       "type": "array",
+       "items": {
+        "$ref": "#/components/schemas/Rule"
+       }
       }
      }
     }
@@ -827,11 +843,11 @@
    }
   },
   "requestBodies": {
-   "c_body": {
+   "address_body": {
     "content": {
      "application/json": {
       "schema": {
-       "$ref": "#/components/schemas/Context"
+       "$ref": "#/components/schemas/Address"
       }
      }
     }
@@ -845,15 +861,6 @@
      }
     }
    },
-   "current_body": {
-    "content": {
-     "application/json": {
-      "schema": {
-       "$ref": "#/components/schemas/CurrentContext"
-      }
-     }
-    }
-   },
    "noProxy_body": {
     "content": {
      "application/json": {
@@ -863,11 +870,11 @@
      }
     }
    },
-   "proxy_body": {
+   "r_body": {
     "content": {
      "application/json": {
       "schema": {
-       "$ref": "#/components/schemas/Proxy"
+       "$ref": "#/components/schemas/Rule"
       }
      }
     }

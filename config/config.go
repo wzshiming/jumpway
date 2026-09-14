@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/pkg/browser"
-	"github.com/wzshiming/bridge/config"
+	bridgeconfig "github.com/wzshiming/bridge/config"
 	"github.com/wzshiming/httpcache"
 	"github.com/wzshiming/jumpway/i18n"
 	"github.com/wzshiming/jumpway/log"
@@ -23,29 +23,57 @@ import (
 )
 
 type Config struct {
-	CurrentContext string    `yaml:"current_context" json:"current_context"`
-	Contexts       []Context `yaml:"contexts" json:"contexts"`
-	Proxy          Proxy     `yaml:"proxy" json:"proxy"`
-	NoProxy        NoProxy   `yaml:"no_proxy" json:"no_proxy"`
+	WebUI   Address `yaml:"web_ui" json:"web_ui"`
+	Rules   []Rule  `yaml:"rules" json:"rules"`
+	NoProxy NoProxy `yaml:"no_proxy" json:"no_proxy"`
 }
 
-func (c Config) GetWay() []config.Node {
-	for _, ctx := range c.Contexts {
-		if ctx.Name == c.CurrentContext {
-			return ctx.Way
-		}
-	}
-	return nil
-}
-
-type Context struct {
-	Name string        `yaml:"name" json:"name"`
-	Way  []config.Node `yaml:"way" json:"way"`
-}
-
-type Proxy struct {
+// Address is a local TCP listen address; an empty Host means 127.0.0.1.
+type Address struct {
 	Host string `yaml:"host" json:"host"`
 	Port uint32 `yaml:"port" json:"port"`
+}
+
+func (a Address) String() string {
+	if a.Host == "" {
+		a.Host = "127.0.0.1"
+	}
+	return net.JoinHostPort(a.Host, fmt.Sprint(a.Port))
+}
+
+// Rule is one proxy entry: where it listens and the chain its traffic leaves through.
+type Rule struct {
+	Name     string              `yaml:"name" json:"name"`
+	Disabled bool                `yaml:"disabled,omitempty" json:"disabled,omitempty"`
+	Listen   Listen              `yaml:"listen" json:"listen"`
+	Way      []bridgeconfig.Node `yaml:"way" json:"way"`
+}
+
+// Listen is the rule's entry; the first node in Way binds the port, or an empty Way binds locally.
+type Listen struct {
+	Host     string              `yaml:"host" json:"host"`
+	Port     uint32              `yaml:"port" json:"port"`
+	Way      []bridgeconfig.Node `yaml:"way,omitempty" json:"way,omitempty"`
+	Username string              `yaml:"username,omitempty" json:"username,omitempty"`
+	Password string              `yaml:"password,omitempty" json:"password,omitempty"`
+}
+
+func (l Listen) Address() string {
+	return (Address{Host: l.Host, Port: l.Port}).String()
+}
+
+func (l Listen) Remote() bool {
+	return len(l.Way) > 0
+}
+
+func (l Listen) User() *url.Userinfo {
+	if l.Username == "" {
+		return nil
+	}
+	if l.Password != "" {
+		return url.UserPassword(l.Username, l.Password)
+	}
+	return url.User(l.Username)
 }
 
 type NoProxy struct {
@@ -155,44 +183,64 @@ func Validate(conf *Config) error {
 	if conf == nil {
 		return fmt.Errorf("config is nil")
 	}
-	if conf.Proxy.Port > 65535 {
-		return fmt.Errorf("proxy.port %d is out of range (0-65535)", conf.Proxy.Port)
+	if conf.WebUI.Port > 65535 {
+		return fmt.Errorf("web_ui.port %d is out of range (0-65535)", conf.WebUI.Port)
 	}
-	names := make(map[string]struct{}, len(conf.Contexts))
-	for contextIndex, ctx := range conf.Contexts {
-		if strings.TrimSpace(ctx.Name) == "" {
-			return fmt.Errorf("contexts[%d].name is empty", contextIndex)
+	names := make(map[string]struct{}, len(conf.Rules))
+	addresses := make(map[string]string, len(conf.Rules))
+	for ruleIndex, rule := range conf.Rules {
+		if strings.TrimSpace(rule.Name) == "" {
+			return fmt.Errorf("rules[%d].name is empty", ruleIndex)
 		}
-		// Contexts are addressed as /apis/configs/contexts/{name}.
-		if strings.Contains(ctx.Name, "/") {
-			return fmt.Errorf("contexts[%d].name %q must not contain \"/\"", contextIndex, ctx.Name)
+		if strings.Contains(rule.Name, "/") {
+			return fmt.Errorf("rules[%d].name %q must not contain \"/\"", ruleIndex, rule.Name)
 		}
-		if _, ok := names[ctx.Name]; ok {
-			return fmt.Errorf("duplicate context name %q", ctx.Name)
+		if _, ok := names[rule.Name]; ok {
+			return fmt.Errorf("duplicate rule name %q", rule.Name)
 		}
-		names[ctx.Name] = struct{}{}
+		names[rule.Name] = struct{}{}
+		if rule.Listen.Port > 65535 {
+			return fmt.Errorf("rules[%d].listen.port %d is out of range (0-65535)", ruleIndex, rule.Listen.Port)
+		}
+		if rule.Listen.Password != "" && rule.Listen.Username == "" {
+			return fmt.Errorf("rules[%d].listen.password is set but username is empty", ruleIndex)
+		}
+		if err := validateWay(fmt.Sprintf("rules[%d].listen.way", ruleIndex), rule.Listen.Way); err != nil {
+			return err
+		}
+		if err := validateWay(fmt.Sprintf("rules[%d].way", ruleIndex), rule.Way); err != nil {
+			return err
+		}
+		if rule.Disabled || rule.Listen.Remote() || rule.Listen.Port == 0 {
+			continue
+		}
+		address := rule.Listen.Address()
+		if name, ok := addresses[address]; ok {
+			return fmt.Errorf("rules[%d].listen address %s is already used by rule %q", ruleIndex, address, name)
+		}
+		if conf.WebUI.Port != 0 && address == conf.WebUI.String() {
+			return fmt.Errorf("rules[%d].listen address %s is already used by web_ui", ruleIndex, address)
+		}
+		addresses[address] = rule.Name
 	}
-	if conf.CurrentContext != "" || len(conf.Contexts) > 0 {
-		if _, ok := names[conf.CurrentContext]; !ok {
-			return fmt.Errorf("current_context %q does not match any context", conf.CurrentContext)
+	return nil
+}
+
+func validateWay(prefix string, way []bridgeconfig.Node) error {
+	for nodeIndex, node := range way {
+		if len(node.LB) == 0 {
+			return fmt.Errorf("%s[%d] has no proxy URL", prefix, nodeIndex)
 		}
-	}
-	for contextIndex, ctx := range conf.Contexts {
-		for nodeIndex, node := range ctx.Way {
-			if len(node.LB) == 0 {
-				return fmt.Errorf("contexts[%d].way[%d] has no proxy URL", contextIndex, nodeIndex)
+		for _, proxyURL := range node.LB {
+			if strings.TrimSpace(proxyURL) == "" {
+				return fmt.Errorf("%s[%d] contains an empty proxy URL", prefix, nodeIndex)
 			}
-			for _, proxyURL := range node.LB {
-				if strings.TrimSpace(proxyURL) == "" {
-					return fmt.Errorf("contexts[%d].way[%d] contains an empty proxy URL", contextIndex, nodeIndex)
-				}
-				parsedURL, err := url.Parse(proxyURL)
-				if err != nil {
-					return fmt.Errorf("contexts[%d].way[%d]: invalid proxy URL %q: %w (e.g. socks5://host:1080)", contextIndex, nodeIndex, proxyURL, err)
-				}
-				if parsedURL.Scheme == "" {
-					return fmt.Errorf("contexts[%d].way[%d]: proxy URL %q has no scheme (e.g. socks5://host:1080)", contextIndex, nodeIndex, proxyURL)
-				}
+			parsedURL, err := url.Parse(proxyURL)
+			if err != nil {
+				return fmt.Errorf("%s[%d]: invalid proxy URL %q: %w (e.g. socks5://host:1080)", prefix, nodeIndex, proxyURL, err)
+			}
+			if parsedURL.Scheme == "" {
+				return fmt.Errorf("%s[%d]: proxy URL %q has no scheme (e.g. socks5://host:1080)", prefix, nodeIndex, proxyURL)
 			}
 		}
 	}
