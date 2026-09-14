@@ -75,6 +75,11 @@ func TestValidate(t *testing.T) {
 			wantError: "rules[0].listen.password is set but username is empty",
 		},
 		{
+			name:      "username_with_colon",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Username: "us:er", Password: "secret"}}}},
+			wantError: "rules[0].listen.username \"us:er\" must not contain \":\"",
+		},
+		{
 			name: "username_and_password",
 			conf: &Config{Rules: []Rule{{Name: "a", Listen: Listen{Username: "user", Password: "secret"}}}},
 		},

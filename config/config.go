@@ -205,6 +205,9 @@ func Validate(conf *Config) error {
 		if rule.Listen.Password != "" && rule.Listen.Username == "" {
 			return fmt.Errorf("rules[%d].listen.password is set but username is empty", ruleIndex)
 		}
+		if strings.Contains(rule.Listen.Username, ":") {
+			return fmt.Errorf("rules[%d].listen.username %q must not contain \":\"", ruleIndex, rule.Listen.Username)
+		}
 		if err := validateWay(fmt.Sprintf("rules[%d].listen.way", ruleIndex), rule.Listen.Way); err != nil {
 			return err
 		}

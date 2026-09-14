@@ -19,11 +19,12 @@ func NewListenConfig(ctx context.Context, way []config.Node) (bridge.ListenConfi
 	for _, address := range way[0].LB {
 		hop, err := url.Parse(address)
 		if err != nil {
-			return nil, fmt.Errorf("the first hop %q cannot listen: %w", address, err)
+			return nil, fmt.Errorf("the first hop cannot listen: %w", err)
 		}
 		switch strings.ToLower(hop.Scheme) {
 		case "socks4", "socks4a", "socks5", "socks5h":
-			return nil, fmt.Errorf("the first hop %q cannot listen: SOCKS BIND is not a listener", address)
+			// SOCKS BIND accepts one connection per request and only fails at Accept time.
+			return nil, fmt.Errorf("the first hop %q cannot listen: SOCKS BIND is not a listener", hop.Redacted())
 		}
 	}
 	// NewEnvDialer wraps the chain for NO_PROXY/ONLY_PROXY and loses ListenConfig.
@@ -33,9 +34,10 @@ func NewListenConfig(ctx context.Context, way []config.Node) (bridge.ListenConfi
 	if err != nil {
 		return nil, err
 	}
+	// The chain always implements Listen; hops that cannot bind fail inside Listen itself.
 	listenConfig, ok := dialer.(bridge.ListenConfig)
 	if !ok {
-		return nil, fmt.Errorf("the first hop %q cannot listen", strings.Join(way[0].LB, "|"))
+		return nil, fmt.Errorf("the first hop %T cannot listen", dialer)
 	}
 	return listenConfig, nil
 }

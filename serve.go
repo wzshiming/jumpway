@@ -30,6 +30,9 @@ func serveWithBackoff(ctx context.Context, listen func(ctx context.Context) (net
 	attempt := 0
 	for ctx.Err() == nil {
 		listener, err := listen(ctx)
+		if err == nil && listener == nil {
+			err = errors.New("listen returned no listener")
+		}
 		if err == nil {
 			backoff = initial
 			attempt = 0

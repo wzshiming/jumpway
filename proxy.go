@@ -2,6 +2,7 @@ package jumpway
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/url"
 	"sync"
@@ -11,7 +12,11 @@ import (
 )
 
 func RunProxy(ctx context.Context, listener net.Listener, dialer bridge.Dialer, user *url.Userinfo) error {
-	address := listener.Addr().String()
+	addr := listener.Addr()
+	if addr == nil {
+		return errors.New("listener has no address")
+	}
+	address := addr.String()
 	proxyAddress := address
 	if user != nil {
 		proxyAddress = user.String() + "@" + address
