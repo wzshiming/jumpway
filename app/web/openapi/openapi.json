@@ -599,19 +599,12 @@
      "via",
      "path",
      "started",
-     "up",
-     "down",
-     "rate_up",
-     "rate_down"
+     "stats"
     ],
     "type": "object",
     "properties": {
      "client": {
       "type": "string"
-     },
-     "down": {
-      "type": "integer",
-      "format": "int64"
      },
      "id": {
       "type": "integer",
@@ -623,23 +616,18 @@
        "$ref": "#/components/schemas/PathHop"
       }
      },
-     "rate_down": {
-      "type": "integer",
-      "format": "int64"
-     },
-     "rate_up": {
-      "type": "integer",
-      "format": "int64"
-     },
      "started": {
       "type": "string"
      },
+     "stats": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/Stats"
+       }
+      ]
+     },
      "target": {
       "type": "string"
-     },
-     "up": {
-      "type": "integer",
-      "format": "int64"
      },
      "via": {
       "type": "string"
@@ -1006,6 +994,8 @@
      "down",
      "rate_up",
      "rate_down",
+     "peak_rate_up",
+     "peak_rate_down",
      "active",
      "total",
      "dials",
@@ -1038,9 +1028,23 @@
      "last_active": {
       "type": "string"
      },
+     "last_down": {
+      "type": "string"
+     },
+     "last_up": {
+      "type": "string"
+     },
      "latency_ms": {
       "type": "number",
       "format": "double"
+     },
+     "peak_rate_down": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "peak_rate_up": {
+      "type": "integer",
+      "format": "int64"
      },
      "rate_down": {
       "type": "integer",

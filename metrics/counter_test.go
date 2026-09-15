@@ -57,6 +57,67 @@ func TestTick(t *testing.T) {
 	}
 }
 
+func TestCounterPeakRate(t *testing.T) {
+	start := time.Unix(100, 0)
+	count := newCounter(start)
+	count.up.Add(100)
+	count.down.Add(80)
+	if count.peakUp.Load() != 0 || count.peakDown.Load() != 0 {
+		t.Fatal("incomplete window raised peaks")
+	}
+	for index, window := range []struct {
+		up   int64
+		down int64
+	}{
+		{up: 100, down: 80},
+		{up: 20, down: 10},
+		{},
+	} {
+		if index > 0 {
+			count.up.Add(window.up)
+			count.down.Add(window.down)
+		}
+		count.tick(start.Add(time.Duration(index+1) * time.Second))
+		if up, down := count.rateUp.Load(), count.rateDown.Load(); up != window.up || down != window.down {
+			t.Fatalf("window %d rates = (%d, %d), want (%d, %d)", index, up, down, window.up, window.down)
+		}
+		if up, down := count.peakUp.Load(), count.peakDown.Load(); up != 100 || down != 80 {
+			t.Fatalf("window %d peaks = (%d, %d), want (100, 80)", index, up, down)
+		}
+	}
+	count.reset(start.Add(3 * time.Second))
+	if count.peakUp.Load() != 0 || count.peakDown.Load() != 0 {
+		t.Fatal("reset retained peaks")
+	}
+	count.up.Add(7)
+	count.down.Add(11)
+	count.tick(start.Add(4 * time.Second))
+	if up, down := count.peakUp.Load(), count.peakDown.Load(); up != 7 || down != 11 {
+		t.Fatalf("post-reset peaks = (%d, %d), want (7, 11)", up, down)
+	}
+}
+
+func TestCounterLastTransfer(t *testing.T) {
+	start := time.Unix(100, 123)
+	count := newCounter(start)
+	lastUp := start.Add(2 * time.Second).UnixNano()
+	lastDown := start.Add(time.Second).UnixNano()
+	count.addBytes(true, 100, lastUp)
+	count.addBytes(false, 80, lastDown)
+	count.addBytes(true, 20, start.UnixNano())
+	count.addBytes(false, 10, start.UnixNano())
+	if count.up.Load() != 120 || count.down.Load() != 90 {
+		t.Fatal("byte totals did not include out-of-order transfers")
+	}
+	if count.lastUp.Load() != lastUp || count.lastDown.Load() != lastDown || count.lastActive.Load() != lastUp {
+		t.Fatalf("last transfers = (%d, %d), activity = %d, want (%d, %d), %d", count.lastUp.Load(), count.lastDown.Load(), count.lastActive.Load(), lastUp, lastDown, lastUp)
+	}
+	count.reset(start.Add(3 * time.Second))
+	if count.lastUp.Load() != 0 || count.lastDown.Load() != 0 {
+		t.Fatal("reset retained transfer timestamps")
+	}
+}
+
 func TestReset(t *testing.T) {
 	registry := NewRegistry()
 	registry.Sync([]config.Rule{{Name: "rule"}})

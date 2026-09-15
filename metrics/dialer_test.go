@@ -478,7 +478,7 @@ func TestLiveConnectionTraffic(t *testing.T) {
 	}
 	for index, want := range []struct{ up, down int64 }{{3, 5}, {7, 11}} {
 		connection := snapshot.Connections[index]
-		if connection.Up != want.up || connection.Down != want.down || connection.RateUp != want.up || connection.RateDown != want.down {
+		if connection.Stats.Up != want.up || connection.Stats.Down != want.down || connection.Stats.RateUp != want.up || connection.Stats.RateDown != want.down {
 			t.Fatalf("connection %d = %+v, want up/rate_up %d and down/rate_down %d", index, connection, want.up, want.down)
 		}
 		if connection.Client != "" {
@@ -493,7 +493,7 @@ func TestLiveConnectionTraffic(t *testing.T) {
 	}
 	registry.tick(start.Add(2 * time.Second))
 	for _, connection := range registry.Snapshot().Rules[0].Connections {
-		if connection.RateUp != 0 || connection.RateDown != 0 {
+		if connection.Stats.RateUp != 0 || connection.Stats.RateDown != 0 {
 			t.Fatalf("idle connection rates = %+v, want zero", connection)
 		}
 	}

@@ -37,6 +37,14 @@ jumpway_hop_bytes_total{direction="up",hop="0",rule="a",url="ssh://u:xxxxx@h:22"
 # HELP jumpway_hop_info Proxy URL and parent hop for each configured hop.
 # TYPE jumpway_hop_info gauge
 jumpway_hop_info{hop="0",parent="local",rule="a",url="ssh://u:xxxxx@h:22",way="forward"} 1
+# HELP jumpway_hop_last_transfer_timestamp_seconds Unix timestamp of the last byte transferred in each direction.
+# TYPE jumpway_hop_last_transfer_timestamp_seconds gauge
+jumpway_hop_last_transfer_timestamp_seconds{direction="down",hop="0",rule="a",url="ssh://u:xxxxx@h:22",way="forward"} 100.75
+jumpway_hop_last_transfer_timestamp_seconds{direction="up",hop="0",rule="a",url="ssh://u:xxxxx@h:22",way="forward"} 100.25
+# HELP jumpway_hop_peak_bandwidth_bytes_per_second Highest bytes per second observed in a completed sampling window since the last reset.
+# TYPE jumpway_hop_peak_bandwidth_bytes_per_second gauge
+jumpway_hop_peak_bandwidth_bytes_per_second{direction="down",hop="0",rule="a",url="ssh://u:xxxxx@h:22",way="forward"} 5
+jumpway_hop_peak_bandwidth_bytes_per_second{direction="up",hop="0",rule="a",url="ssh://u:xxxxx@h:22",way="forward"} 3
 # HELP jumpway_rule_active_connections Number of currently active connections.
 # TYPE jumpway_rule_active_connections gauge
 jumpway_rule_active_connections{rule="a"} 1
@@ -53,15 +61,135 @@ jumpway_rule_dial_duration_seconds_sum{rule="a"} 0.012345678
 jumpway_rule_dial_duration_seconds_count{rule="a"} 1
 jumpway_rule_dial_duration_seconds_sum{rule="b"} 0
 jumpway_rule_dial_duration_seconds_count{rule="b"} 0
+# HELP jumpway_rule_last_transfer_timestamp_seconds Unix timestamp of the last byte transferred in each direction.
+# TYPE jumpway_rule_last_transfer_timestamp_seconds gauge
+jumpway_rule_last_transfer_timestamp_seconds{direction="down",rule="a"} 100.75
+jumpway_rule_last_transfer_timestamp_seconds{direction="up",rule="a"} 100.25
+# HELP jumpway_rule_peak_bandwidth_bytes_per_second Highest bytes per second observed in a completed sampling window since the last reset.
+# TYPE jumpway_rule_peak_bandwidth_bytes_per_second gauge
+jumpway_rule_peak_bandwidth_bytes_per_second{direction="down",rule="a"} 5
+jumpway_rule_peak_bandwidth_bytes_per_second{direction="up",rule="a"} 3
+jumpway_rule_peak_bandwidth_bytes_per_second{direction="down",rule="b"} 0
+jumpway_rule_peak_bandwidth_bytes_per_second{direction="up",rule="b"} 0
 # HELP jumpway_target_dials_total Total number of dial attempts.
 # TYPE jumpway_target_dials_total counter
 jumpway_target_dials_total{rule="a",target="example.com:443",via=""} 1
 jumpway_target_dials_total{rule="a",target="example.com:443",via="ssh://u:xxxxx@h:22"} 2
+# HELP jumpway_target_last_transfer_timestamp_seconds Unix timestamp of the last byte transferred in each direction.
+# TYPE jumpway_target_last_transfer_timestamp_seconds gauge
+jumpway_target_last_transfer_timestamp_seconds{direction="down",rule="a",target="example.com:443",via="ssh://u:xxxxx@h:22"} 100.75
+jumpway_target_last_transfer_timestamp_seconds{direction="up",rule="a",target="example.com:443",via="ssh://u:xxxxx@h:22"} 100.25
+# HELP jumpway_target_peak_bandwidth_bytes_per_second Highest bytes per second observed in a completed sampling window since the last reset.
+# TYPE jumpway_target_peak_bandwidth_bytes_per_second gauge
+jumpway_target_peak_bandwidth_bytes_per_second{direction="down",rule="a",target="example.com:443",via=""} 0
+jumpway_target_peak_bandwidth_bytes_per_second{direction="up",rule="a",target="example.com:443",via=""} 0
+jumpway_target_peak_bandwidth_bytes_per_second{direction="down",rule="a",target="example.com:443",via="ssh://u:xxxxx@h:22"} 5
+jumpway_target_peak_bandwidth_bytes_per_second{direction="up",rule="a",target="example.com:443",via="ssh://u:xxxxx@h:22"} 3
 `
 	if err := testutil.CollectAndCompare(collector, strings.NewReader(expected),
+		"jumpway_rule_peak_bandwidth_bytes_per_second", "jumpway_rule_last_transfer_timestamp_seconds",
+		"jumpway_hop_peak_bandwidth_bytes_per_second", "jumpway_hop_last_transfer_timestamp_seconds",
+		"jumpway_target_peak_bandwidth_bytes_per_second", "jumpway_target_last_transfer_timestamp_seconds",
 		"jumpway_rule_bytes_total", "jumpway_hop_bytes_total", "jumpway_hop_info",
 		"jumpway_target_dials_total", "jumpway_rule_active_connections", "jumpway_rule_dial_duration_seconds"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCollectorTransferStats(t *testing.T) {
+	registry := NewRegistry()
+	registry.Sync([]config.Rule{{Name: "rule"}})
+	rule := registry.Rule("rule")
+	counts := []*counter{
+		rule.count,
+		rule.HopWrapper(Forward)(0, "socks5://hop:1080", &net.Dialer{}).(*dialer).count,
+		rule.target(targetKey{address: "target:443"}),
+	}
+	start := time.Unix(100, 0)
+	registry.tick(start)
+	for _, count := range counts {
+		count.addBytes(true, 100, start.Add(250*time.Millisecond).UnixNano())
+	}
+	registry.tick(start.Add(time.Second))
+	for _, count := range counts {
+		count.addBytes(true, 20, start.Add(1250*time.Millisecond).UnixNano())
+	}
+	registry.tick(start.Add(2 * time.Second))
+	registry.tick(start.Add(3 * time.Second))
+	collector := NewCollector(registry)
+	if problems, err := testutil.CollectAndLint(collector); err != nil || len(problems) != 0 {
+		t.Fatalf("lint = %v, %v", problems, err)
+	}
+	reg := prometheus.NewRegistry()
+	reg.MustRegister(collector)
+	families, err := reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wanted := make(map[string]bool)
+	for _, level := range []string{"rule", "hop", "target"} {
+		wanted["jumpway_"+level+"_peak_bandwidth_bytes_per_second"] = false
+		wanted["jumpway_"+level+"_last_transfer_timestamp_seconds"] = false
+	}
+	for _, family := range families {
+		name := family.GetName()
+		if _, exists := wanted[name]; !exists {
+			continue
+		}
+		wanted[name] = true
+		peak := strings.HasSuffix(name, "peak_bandwidth_bytes_per_second")
+		wantSamples := 1
+		if peak {
+			wantSamples = 2
+		}
+		if family.GetType().String() != "GAUGE" || len(family.Metric) != wantSamples {
+			t.Fatalf("%s = %v, want %d gauges", name, family, wantSamples)
+		}
+		for _, metric := range family.Metric {
+			var direction string
+			for _, label := range metric.Label {
+				if label.GetName() == "direction" {
+					direction = label.GetValue()
+				}
+			}
+			if direction != "up" && direction != "down" {
+				t.Fatalf("%s has no valid direction: %v", name, metric)
+			}
+			want := 101.25
+			if peak {
+				want = 100
+				if direction == "down" {
+					want = 0
+				}
+			} else if direction != "up" {
+				t.Fatalf("%s emitted an untouched direction: %v", name, metric)
+			}
+			if got := metric.GetGauge().GetValue(); got != want {
+				t.Errorf("%s direction %s = %g, want %g", name, direction, got, want)
+			}
+		}
+	}
+	for name, found := range wanted {
+		if !found {
+			t.Errorf("missing metric family %s", name)
+		}
+	}
+	registry.Reset()
+	families, err = reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, family := range families {
+		if strings.HasSuffix(family.GetName(), "last_transfer_timestamp_seconds") {
+			t.Errorf("reset retained transfer family %s", family.GetName())
+		}
+		if strings.HasSuffix(family.GetName(), "peak_bandwidth_bytes_per_second") {
+			for _, metric := range family.Metric {
+				if metric.GetGauge().GetValue() != 0 {
+					t.Errorf("reset retained peak: %v", metric)
+				}
+			}
+		}
 	}
 }
 
@@ -124,8 +252,8 @@ func TestCollectorGather(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(families) != 30 {
-		t.Fatalf("metric families = %d, want 30", len(families))
+	if len(families) != 36 {
+		t.Fatalf("metric families = %d, want 36", len(families))
 	}
 	type sample struct {
 		labels                                   map[string]string
@@ -180,7 +308,7 @@ func TestCollectorGather(t *testing.T) {
 			}
 			kind, value := "GAUGE", float64(0)
 			switch suffix {
-			case "bytes_total", "bandwidth_bytes_per_second":
+			case "bytes_total", "bandwidth_bytes_per_second", "peak_bandwidth_bytes_per_second", "last_transfer_timestamp_seconds":
 				if direction == "up" {
 					value = want.up
 				} else if direction == "down" {
@@ -190,6 +318,15 @@ func TestCollectorGather(t *testing.T) {
 				}
 				if suffix == "bytes_total" {
 					kind = "COUNTER"
+				}
+				if suffix == "last_transfer_timestamp_seconds" {
+					if value == 0 {
+						t.Fatal("last transfer emitted for an untouched direction")
+					}
+					value = 100.25
+					if direction == "down" {
+						value = 100.75
+					}
 				}
 			case "connections_total":
 				kind, value = "COUNTER", want.total
@@ -219,7 +356,7 @@ func TestCollectorGather(t *testing.T) {
 			default:
 				t.Fatalf("unexpected metric family %s", family.GetName())
 			}
-			if suffix != "bytes_total" && suffix != "bandwidth_bytes_per_second" && direction != "" {
+			if suffix != "bytes_total" && suffix != "bandwidth_bytes_per_second" && suffix != "peak_bandwidth_bytes_per_second" && suffix != "last_transfer_timestamp_seconds" && direction != "" {
 				t.Fatalf("unexpected direction label on %s", family.GetName())
 			}
 			got := metric.GetGauge().GetValue() + metric.GetCounter().GetValue() + metric.GetSummary().GetSampleSum()
@@ -228,8 +365,8 @@ func TestCollectorGather(t *testing.T) {
 			}
 		}
 	}
-	if checked != 56 {
-		t.Fatalf("metrics = %d, want 56", checked)
+	if checked != 72 {
+		t.Fatalf("metrics = %d, want 72", checked)
 	}
 }
 
@@ -247,7 +384,7 @@ func TestCollectorRemovesSeries(t *testing.T) {
 	}
 	for _, family := range families {
 		name := family.GetName()
-		if strings.HasPrefix(name, "jumpway_target_") || strings.Contains(name, "last_dial_duration") || strings.Contains(name, "last_activity") {
+		if strings.HasPrefix(name, "jumpway_target_") || strings.Contains(name, "last_dial_duration") || strings.Contains(name, "last_activity") || strings.Contains(name, "last_transfer") {
 			t.Errorf("stale metric family after reset: %s", name)
 		}
 	}
@@ -497,6 +634,12 @@ func collectorRegistry(t *testing.T) *Registry {
 		}
 		if count.lastActive.Load() != 0 {
 			count.lastActive.Store(start.UnixNano())
+		}
+		if count.lastUp.Load() != 0 {
+			count.lastUp.Store(start.Add(250 * time.Millisecond).UnixNano())
+		}
+		if count.lastDown.Load() != 0 {
+			count.lastDown.Store(start.Add(750 * time.Millisecond).UnixNano())
 		}
 	})
 	registry.mu.Unlock()

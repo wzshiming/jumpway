@@ -24,40 +24,26 @@ func newConn(inner net.Conn, count *counter, accepted bool) *conn {
 
 func (c *conn) Read(buffer []byte) (int, error) {
 	size, err := c.Conn.Read(buffer)
-	if size > 0 {
-		if c.accepted {
-			c.count.up.Add(int64(size))
-			if c.extra != nil {
-				c.extra.up.Add(int64(size))
-			}
-		} else {
-			c.count.down.Add(int64(size))
-			if c.extra != nil {
-				c.extra.down.Add(int64(size))
-			}
-		}
-		c.count.touch(time.Now().UnixNano())
-	}
+	c.record(size, true)
 	return size, err
 }
 
 func (c *conn) Write(buffer []byte) (int, error) {
 	size, err := c.Conn.Write(buffer)
-	if size > 0 {
-		if c.accepted {
-			c.count.down.Add(int64(size))
-			if c.extra != nil {
-				c.extra.down.Add(int64(size))
-			}
-		} else {
-			c.count.up.Add(int64(size))
-			if c.extra != nil {
-				c.extra.up.Add(int64(size))
-			}
-		}
-		c.count.touch(time.Now().UnixNano())
-	}
+	c.record(size, false)
 	return size, err
+}
+
+func (c *conn) record(size int, read bool) {
+	if size <= 0 {
+		return
+	}
+	up := read == c.accepted
+	now := time.Now().UnixNano()
+	c.count.addBytes(up, int64(size), now)
+	if c.extra != nil {
+		c.extra.addBytes(up, int64(size), now)
+	}
 }
 
 func (c *conn) Close() error {

@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"net"
@@ -73,6 +74,67 @@ func TestConnDirection(t *testing.T) {
 			}
 			if count.active.Load() != 0 || count.total.Load() != 1 {
 				t.Fatal("repeated Close changed connection counts")
+			}
+		})
+	}
+}
+
+func TestConnLastTransfer(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		accepted bool
+		read     bool
+	}{
+		{name: "accepted read", accepted: true, read: true},
+		{name: "accepted write", accepted: true},
+		{name: "dialed write"},
+		{name: "dialed read", read: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			inner, peer := net.Pipe()
+			closeOnCleanup(t, peer)
+			count, extra := &counter{}, &counter{}
+			wrapped := newConn(inner, count, test.accepted)
+			wrapped.extra = extra
+			closeOnCleanup(t, wrapped)
+			setDeadlines(t, wrapped, peer)
+			before := time.Now().UnixNano()
+			if test.read {
+				transferBytes(t, peer, wrapped, 3)
+			} else {
+				transferBytes(t, wrapped, peer, 3)
+			}
+			after := time.Now().UnixNano()
+			for _, current := range []*counter{count, extra} {
+				last, untouched := current.lastUp.Load(), current.lastDown.Load()
+				key, absent := "last_up", "last_down"
+				if test.read != test.accepted {
+					last, untouched = untouched, last
+					key, absent = absent, key
+				}
+				if last < before || last > after || untouched != 0 {
+					t.Fatalf("%s timestamp = %d, want in [%d, %d]; %s = %d, want zero", key, last, before, after, absent, untouched)
+				}
+				if current.lastActive.Load() != last {
+					t.Fatalf("activity = %d, want transfer time %d", current.lastActive.Load(), last)
+				}
+				data, err := json.Marshal(current.snapshot().stats)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var object map[string]interface{}
+				if err := json.Unmarshal(data, &object); err != nil {
+					t.Fatal(err)
+				}
+				if want := time.Unix(0, last).UTC().Format(time.RFC3339Nano); object[key] != want {
+					t.Fatalf("JSON %s = %#v, want %q", key, object[key], want)
+				}
+				if _, exists := object[absent]; exists {
+					t.Fatalf("JSON contains untouched direction %s: %s", absent, data)
+				}
+			}
+			if count.lastUp.Load() != extra.lastUp.Load() || count.lastDown.Load() != extra.lastDown.Load() {
+				t.Fatal("primary and live counters used different transfer times")
 			}
 		})
 	}

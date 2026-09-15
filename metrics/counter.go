@@ -13,6 +13,8 @@ type counter struct {
 	down         atomic.Int64
 	rateUp       atomic.Int64
 	rateDown     atomic.Int64
+	peakUp       atomic.Int64
+	peakDown     atomic.Int64
 	active       atomic.Int64
 	total        atomic.Int64
 	dials        atomic.Int64
@@ -21,6 +23,8 @@ type counter struct {
 	latencySum   atomic.Int64
 	lastDial     atomic.Int64
 	lastActive   atomic.Int64
+	lastUp       atomic.Int64
+	lastDown     atomic.Int64
 	prevUp       int64
 	prevDown     int64
 	prevAt       time.Time
@@ -65,8 +69,23 @@ func (c *counter) dial(elapsed time.Duration, now time.Time, err error) {
 }
 
 func (c *counter) touch(now int64) {
-	for previous := c.lastActive.Load(); now > previous; previous = c.lastActive.Load() {
-		if c.lastActive.CompareAndSwap(previous, now) {
+	touchMax(&c.lastActive, now)
+}
+
+func (c *counter) addBytes(up bool, size int64, now int64) {
+	if up {
+		c.up.Add(size)
+		touchMax(&c.lastUp, now)
+	} else {
+		c.down.Add(size)
+		touchMax(&c.lastDown, now)
+	}
+	c.touch(now)
+}
+
+func touchMax(field *atomic.Int64, now int64) {
+	for previous := field.Load(); now > previous; previous = field.Load() {
+		if field.CompareAndSwap(previous, now) {
 			return
 		}
 	}
@@ -85,6 +104,8 @@ func (c *counter) tick(now time.Time) {
 		c.rateUp.Store(int64(float64(up-c.prevUp) / elapsed))
 		c.rateDown.Store(int64(float64(down-c.prevDown) / elapsed))
 	}
+	touchMax(&c.peakUp, c.rateUp.Load())
+	touchMax(&c.peakDown, c.rateDown.Load())
 	c.prevUp, c.prevDown, c.prevAt = up, down, now
 }
 
@@ -96,6 +117,8 @@ func (c *counter) reset(now time.Time) {
 	c.down.Store(0)
 	c.rateUp.Store(0)
 	c.rateDown.Store(0)
+	c.peakUp.Store(0)
+	c.peakDown.Store(0)
 	c.active.Store(0)
 	c.total.Store(0)
 	c.dials.Store(0)
@@ -104,5 +127,7 @@ func (c *counter) reset(now time.Time) {
 	c.latencySum.Store(0)
 	c.lastDial.Store(0)
 	c.lastActive.Store(0)
+	c.lastUp.Store(0)
+	c.lastDown.Store(0)
 	c.prevUp, c.prevDown, c.prevAt = 0, 0, now
 }

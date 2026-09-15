@@ -30,6 +30,13 @@ func (serve serveConnFunc) ServeConn(conn net.Conn) {
 	serve(conn)
 }
 
+func baseContext(template, fallback context.Context) context.Context {
+	if template != nil {
+		return template
+	}
+	return fallback
+}
+
 var httpPatterns = append(pattern.Pattern[pattern.HTTP], pattern.Pattern[pattern.HTTP2]...)
 
 func newHTTPServeConn(ctx context.Context, scheme, address string, conf *anyproxy.Config) (anyproxy.ServeConn, []string, error) {
@@ -67,10 +74,7 @@ func newSOCKS5ServeConn(ctx context.Context, scheme, address string, conf *anypr
 		return nil, nil, err
 	}
 	template := host.(*socks5.SimpleServer)
-	base := template.Context
-	if base == nil {
-		base = ctx
-	}
+	base := baseContext(template.Context, ctx)
 	return serveConnFunc(func(conn net.Conn) {
 		server := socks5.Server{
 			Context:                   WithClientAddr(base, conn.RemoteAddr()),
@@ -96,10 +100,7 @@ func newSOCKS4ServeConn(ctx context.Context, scheme, address string, conf *anypr
 		return nil, nil, err
 	}
 	template := host.(*socks4.SimpleServer)
-	base := template.Context
-	if base == nil {
-		base = ctx
-	}
+	base := baseContext(template.Context, ctx)
 	return serveConnFunc(func(conn net.Conn) {
 		server := socks4.Server{
 			Context:                 WithClientAddr(base, conn.RemoteAddr()),
@@ -121,10 +122,7 @@ func newSSHServeConn(ctx context.Context, scheme, address string, conf *anyproxy
 		return nil, nil, err
 	}
 	template := host.(*sshproxy.SimpleServer)
-	base := template.Context
-	if base == nil {
-		base = ctx
-	}
+	base := baseContext(template.Context, ctx)
 	return serveConnFunc(func(conn net.Conn) {
 		server := template.Server
 		server.Context = WithClientAddr(base, conn.RemoteAddr())

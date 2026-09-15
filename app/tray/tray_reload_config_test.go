@@ -323,7 +323,7 @@ func TestReloadDisconnectConnection(test *testing.T) {
 					return false
 				}
 				live := snapshot.Rules[0].Connections[0]
-				return live.Up == int64(len(payload)) && live.Down == int64(len(payload))
+				return live.Stats.Up == int64(len(payload)) && live.Stats.Down == int64(len(payload))
 			})
 			live := snapshot.Rules[0].Connections[0]
 			if live.ID == 0 || live.Client != client || live.Target != target.Addr().String() || live.Via != "" {

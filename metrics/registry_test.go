@@ -92,6 +92,98 @@ func TestRegistrySync(t *testing.T) {
 	}
 }
 
+func TestRegistryHopPeak(t *testing.T) {
+	for role, wayName := range []string{"listen", "forward"} {
+		for _, test := range []struct {
+			name       string
+			secondURL  string
+			sameWindow bool
+			peakUp     int64
+			peakDown   int64
+		}{
+			{name: "different windows", secondURL: "ssh://u:secret@second:22", peakUp: 100, peakDown: 80},
+			{name: "same window", secondURL: "ssh://u:secret@second:22", sameWindow: true, peakUp: 200, peakDown: 160},
+			{name: "duplicate redacted URLs", secondURL: "ssh://u:other@first:22", peakUp: 100, peakDown: 80},
+		} {
+			t.Run(wayName+"/"+test.name, func(t *testing.T) {
+				const firstURL = "ssh://u:secret@first:22"
+				way := []bridgeconfig.Node{{LB: []string{firstURL, test.secondURL}}}
+				rules := []config.Rule{{Name: "rule"}}
+				if Role(role) == Listen {
+					rules[0].Listen.Way = way
+				} else {
+					rules[0].Forward.Way = way
+				}
+				registry := NewRegistry()
+				registry.Sync(rules)
+				rule := registry.Rule("rule")
+				first := rule.HopWrapper(Role(role))(0, firstURL, &net.Dialer{}).(*dialer).count
+				second := rule.HopWrapper(Role(role))(0, test.secondURL, &net.Dialer{}).(*dialer).count
+				start := time.Unix(100, 0)
+				registry.tick(start)
+				first.addBytes(true, 100, start.Add(100*time.Millisecond).UnixNano())
+				first.addBytes(false, 80, start.Add(900*time.Millisecond).UnixNano())
+				if !test.sameWindow {
+					registry.tick(start.Add(time.Second))
+				}
+				if first != second {
+					second.addBytes(true, 100, start.Add(800*time.Millisecond).UnixNano())
+					second.addBytes(false, 80, start.Add(200*time.Millisecond).UnixNano())
+				}
+				end := start.Add(time.Second)
+				if !test.sameWindow {
+					end = end.Add(time.Second)
+				}
+				registry.tick(end)
+				getHop := func() Hop {
+					snapshot := registry.Snapshot().Rules[0]
+					if Role(role) == Listen {
+						return snapshot.Listen[0]
+					}
+					return snapshot.Forward[0]
+				}
+				assertPeak := func() {
+					t.Helper()
+					stats := getHop().Stats
+					if stats.PeakRateUp != test.peakUp || stats.PeakRateDown != test.peakDown {
+						t.Fatalf("hop peaks = (%d, %d), want (%d, %d)", stats.PeakRateUp, stats.PeakRateDown, test.peakUp, test.peakDown)
+					}
+				}
+				assertPeak()
+				for _, url := range getHop().URLs {
+					if url.Stats.PeakRateUp != 100 || url.Stats.PeakRateDown != 80 {
+						t.Fatalf("URL peaks = %+v, want (100, 80)", url)
+					}
+				}
+				stats := getHop().Stats
+				if want := time.Unix(0, max(first.lastUp.Load(), second.lastUp.Load())).UTC().Format(time.RFC3339Nano); stats.LastUp != want {
+					t.Fatalf("hop last up = %q, want %q", stats.LastUp, want)
+				}
+				if want := time.Unix(0, max(first.lastDown.Load(), second.lastDown.Load())).UTC().Format(time.RFC3339Nano); stats.LastDown != want {
+					t.Fatalf("hop last down = %q, want %q", stats.LastDown, want)
+				}
+				registry.tick(end.Add(time.Second))
+				assertPeak()
+				if stats := getHop().Stats; stats.RateUp != 0 || stats.RateDown != 0 {
+					t.Fatalf("idle hop rates = %+v", stats)
+				}
+				registry.Sync(rules)
+				assertPeak()
+				way[0].LB = []string{firstURL, "ssh://replacement:22"}
+				registry.Sync(rules)
+				assertPeak()
+				if getHop().URLs[0].Stats.PeakRateUp != 100 || getHop().URLs[1].Stats != (Stats{}) {
+					t.Fatal("sync failed to retain matching URL counters or clear replacement counters")
+				}
+				registry.Reset()
+				if current := getHop(); current.Stats != (Stats{}) || current.URLs[0].Stats != (Stats{}) || current.URLs[1].Stats != (Stats{}) {
+					t.Fatalf("reset retained hop or URL statistics: %+v", current)
+				}
+			})
+		}
+	}
+}
+
 func TestRuleWrapListener(t *testing.T) {
 	registry := NewRegistry()
 	registry.Sync([]config.Rule{{Name: "rule"}})
@@ -252,7 +344,7 @@ func TestRegistryResetKeepsConnections(t *testing.T) {
 	transferBytes(t, peer, connected, 11)
 	registry.tick(start.Add(2 * time.Second))
 	connection := registry.Snapshot().Rules[0].Connections[0]
-	if connection.Up != 10 || connection.Down != 16 || connection.RateUp != 7 || connection.RateDown != 11 {
+	if connection.Stats.Up != 10 || connection.Stats.Down != 16 || connection.Stats.RateUp != 7 || connection.Stats.RateDown != 11 {
 		t.Fatalf("post-reset traffic = %+v, want lifetime bytes and latest rates", connection)
 	}
 	dialRulePipe(t, rule, "example.com:443")

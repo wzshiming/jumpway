@@ -15,15 +15,17 @@ type collector struct {
 }
 
 type counterDescs struct {
-	bytes        *prometheus.Desc
-	bandwidth    *prometheus.Desc
-	connections  *prometheus.Desc
-	active       *prometheus.Desc
-	dials        *prometheus.Desc
-	dialFailures *prometheus.Desc
-	dialDuration *prometheus.Desc
-	lastDial     *prometheus.Desc
-	lastActivity *prometheus.Desc
+	bytes         *prometheus.Desc
+	bandwidth     *prometheus.Desc
+	peakBandwidth *prometheus.Desc
+	lastTransfer  *prometheus.Desc
+	connections   *prometheus.Desc
+	active        *prometheus.Desc
+	dials         *prometheus.Desc
+	dialFailures  *prometheus.Desc
+	dialDuration  *prometheus.Desc
+	lastDial      *prometheus.Desc
+	lastActivity  *prometheus.Desc
 }
 
 var (
@@ -54,6 +56,10 @@ func newCounterDescs(level string, labels []string) counterDescs {
 			append(labels, "direction"), nil),
 		bandwidth: prometheus.NewDesc(prefix+"bandwidth_bytes_per_second", "Bytes transferred per second in the last completed sampling window.",
 			append(labels, "direction"), nil),
+		peakBandwidth: prometheus.NewDesc(prefix+"peak_bandwidth_bytes_per_second", "Highest bytes per second observed in a completed sampling window since the last reset.",
+			append(labels, "direction"), nil),
+		lastTransfer: prometheus.NewDesc(prefix+"last_transfer_timestamp_seconds", "Unix timestamp of the last byte transferred in each direction.",
+			append(labels, "direction"), nil),
 		connections:  prometheus.NewDesc(prefix+"connections_total", "Total number of established connections.", labels, nil),
 		active:       prometheus.NewDesc(prefix+"active_connections", "Number of currently active connections.", labels, nil),
 		dials:        prometheus.NewDesc(prefix+"dials_total", "Total number of dial attempts.", labels, nil),
@@ -67,7 +73,7 @@ func newCounterDescs(level string, labels []string) counterDescs {
 func (c *collector) Describe(ch chan<- *prometheus.Desc) {
 	for _, descs := range []counterDescs{ruleDescs, hopDescs, targetDescs} {
 		for _, desc := range []*prometheus.Desc{
-			descs.bytes, descs.bandwidth, descs.connections, descs.active, descs.dials,
+			descs.bytes, descs.bandwidth, descs.peakBandwidth, descs.lastTransfer, descs.connections, descs.active, descs.dials,
 			descs.dialFailures, descs.dialDuration, descs.lastDial, descs.lastActivity,
 		} {
 			ch <- desc
@@ -122,13 +128,19 @@ func (d counterDescs) collect(ch chan<- prometheus.Metric, count *counter, label
 		name  string
 		bytes int64
 		rate  int64
+		peak  int64
+		last  int64
 	}{
-		{name: "up", bytes: count.up.Load(), rate: count.rateUp.Load()},
-		{name: "down", bytes: count.down.Load(), rate: count.rateDown.Load()},
+		{name: "up", bytes: count.up.Load(), rate: count.rateUp.Load(), peak: count.peakUp.Load(), last: count.lastUp.Load()},
+		{name: "down", bytes: count.down.Load(), rate: count.rateDown.Load(), peak: count.peakDown.Load(), last: count.lastDown.Load()},
 	} {
 		values := append(labels, direction.name)
 		ch <- prometheus.MustNewConstMetric(d.bytes, prometheus.CounterValue, float64(direction.bytes), values...)
 		ch <- prometheus.MustNewConstMetric(d.bandwidth, prometheus.GaugeValue, float64(direction.rate), values...)
+		ch <- prometheus.MustNewConstMetric(d.peakBandwidth, prometheus.GaugeValue, float64(direction.peak), values...)
+		if direction.last != 0 {
+			ch <- prometheus.MustNewConstMetric(d.lastTransfer, prometheus.GaugeValue, float64(direction.last)/float64(time.Second), values...)
+		}
 	}
 	ch <- prometheus.MustNewConstMetric(d.connections, prometheus.CounterValue, float64(count.total.Load()), labels...)
 	ch <- prometheus.MustNewConstMetric(d.active, prometheus.GaugeValue, float64(count.active.Load()), labels...)

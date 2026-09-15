@@ -15,6 +15,8 @@ type Stats struct {
 	Down         int64   `json:"down"`
 	RateUp       int64   `json:"rate_up"`
 	RateDown     int64   `json:"rate_down"`
+	PeakRateUp   int64   `json:"peak_rate_up"`
+	PeakRateDown int64   `json:"peak_rate_down"`
 	Active       int64   `json:"active"`
 	Total        int64   `json:"total"`
 	Dials        int64   `json:"dials"`
@@ -22,6 +24,8 @@ type Stats struct {
 	LatencyMs    float64 `json:"latency_ms"`
 	AvgLatencyMs float64 `json:"avg_latency_ms"`
 	LastActive   string  `json:"last_active,omitempty"`
+	LastUp       string  `json:"last_up,omitempty"`
+	LastDown     string  `json:"last_down,omitempty"`
 }
 
 type RuleStats struct {
@@ -53,16 +57,13 @@ type Target struct {
 }
 
 type Connection struct {
-	ID       uint64    `json:"id"`
-	Client   string    `json:"client,omitempty"`
-	Target   string    `json:"target"`
-	Via      string    `json:"via"`
-	Path     []PathHop `json:"path"`
-	Started  string    `json:"started"`
-	Up       int64     `json:"up"`
-	Down     int64     `json:"down"`
-	RateUp   int64     `json:"rate_up"`
-	RateDown int64     `json:"rate_down"`
+	ID      uint64    `json:"id"`
+	Client  string    `json:"client,omitempty"`
+	Target  string    `json:"target"`
+	Via     string    `json:"via"`
+	Path    []PathHop `json:"path"`
+	Started string    `json:"started"`
+	Stats   Stats     `json:"stats"`
 }
 
 // PathHop is one hop of a connection's actual route; Dialed is false when a cached transport was reused and URL was inferred (or unknown).
@@ -76,6 +77,8 @@ type counterSnapshot struct {
 	stats      Stats
 	lastDial   int64
 	lastActive int64
+	lastUp     int64
+	lastDown   int64
 	latencySum int64
 }
 
@@ -86,16 +89,13 @@ func (r *Registry) Snapshot() Snapshot {
 	connections := make(map[*Rule][]Connection)
 	for _, entry := range r.live {
 		connections[entry.rule] = append(connections[entry.rule], Connection{
-			ID:       entry.id,
-			Client:   entry.client,
-			Target:   entry.target,
-			Via:      entry.via,
-			Path:     append([]PathHop{}, entry.path...),
-			Started:  entry.started.UTC().Format(time.RFC3339Nano),
-			Up:       entry.count.up.Load(),
-			Down:     entry.count.down.Load(),
-			RateUp:   entry.count.rateUp.Load(),
-			RateDown: entry.count.rateDown.Load(),
+			ID:      entry.id,
+			Client:  entry.client,
+			Target:  entry.target,
+			Via:     entry.via,
+			Path:    append([]PathHop{}, entry.path...),
+			Started: entry.started.UTC().Format(time.RFC3339Nano),
+			Stats:   entry.count.snapshot().stats,
 		})
 	}
 	for _, name := range r.order {
@@ -125,18 +125,16 @@ func snapshotWay(way []hop) []Hop {
 		if index == len(way)-1 {
 			hop.ParentIndex = -1
 		}
+		for _, url := range entry.urls {
+			hop.URLs = append(hop.URLs, URLStats{URL: url.url, Stats: url.count.snapshot().stats})
+		}
 		var aggregate counterSnapshot
-		// URLs that redact to the same string share one counter; list both, sum once.
-		seen := make(map[*counter]bool, len(entry.urls))
-		for _, entry := range entry.urls {
-			count := entry.count.snapshot()
-			hop.URLs = append(hop.URLs, URLStats{URL: entry.url, Stats: count.stats})
-			if !seen[entry.count] {
-				seen[entry.count] = true
-				aggregate.add(count)
-			}
+		for _, count := range entry.uniqueCounters() {
+			aggregate.add(count.snapshot())
 		}
 		hop.Stats = aggregate.stats
+		hop.Stats.PeakRateUp = entry.peakUp
+		hop.Stats.PeakRateDown = entry.peakDown
 		hops[index] = hop
 	}
 	return hops
@@ -172,6 +170,8 @@ func (c *counter) snapshot() counterSnapshot {
 			Down:         c.down.Load(),
 			RateUp:       c.rateUp.Load(),
 			RateDown:     c.rateDown.Load(),
+			PeakRateUp:   c.peakUp.Load(),
+			PeakRateDown: c.peakDown.Load(),
 			Active:       c.active.Load(),
 			Total:        c.total.Load(),
 			Dials:        c.dials.Load(),
@@ -180,6 +180,8 @@ func (c *counter) snapshot() counterSnapshot {
 		},
 		lastDial:   c.lastDial.Load(),
 		lastActive: c.lastActive.Load(),
+		lastUp:     c.lastUp.Load(),
+		lastDown:   c.lastDown.Load(),
 		latencySum: c.latencySum.Load(),
 	}
 	snapshot.finish()
@@ -191,6 +193,8 @@ func (c *counterSnapshot) add(other counterSnapshot) {
 	c.stats.Down += other.stats.Down
 	c.stats.RateUp += other.stats.RateUp
 	c.stats.RateDown += other.stats.RateDown
+	c.stats.PeakRateUp += other.stats.PeakRateUp
+	c.stats.PeakRateDown += other.stats.PeakRateDown
 	c.stats.Active += other.stats.Active
 	c.stats.Total += other.stats.Total
 	c.stats.Dials += other.stats.Dials
@@ -203,6 +207,12 @@ func (c *counterSnapshot) add(other counterSnapshot) {
 	if other.lastActive > c.lastActive {
 		c.lastActive = other.lastActive
 	}
+	if other.lastUp > c.lastUp {
+		c.lastUp = other.lastUp
+	}
+	if other.lastDown > c.lastDown {
+		c.lastDown = other.lastDown
+	}
 	c.finish()
 }
 
@@ -212,5 +222,11 @@ func (c *counterSnapshot) finish() {
 	}
 	if c.lastActive != 0 {
 		c.stats.LastActive = time.Unix(0, c.lastActive).UTC().Format(time.RFC3339Nano)
+	}
+	if c.lastUp != 0 {
+		c.stats.LastUp = time.Unix(0, c.lastUp).UTC().Format(time.RFC3339Nano)
+	}
+	if c.lastDown != 0 {
+		c.stats.LastDown = time.Unix(0, c.lastDown).UTC().Format(time.RFC3339Nano)
 	}
 }

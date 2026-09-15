@@ -68,7 +68,7 @@ func TestSnapshotJSON(t *testing.T) {
 	assertKeys(t, url, "url", "stats")
 	target := full["targets"].([]interface{})[0].(map[string]interface{})
 	assertKeys(t, target, "address", "via", "stats")
-	statKeys := []string{"up", "down", "rate_up", "rate_down", "active", "total", "dials", "dial_failures", "latency_ms", "avg_latency_ms"}
+	statKeys := []string{"up", "down", "rate_up", "rate_down", "peak_rate_up", "peak_rate_down", "active", "total", "dials", "dial_failures", "latency_ms", "avg_latency_ms"}
 	assertKeys(t, plain["stats"].(map[string]interface{}), statKeys...)
 	for _, object := range []map[string]interface{}{full, hop, url, target} {
 		stats := object["stats"].(map[string]interface{})
@@ -84,6 +84,81 @@ func TestSnapshotJSON(t *testing.T) {
 				t.Fatalf("exported time field: %s.%s", typeInfo.Name(), field.Name)
 			}
 		}
+	}
+}
+
+func TestSnapshotTransferJSON(t *testing.T) {
+	registry := NewRegistry()
+	registry.Sync([]config.Rule{{Name: "rule"}})
+	rule := registry.Rule("rule")
+	inner, peer := net.Pipe()
+	closeOnCleanup(t, peer)
+	hopDialer := rule.HopWrapper(Forward)(0, "socks5://hop:1080", bridge.DialFunc(func(context.Context, string, string) (net.Conn, error) {
+		return inner, nil
+	}))
+	connected, err := rule.WrapDialer(hopDialer).DialContext(context.Background(), "tcp", "target:443")
+	if err != nil {
+		t.Fatal(err)
+	}
+	closeOnCleanup(t, connected)
+	acceptedInner, client := net.Pipe()
+	closeOnCleanup(t, client)
+	accepted, err := rule.WrapListener(&pipeListener{connection: acceptedInner}).Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	closeOnCleanup(t, accepted)
+	setDeadlines(t, connected, peer, accepted, client)
+	start := time.Now()
+	registry.tick(start)
+	transferBytes(t, client, accepted, 3)
+	transferBytes(t, accepted, client, 5)
+	transferBytes(t, connected, peer, 3)
+	transferBytes(t, peer, connected, 5)
+	registry.tick(start.Add(time.Second))
+	data, err := json.Marshal(registry.Snapshot())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var snapshot map[string]interface{}
+	if err := json.Unmarshal(data, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	full := snapshot["rules"].([]interface{})[0].(map[string]interface{})
+	hop := full["forward"].([]interface{})[0].(map[string]interface{})
+	url := hop["urls"].([]interface{})[0].(map[string]interface{})
+	target := full["targets"].([]interface{})[0].(map[string]interface{})
+	connection := full["connections"].([]interface{})[0].(map[string]interface{})
+	assertKeys(t, connection, "id", "target", "via", "path", "started", "stats")
+	for _, entity := range []struct {
+		name   string
+		object map[string]interface{}
+		count  *counter
+	}{
+		{name: "rule", object: full, count: rule.count},
+		{name: "hop", object: hop, count: hopDialer.(*dialer).count},
+		{name: "url", object: url, count: hopDialer.(*dialer).count},
+		{name: "target", object: target, count: connected.(*conn).count},
+		{name: "connection", object: connection, count: connected.(*conn).extra},
+	} {
+		t.Run(entity.name, func(t *testing.T) {
+			stats := entity.object["stats"].(map[string]interface{})
+			for key, want := range map[string]float64{
+				"up": 3, "down": 5, "rate_up": 3, "rate_down": 5, "peak_rate_up": 3, "peak_rate_down": 5,
+			} {
+				if stats[key] != want {
+					t.Errorf("%s = %#v, want %v", key, stats[key], want)
+				}
+			}
+			for key, timestamp := range map[string]int64{"last_up": entity.count.lastUp.Load(), "last_down": entity.count.lastDown.Load()} {
+				if timestamp == 0 {
+					t.Fatalf("%s was not recorded", key)
+				}
+				if want := time.Unix(0, timestamp).UTC().Format(time.RFC3339Nano); stats[key] != want {
+					t.Errorf("%s = %#v, want %q", key, stats[key], want)
+				}
+			}
+		})
 	}
 }
 
@@ -231,7 +306,7 @@ func TestSnapshotConnections(t *testing.T) {
 		if err := json.Unmarshal(data, &object); err != nil {
 			t.Fatal(err)
 		}
-		keys := []string{"id", "target", "via", "path", "started", "up", "down", "rate_up", "rate_down"}
+		keys := []string{"id", "target", "via", "path", "started", "stats"}
 		if client != "" {
 			keys = append(keys, "client")
 		}

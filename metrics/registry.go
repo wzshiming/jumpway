@@ -49,7 +49,21 @@ type hopKey struct {
 }
 
 type hop struct {
-	urls []urlCounter
+	urls             []urlCounter
+	peakUp, peakDown int64
+}
+
+// URLs that redact to the same string share one counter.
+func (h *hop) uniqueCounters() []*counter {
+	counters := make([]*counter, 0, len(h.urls))
+	seen := make(map[*counter]bool, len(h.urls))
+	for _, entry := range h.urls {
+		if !seen[entry.count] {
+			seen[entry.count] = true
+			counters = append(counters, entry.count)
+		}
+	}
+	return counters
 }
 
 type urlCounter struct {
@@ -107,6 +121,10 @@ func (r *Registry) Sync(rules []config.Rule) {
 func (r *Rule) syncWay(role Role, nodes []bridgeconfig.Node, counters map[hopKey]*counter) []hop {
 	way := make([]hop, len(nodes))
 	for index, node := range nodes {
+		if index < len(r.ways[role]) {
+			way[index].peakUp = r.ways[role][index].peakUp
+			way[index].peakDown = r.ways[role][index].peakDown
+		}
 		way[index].urls = make([]urlCounter, 0, len(node.LB))
 		for _, raw := range node.LB {
 			key := hopKey{role: role, index: index, url: redact(raw)}
@@ -195,6 +213,11 @@ func (r *Registry) Reset() {
 	for _, rule := range r.rules {
 		rule.targets = make(map[targetKey]*counter)
 		rule.targetsEvicted = 0
+		for _, way := range rule.ways {
+			for index := range way {
+				way[index].peakUp, way[index].peakDown = 0, 0
+			}
+		}
 	}
 }
 
@@ -217,6 +240,20 @@ func (r *Registry) tick(now time.Time) {
 	r.eachCounter(func(count *counter) { count.tick(now) })
 	for _, entry := range r.live {
 		entry.count.tick(now)
+	}
+	for _, rule := range r.rules {
+		for _, way := range rule.ways {
+			for index := range way {
+				hop := &way[index]
+				var up, down int64
+				for _, count := range hop.uniqueCounters() {
+					up += count.rateUp.Load()
+					down += count.rateDown.Load()
+				}
+				hop.peakUp = max(hop.peakUp, up)
+				hop.peakDown = max(hop.peakDown, down)
+			}
+		}
 	}
 }
 

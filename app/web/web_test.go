@@ -130,6 +130,10 @@ func TestStatsGet(t *testing.T) {
 			Stats: metrics.Stats{
 				Up:           10,
 				Down:         20,
+				PeakRateUp:   4,
+				PeakRateDown: 8,
+				LastUp:       "2026-09-15T12:00:02.123Z",
+				LastDown:     "2026-09-15T12:00:03.456Z",
 				Active:       1,
 				Total:        3,
 				Dials:        2,
@@ -147,7 +151,11 @@ func TestStatsGet(t *testing.T) {
 			Connections: []metrics.Connection{{
 				ID: 42, Client: "127.0.0.1:12345", Target: "example.com:443", Via: "ssh://u:xxxxx@h:22",
 				Path:    []metrics.PathHop{{Index: 0, URL: "ssh://u:xxxxx@h:22", Dialed: true}},
-				Started: "2026-09-15T12:00:01.123Z", Up: 3, Down: 5, RateUp: 1, RateDown: 2,
+				Started: "2026-09-15T12:00:01.123Z",
+				Stats: metrics.Stats{
+					Up: 3, Down: 5, RateUp: 1, RateDown: 2, PeakRateUp: 3, PeakRateDown: 5,
+					LastUp: "2026-09-15T12:00:02.123Z", LastDown: "2026-09-15T12:00:03.456Z",
+				},
 			}},
 		}},
 	}
@@ -173,10 +181,16 @@ func TestStatsGet(t *testing.T) {
 	}
 	for key, want := range map[string]float64{
 		"up": 10, "down": 20, "active": 1, "total": 3,
+		"peak_rate_up": 4, "peak_rate_down": 8,
 		"dials": 2, "dial_failures": 1, "latency_ms": 1.5, "avg_latency_ms": 2.5,
 	} {
 		if counters[key] != want {
 			t.Errorf("stats.%s = %#v, want %v", key, counters[key], want)
+		}
+	}
+	for key, want := range map[string]string{"last_up": fake.snapshot.Rules[0].Stats.LastUp, "last_down": fake.snapshot.Rules[0].Stats.LastDown} {
+		if counters[key] != want {
+			t.Errorf("stats.%s = %#v, want %q", key, counters[key], want)
 		}
 	}
 	listen, ok := rule["listen"].([]any)
@@ -214,7 +228,14 @@ func TestStatsGet(t *testing.T) {
 	want := map[string]any{
 		"id": float64(42), "client": "127.0.0.1:12345", "target": "example.com:443", "via": "ssh://u:xxxxx@h:22",
 		"path":    []any{map[string]any{"index": float64(0), "url": "ssh://u:xxxxx@h:22", "dialed": true}},
-		"started": "2026-09-15T12:00:01.123Z", "up": float64(3), "down": float64(5), "rate_up": float64(1), "rate_down": float64(2),
+		"started": "2026-09-15T12:00:01.123Z",
+		"stats": map[string]any{
+			"up": float64(3), "down": float64(5), "rate_up": float64(1), "rate_down": float64(2),
+			"peak_rate_up": float64(3), "peak_rate_down": float64(5),
+			"active": float64(0), "total": float64(0), "dials": float64(0), "dial_failures": float64(0),
+			"latency_ms": float64(0), "avg_latency_ms": float64(0),
+			"last_up": "2026-09-15T12:00:02.123Z", "last_down": "2026-09-15T12:00:03.456Z",
+		},
 	}
 	if !reflect.DeepEqual(connections[0], want) {
 		t.Fatalf("connection = %#v, want %#v", connections[0], want)
