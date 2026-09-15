@@ -61,10 +61,8 @@
       connections: "Connections",
       activeConns: "Active connections",
       totalConns: "Total connections",
-      connectionsOrder: "Active / total",
       latency: "Latency",
       avgLatency: "Average",
-      latencyOrder: "Last / avg",
       dialFailures: "Dial failures",
       dialAttempts: "dial attempts",
       lastActive: "Last activity",
@@ -72,10 +70,20 @@
       minutesAgo: "{count} min ago",
       hoursAgo: "{count} h ago",
       daysAgo: "{count} d ago",
-      via: "Via",
       viaHop: "via {parent}",
-      saveStats: "Save to see live stats",
-      currentConnections: "Connections",
+      byRule: "By rule",
+      byConnection: "By connection",
+      ruleLabel: "Rule",
+      clients: "Clients",
+      path: "Path",
+      thisMachine: "This machine",
+      directStage: "Direct",
+      reused: "reused",
+      allRules: "All rules",
+      connectionCount: "{count} current connections",
+      targets: "Targets",
+      targetCount: "{count} distinct targets",
+      noTargets: "No connections yet",
       client: "Client",
       target: "Target",
       duration: "Duration",
@@ -84,8 +92,6 @@
       disconnected: "Connection closed.",
       noConnections: "No current connections",
       showingConnections: "Showing {shown} of {total}",
-      state: "State",
-      address: "Address",
       statsSince: "Since {time}",
       resetStats: "Reset statistics",
       resetStatsConfirm: "Reset statistics for all rules?",
@@ -93,6 +99,7 @@
       prometheus: "Prometheus metrics",
       hop: "Hop {number}",
       hopExit: "exit node",
+      hopEntry: "entry node",
       hopBinds: "binds the port",
       hopDialed: "dialed from this machine",
       hopsHint: "Hop 1 is the exit node; the last hop is dialed from this machine. Leave empty to connect directly from this machine.",
@@ -204,10 +211,8 @@
       connections: "连接数",
       activeConns: "当前连接",
       totalConns: "累计连接",
-      connectionsOrder: "当前 / 累计连接",
       latency: "延迟",
       avgLatency: "平均",
-      latencyOrder: "最近 / 平均",
       dialFailures: "连接失败",
       dialAttempts: "次连接尝试",
       lastActive: "最近活动",
@@ -215,10 +220,20 @@
       minutesAgo: "{count} 分钟前",
       hoursAgo: "{count} 小时前",
       daysAgo: "{count} 天前",
-      via: "上一级",
       viaHop: "上一级：{parent}",
-      saveStats: "保存后查看实时统计",
-      currentConnections: "当前连接",
+      byRule: "按规则",
+      byConnection: "按连接",
+      ruleLabel: "规则",
+      clients: "客户端",
+      path: "路径",
+      thisMachine: "本机",
+      directStage: "直连",
+      reused: "复用连接",
+      allRules: "全部规则",
+      connectionCount: "当前 {count} 个连接",
+      targets: "目标",
+      targetCount: "{count} 个不同目标",
+      noTargets: "尚无连接记录",
       client: "客户端",
       target: "目标",
       duration: "持续时间",
@@ -227,8 +242,6 @@
       disconnected: "已断开连接。",
       noConnections: "当前没有连接",
       showingConnections: "显示 {total} 个连接中的 {shown} 个",
-      state: "状态",
-      address: "地址",
       statsSince: "统计起始：{time}",
       resetStats: "重置统计",
       resetStatsConfirm: "重置所有规则的统计吗？",
@@ -236,6 +249,7 @@
       prometheus: "Prometheus 指标",
       hop: "跳板节点 {number}",
       hopExit: "出口节点",
+      hopEntry: "入口节点",
       hopBinds: "绑定端口",
       hopDialed: "由本机连接",
       hopsHint: "节点 1 是出口节点，最后一个节点由本机连接。留空时由本机直接连接目标。",
@@ -329,7 +343,9 @@
 
   function formatBytes(value) {
     const bytes = Math.max(0, Number(value) || 0);
-    const unit = Math.max(0, Math.min(4, Math.floor(Math.log2(bytes || 1) / 10)));
+    let unit = Math.max(0, Math.min(4, Math.floor(Math.log2(bytes || 1) / 10)));
+    // 1048570 B would otherwise print as "1024.0 KB".
+    if (unit < 4 && (bytes / 1024 ** unit).toFixed(1) === "1024.0") unit++;
     return (bytes / 1024 ** unit).toFixed(unit ? 1 : 0) + " " + ["B", "KB", "MB", "GB", "TB"][unit];
   }
 
@@ -347,9 +363,10 @@
       return;
     }
     const parts = ["\u2191 " + formatRate(stats.rate_up) + " \u2193 " + formatRate(stats.rate_down),
+      t("totalShort") + " \u2191 " + formatBytes(stats.up) + " \u2193 " + formatBytes(stats.down),
       t("connectionsShort", { active: formatCount(stats.active), total: formatCount(stats.total) }),
-      t("latencyPair", { last: formatLatency(stats), average: formatLatency(stats, "avg_latency_ms") })];
-    if (stats.dial_failures) parts.push(t("failedCount", { count: formatCount(stats.dial_failures) }));
+      t("latencyPair", { last: formatLatency(stats), average: formatLatency(stats, "avg_latency_ms") }),
+      t("failedCount", { count: formatCount(stats.dial_failures) })];
     element.textContent = parts.join(" \u00b7 ");
     element.title = t("totalUp") + ": " + formatBytes(stats.up) + " \u00b7 "
       + t("totalDown") + ": " + formatBytes(stats.down) + " \u00b7 "
@@ -372,6 +389,22 @@
     if (seconds < 60) return seconds + " s";
     if (seconds < 3600) return Math.floor(seconds / 60) + " min " + seconds % 60 + " s";
     return Math.floor(seconds / 3600) + " h " + Math.floor(seconds % 3600 / 60) + " min";
+  }
+
+  function formatConnectionPath(connection) {
+    const path = list(connection.path);
+    if (!path.length) return t("direct");
+    const hops = path.slice().reverse().map(hop => {
+      const label = hop.url || t("hop", { number: hop.index + 1 });
+      return label + (hop.dialed === false ? " \u00b7 " + t("reused") : "");
+    });
+    return [t("chainLocal"), ...hops].join(" \u2192 ");
+  }
+
+  function currentConnections(rules, filter = "") {
+    return list(rules).filter(rule => !filter || rule.name === filter).flatMap(rule =>
+      list(rule.connections).slice().sort((left, right) => left.id - right.id)
+        .map(connection => ({ ...connection, rule: rule.name })));
   }
 
   function normalizeWay(way) {
@@ -416,7 +449,6 @@
   function setDirty(value) {
     dirty = value;
     ui.dirty.hidden = !value;
-    if (value) page?.updateStats?.();
   }
 
   function setBusy(value) {
@@ -426,7 +458,7 @@
     if (fields) fields.disabled = value || !page.loaded;
     const panel = find("#rule-panel");
     if (panel) panel.setAttribute("aria-busy", String(value));
-    all("#retry, #reset-stats").forEach(button => { button.disabled = value; });
+    all("#retry, #reset-stats, #connection-rule").forEach(button => { button.disabled = value; });
     all("a[href^='#/']").forEach(link => {
       if (value) link.setAttribute("aria-disabled", "true");
       else link.removeAttribute("aria-disabled");
@@ -435,7 +467,9 @@
 
   function routeFor(hash) {
     if (["#/web-ui", "#/no-proxy"].includes(hash)) hash = "#/settings";
-    const pages = { "#/": "rules", "#/rules": "rules", "#/stats": "stats", "#/settings": "settings", "#/yaml": "yaml" };
+    const stats = /^#\/stats(?:\/(rules|connections))?(?:\?(.*))?$/.exec(hash);
+    if (stats) return { hash, kind: "stats", view: stats[1] || "rules", rule: new URLSearchParams(stats[2]).get("rule") || "" };
+    const pages = { "#/": "rules", "#/rules": "rules", "#/settings": "settings", "#/yaml": "yaml" };
     if (Object.prototype.hasOwnProperty.call(pages, hash)) return { hash, kind: pages[hash], name: null };
     const match = /^#\/rules\/([^/]+)$/.exec(hash);
     if (match) {
@@ -446,6 +480,8 @@
 
   const ruleRoute = name => "#/rules/" + encodeURIComponent(name);
   const rulePath = name => "/rules/" + encodeURIComponent(name);
+  const statsRoute = (view, rule = "") => "#/stats" + (view === "connections" ? "/connections" : "")
+    + (rule ? "?" + new URLSearchParams({ rule }) : "");
 
   function mayLeave() {
     return !busy && (!dirty || confirm(t("discardChanges")));
@@ -476,8 +512,9 @@
 
   async function renderRoute(route, notify = "") {
     const focusPage = Boolean(activeHash);
+    const focusStats = page?.kind === "stats" && route.kind === "stats";
     activeHash = route.hash;
-    page = { kind: route.kind, save: null, loaded: false };
+    page = { kind: route.kind, view: route.view, save: null, loaded: false };
     startStats();
     setDirty(false);
     if (ui.builder.open) ui.builder.close();
@@ -517,7 +554,7 @@
       setBusy(false);
       startStats();
       if (focusPage) {
-        const target = find("[aria-selected=true]", ui.nav);
+        const target = focusStats ? find(".stats-tabs [aria-selected=true]") : find("[aria-selected=true]", ui.nav);
         (target || find("#page-heading")).focus();
       }
     }
@@ -569,20 +606,6 @@
         idPrefix: "exit", roles: { first: "hopExit", last: "hopDialed" }, target: forwardTarget })
     };
     Object.values(editors).forEach(editor => editor.render());
-    if (originalName !== null) {
-      const strip = clone("rule-stats");
-      find("#rule-panel").before(strip);
-      find("#connections-slot").append(clone("connections"));
-      page.updateStats = () => Object.values(editors).forEach(editor => editor.applyStats());
-      page.renderStats = snapshot => {
-        const current = list(snapshot.rules).find(entry => entry.name === originalName);
-        renderStatFields(strip, current?.stats);
-        editors.listen.applyStats(list(current?.listen));
-        editors.forward.applyStats(list(current?.forward));
-        renderConnections(current);
-      };
-      page.renderStats({ rules: [] });
-    }
     const updateMode = () => {
       const forwarding = find("#mode-forward").checked;
       find("#target-fields").hidden = find("#target-fields").disabled = !forwarding;
@@ -647,40 +670,49 @@
   async function loadStats(route, entries) {
     const panel = clone("stats");
     find("#page-content").append(panel);
-    const rows = new Map(entries.map(rule => {
-      const row = clone("stats-row");
-      const link = find(".stats-rule", row);
-      link.textContent = rule.name;
-      link.href = ruleRoute(rule.name);
-      find("#stats-rows", panel).append(row);
-      return [rule.name, row];
-    }));
-    find("#stats-empty", panel).hidden = Boolean(rows.size);
-    find("#stats-table", panel).hidden = !rows.size;
+    const connections = route.view === "connections";
+    const content = find("#stats-content", panel);
+    content.append(clone(connections ? "connections" : "stats-rules"));
+    content.setAttribute("aria-labelledby", "stats-" + route.view + "-tab");
+    const tabs = find(".stats-tabs", panel);
+    all("[role=tab]", tabs).forEach(tab => {
+      const selected = tab.dataset.view === route.view;
+      tab.href = statsRoute(tab.dataset.view, route.rule);
+      tab.setAttribute("aria-selected", String(selected));
+      tab.tabIndex = selected ? 0 : -1;
+    });
+    bindRuleTabs(tabs);
+    const configs = new Map(entries.map(rule => [rule.name, rule]));
+    let latest = { rules: [] };
+    let status = statusSnapshot;
+    const filter = find("#connection-rule", panel);
+    const render = () => {
+      if (connections) renderConnections(currentConnections(latest.rules, filter.value));
+      else renderStatsRules(panel, latest.rules, configs, status);
+    };
+    if (filter) {
+      filter.replaceChildren(new Option(t("allRules"), ""), ...entries.map(rule => new Option(rule.name, rule.name)));
+      filter.value = configs.has(route.rule) ? route.rule : "";
+      filter.addEventListener("change", () => {
+        activeHash = statsRoute("connections", filter.value);
+        history.replaceState(null, "", activeHash);
+        all("[role=tab]", tabs).forEach(tab => { tab.href = statsRoute(tab.dataset.view, filter.value); });
+        render();
+      });
+    }
     page.renderStats = snapshot => {
+      latest = snapshot;
       const timestamp = Date.parse(snapshot.since);
       find("#stats-since", panel).textContent = t("statsSince", {
         time: Number.isFinite(timestamp) ? new Date(timestamp).toLocaleString(language) : "\u2014"
       });
-      const rules = new Map(list(snapshot.rules).map(rule => [rule.name, rule]));
-      rows.forEach((row, name) => {
-        renderStatFields(row, rules.get(name)?.stats);
-      });
+      render();
     };
-    page.renderStatus = status => {
-      const rules = new Map(list(status?.rules).map(rule => [rule.name, rule]));
-      rows.forEach((row, name) => {
-        const rule = rules.get(name);
-        const state = rule ? rule.running ? "running" : rule.attempt > 0 ? "retrying" : "stopped" : "unknown";
-        const chip = find(".rule-chip", row);
-        chip.className = "rule-chip " + state;
-        chip.title = text(rule?.error);
-        find(".chip-state", chip).textContent = t(state === "unknown" ? "checking" : state, { attempt: rule?.attempt });
-        find(".stats-address", row).textContent = rule?.address || "\u2014";
-      });
+    page.renderStatus = snapshot => {
+      status = snapshot;
+      if (!connections) render();
     };
-    page.renderStats({ rules: [] });
-    page.renderStatus(statusSnapshot);
+    page.renderStats(latest);
     refreshStatus().catch(() => {});
     find("#reset-stats", panel).addEventListener("click", async () => {
       if (busy || !confirm(t("resetStatsConfirm"))) return;
@@ -697,6 +729,90 @@
         await refreshStats();
       }
     });
+  }
+
+  function renderStatsRules(panel, rules, configs, status) {
+    const states = new Map(list(status?.rules).map(rule => [rule.name, rule]));
+    find("#stats-rules", panel).replaceChildren(...list(rules).map((rule, index) => {
+      const card = clone("stats-rule");
+      card.dataset.rule = rule.name;
+      const link = find(".stats-rule", card);
+      link.id = "stats-rule-" + index;
+      link.textContent = rule.name;
+      link.href = ruleRoute(rule.name);
+      card.setAttribute("aria-labelledby", link.id);
+      const config = configs.get(rule.name);
+      const runtime = states.get(rule.name);
+      const state = runtime ? runtime.running ? "running" : runtime.attempt > 0 ? "retrying" : "stopped" : "unknown";
+      const chip = find(".rule-chip", card);
+      chip.className = "rule-chip " + state;
+      chip.title = text(runtime?.error);
+      find(".chip-state", chip).textContent = t(state === "unknown" ? "checking" : state, { attempt: runtime?.attempt });
+      const target = runtime?.target || (config?.forward?.port ? submittedAddress(config.forward) : "");
+      const address = runtime?.address || (config?.listen ? submittedAddress(config.listen) : "") || "\u2014";
+      find(".stats-mode", card).textContent = target ? t("portForward") + " \u2192 " + target : t("proxy");
+      const summary = clone("stats-summary");
+      renderStatFields(summary, rule.stats);
+      find(".chain", card).before(summary);
+      renderRuleChain(find(".chain", card), rule, address, runtime?.remote);
+      return card;
+    }));
+    find("#stats-empty", panel).hidden = Boolean(list(rules).length);
+  }
+
+  function renderRuleChain(chain, rule, address, remote) {
+    const stage = title => {
+      const element = clone("stage");
+      find(".stage-title", element).textContent = title;
+      return element;
+    };
+    const listen = list(rule.listen);
+    const forward = list(rule.forward);
+    const clients = stage(t("clients") + (remote || listen.length ? " \u00b7 " + address : ""));
+    const hopStage = (hop, role, lastIndex) => {
+      const labels = [t("hop", { number: hop.index + 1 })];
+      if (hop.index === 0) labels.push(t(role === "listen" ? "hopBinds" : "hopExit"));
+      if (hop.index === lastIndex) {
+        if (role === "forward" && hop.index !== 0) labels.push(t("hopEntry"));
+        labels.push(t("hopDialed"));
+      }
+      const element = stage(labels.join(" \u00b7 "));
+      const parent = find(".stage-parent", element);
+      parent.hidden = false;
+      parent.textContent = t("viaHop", {
+        parent: hop.parent_index === -1 ? t("chainLocal") : t("hop", { number: hop.parent_index + 1 })
+      });
+      const aggregate = find(".stage-stats", element);
+      aggregate.hidden = false;
+      renderStats(aggregate, hop.stats);
+      const urls = find(".stage-urls", element);
+      urls.hidden = false;
+      urls.replaceChildren(...list(hop.urls).map(entry => {
+        const row = clone("stage-url");
+        find(".stage-url", row).textContent = entry.url;
+        renderStats(find(".stage-url-stats", row), entry.stats);
+        return row;
+      }));
+      return element;
+    };
+    const targets = stage(t("targets"));
+    const entries = list(rule.targets);
+    const detail = find(".stage-detail", targets);
+    detail.hidden = false;
+    detail.textContent = entries.length ? t("targetCount", { count: formatCount(new Set(entries.map(entry => entry.address)).size) }) : t("noTargets");
+    const rows = find(".stage-targets", targets);
+    rows.hidden = !entries.length;
+    const total = entry => (entry.stats?.up || 0) + (entry.stats?.down || 0);
+    rows.replaceChildren(...entries.slice().sort((left, right) => total(right) - total(left)).slice(0, 5).map(entry => {
+      const row = clone("stage-target");
+      find(".target-address", row).textContent = entry.address;
+      find(".target-via", row).textContent = entry.via || t("direct");
+      find(".target-totals", row).textContent = "\u2191 " + formatBytes(entry.stats?.up) + " \u2193 " + formatBytes(entry.stats?.down);
+      return row;
+    }));
+    chain.replaceChildren(clients, ...listen.map(hop => hopStage(hop, "listen", listen.length - 1)),
+      stage(t("thisMachine") + " \u00b7 " + address),
+      ...(forward.length ? forward.slice().reverse().map(hop => hopStage(hop, "forward", forward.length - 1)) : [stage(t("directStage"))]), targets);
   }
 
   async function loadSettings() {
@@ -945,28 +1061,35 @@
     });
   }
 
-  function renderConnections(rule) {
-    const connections = list(rule?.connections);
+  function renderConnections(connections) {
     const body = find("#connection-rows");
     const rows = new Map(all("tr[data-id]", body).map(row => [row.dataset.id, row]));
-    connections.slice(0, 200).forEach(connection => {
+    const shown = connections.slice(0, 200);
+    const ids = new Set(shown.map(connection => text(connection.id)));
+    rows.forEach((row, id) => { if (!ids.has(id)) row.remove(); });
+    let next = body.firstElementChild;
+    shown.forEach(connection => {
       const id = text(connection.id);
       let row = rows.get(id);
-      if (row) rows.delete(id);
-      else {
+      if (!row) {
         row = clone("connection-row");
         row.dataset.id = id;
         const button = find(".disconnect-connection", row);
         button.addEventListener("click", () => disconnectConnection(id, button));
-        body.append(row);
       }
+      if (row !== next) body.insertBefore(row, next);
+      next = row.nextElementSibling;
+      row.dataset.rule = connection.rule;
+      const link = find(".connection-rule", row);
+      link.textContent = connection.rule;
+      link.href = ruleRoute(connection.rule);
       find(".connection-client", row).textContent = connection.client || "\u2014";
       find(".connection-target", row).textContent = connection.target;
-      find(".connection-via", row).textContent = connection.via || t("direct");
+      find(".conn-path", row).textContent = formatConnectionPath(connection);
       find(".connection-duration", row).textContent = formatDuration(connection.started);
       renderStatFields(row, connection);
     });
-    rows.forEach(row => row.remove());
+    find("#connections-count").textContent = t("connectionCount", { count: formatCount(connections.length) });
     find("#connections-table").hidden = !connections.length;
     find("#no-connections").hidden = Boolean(connections.length);
     const note = find("#connections-note");
@@ -993,7 +1116,7 @@
   }
 
   function hasStatsView() {
-    return page?.loaded && page.renderStats && (page.kind === "stats" || page.kind === "rules" && !newRule);
+    return page?.loaded && page.kind === "stats" && page.renderStats;
   }
 
   function refreshStats() {
@@ -1040,7 +1163,6 @@
     const hops = find(".hops", container);
     const add = find(".add-hop", container);
     const summary = find(".chain-summary", container);
-    let statsHops = null;
     add.id = idPrefix + "-add-hop";
 
     function readModel() {
@@ -1066,25 +1188,6 @@
     function render() {
       hops.replaceChildren(...model.map(renderHop));
       updateSummary();
-      applyStats();
-    }
-
-    function applyStats(snapshot = statsHops) {
-      statsHops = snapshot;
-      const apply = (element, stats) => {
-        element.hidden = statsHops === null;
-        renderStats(element, dirty ? null : stats);
-        if (dirty) element.textContent = "\u2014 \u00b7 " + t("saveStats");
-      };
-      all(".hop", hops).forEach((hop, hopIndex) => {
-        const current = statsHops?.[hopIndex];
-        const aggregate = find(".hop-stats", hop);
-        apply(aggregate, current?.stats);
-        if (!dirty && current) aggregate.textContent += " \u00b7 " + t("viaHop", {
-          parent: current.parent_index === -1 ? t("chainLocal") : t("hop", { number: current.parent_index + 1 })
-        });
-        all(".url-stats", hop).forEach((element, urlIndex) => apply(element, current?.urls?.[urlIndex]?.stats));
-      });
     }
 
     function updateSummary() {
@@ -1143,7 +1246,7 @@
       model.push({ lb: [""] });
       return "#" + idPrefix + "-url-" + (model.length - 1) + "-0";
     }));
-    return { render, read, updateSummary, applyStats };
+    return { render, read, updateSummary };
   }
 
   function updateBuilderPreview() {
