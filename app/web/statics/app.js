@@ -57,6 +57,8 @@
       rateDown: "Download rate",
       totalUp: "Total upload",
       totalDown: "Total download",
+      ratePair: "\u2191 / \u2193 per second",
+      totalPair: "\u2191 / \u2193 total",
       connections: "Connections",
       connectionsTotals: "Active / total connections",
       latency: "Latency",
@@ -208,6 +210,8 @@
       rateDown: "下载速率",
       totalUp: "累计上传",
       totalDown: "累计下载",
+      ratePair: "\u2191 / \u2193 每秒",
+      totalPair: "\u2191 / \u2193 累计",
       connections: "连接",
       connectionsTotals: "当前 / 累计连接",
       latency: "延迟",
@@ -797,8 +801,8 @@
       });
       query.addEventListener("input", render);
       all("th[data-sort]", panel).forEach(header => {
-        const labels = { rule: "ruleLabel", client: "client", target: "target", rate_up: "rateUp",
-          rate_down: "rateDown", up: "totalUp", down: "totalDown", started: "duration" };
+        const labels = { rule: "ruleLabel", client: "client", target: "target",
+          rate_down: "ratePair", down: "totalPair", started: "duration" };
         const button = find("button", header);
         button.title = t("sort") + ": " + t(labels[header.dataset.sort]);
         button.setAttribute("aria-label", button.title);
@@ -878,7 +882,10 @@
       find(".chip-state", chip).textContent = t(state === "unknown" ? "checking" : state, { attempt: runtime?.attempt });
       const target = runtime?.target || (config?.forward?.port ? submittedAddress(config.forward) : "");
       const address = runtime?.address || (config?.listen ? submittedAddress(config.listen) : "") || "\u2014";
-      find(".stats-address", row).textContent = address + (target ? " \u2192 " + target : "");
+      find(".stats-address", row).textContent = address;
+      const destination = find(".stats-target", row);
+      destination.textContent = target ? "\u2192 " + target : "";
+      destination.hidden = !target;
       renderStatFields(row, rule.stats);
       const count = list(rule.connections).length;
       const connections = find(".rule-connections", row);
@@ -1273,7 +1280,7 @@
       rate_up: formatRate(stats.rate_up), rate_down: formatRate(stats.rate_down),
       up: formatBytes(stats.up), down: formatBytes(stats.down),
       connections: formatCount(stats.active) + " / " + formatCount(stats.total),
-      latency: formatLatency(stats) + " / " + formatLatency(stats, "avg_latency_ms"),
+      latency: formatLatency(stats), avg_latency: formatLatency(stats, "avg_latency_ms"),
       dial_failures: formatCount(stats.dial_failures)
     };
     all("[data-stat]", root).forEach(element => {
