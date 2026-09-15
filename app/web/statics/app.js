@@ -52,27 +52,27 @@
       latencyPair: "{last} (avg {average})",
       failedCount: "{count} failed",
       stats: "Statistics",
+      hosts: "Hosts",
       rateUp: "Upload rate",
       rateDown: "Download rate",
       totalUp: "Total upload",
       totalDown: "Total download",
-      rateWindow: "Last 1 s",
-      statsLifetime: "Since last reset",
       connections: "Connections",
-      activeConns: "Active connections",
-      totalConns: "Total connections",
+      connectionsTotals: "Active / total connections",
       latency: "Latency",
-      avgLatency: "Average",
-      dialFailures: "Dial failures",
+      latencyTotals: "Last / average",
+      dialFailures: "Failures",
       dialAttempts: "dial attempts",
-      lastActive: "Last activity",
-      secondsAgo: "{count} s ago",
-      minutesAgo: "{count} min ago",
-      hoursAgo: "{count} h ago",
-      daysAgo: "{count} d ago",
       viaHop: "via {parent}",
-      byRule: "By rule",
-      byConnection: "By connection",
+      state: "State",
+      address: "Address",
+      usedBy: "Used by",
+      endpoints: "Endpoints",
+      filter: "Filter",
+      sort: "Sort",
+      expand: "Expand",
+      collapse: "Collapse",
+      noHosts: "No proxy hosts. No rule has listen or forward hops.",
       ruleLabel: "Rule",
       clients: "Clients",
       path: "Path",
@@ -80,7 +80,8 @@
       directStage: "Direct",
       reused: "reused",
       allRules: "All rules",
-      connectionCount: "{count} current connections",
+      connectionCount: "{count} connections",
+      filteredConnections: "{count} of {total} connections",
       targets: "Targets",
       targetCount: "{count} distinct targets",
       noTargets: "No connections yet",
@@ -202,27 +203,27 @@
       latencyPair: "{last}（平均 {average}）",
       failedCount: "失败 {count}",
       stats: "统计",
+      hosts: "主机",
       rateUp: "上传速率",
       rateDown: "下载速率",
       totalUp: "累计上传",
       totalDown: "累计下载",
-      rateWindow: "最近 1 秒",
-      statsLifetime: "自上次重置以来",
-      connections: "连接数",
-      activeConns: "当前连接",
-      totalConns: "累计连接",
+      connections: "连接",
+      connectionsTotals: "当前 / 累计连接",
       latency: "延迟",
-      avgLatency: "平均",
-      dialFailures: "连接失败",
+      latencyTotals: "最近 / 平均",
+      dialFailures: "失败",
       dialAttempts: "次连接尝试",
-      lastActive: "最近活动",
-      secondsAgo: "{count} 秒前",
-      minutesAgo: "{count} 分钟前",
-      hoursAgo: "{count} 小时前",
-      daysAgo: "{count} 天前",
       viaHop: "上一级：{parent}",
-      byRule: "按规则",
-      byConnection: "按连接",
+      state: "状态",
+      address: "地址",
+      usedBy: "使用规则",
+      endpoints: "端点",
+      filter: "筛选",
+      sort: "排序",
+      expand: "展开",
+      collapse: "收起",
+      noHosts: "暂无代理主机，规则均未配置监听或转发跳板。",
       ruleLabel: "规则",
       clients: "客户端",
       path: "路径",
@@ -230,7 +231,8 @@
       directStage: "直连",
       reused: "复用连接",
       allRules: "全部规则",
-      connectionCount: "当前 {count} 个连接",
+      connectionCount: "{count} 条连接",
+      filteredConnections: "{count} / {total} 条连接",
       targets: "目标",
       targetCount: "{count} 个不同目标",
       noTargets: "尚无连接记录",
@@ -373,15 +375,6 @@
       + formatCount(stats.dials) + " " + t("dialAttempts");
   }
 
-  function formatLastActive(value) {
-    const timestamp = Date.parse(value);
-    if (!Number.isFinite(timestamp)) return "\u2014";
-    const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
-    const [key, unit] = seconds < 60 ? ["secondsAgo", 1] : seconds < 3600 ? ["minutesAgo", 60]
-      : seconds < 86400 ? ["hoursAgo", 3600] : ["daysAgo", 86400];
-    return t(key, { count: formatCount(Math.floor(seconds / unit)) });
-  }
-
   function formatDuration(value) {
     const timestamp = Date.parse(value);
     if (!Number.isFinite(timestamp)) return "\u2014";
@@ -391,20 +384,117 @@
     return Math.floor(seconds / 3600) + " h " + Math.floor(seconds % 3600 / 60) + " min";
   }
 
+  function displayURL(value) {
+    try {
+      const url = new URL(value);
+      if (!url.hostname) return text(value);
+      const authority = new URL(text(value).trim().replace(/^[a-z][a-z\d+.-]*:/i, "endpoint:"));
+      return url.protocol + "//" + url.hostname + (authority.port ? ":" + authority.port : "");
+    } catch {
+      return text(value);
+    }
+  }
+
   function formatConnectionPath(connection) {
     const path = list(connection.path);
     if (!path.length) return t("direct");
     const hops = path.slice().reverse().map(hop => {
-      const label = hop.url || t("hop", { number: hop.index + 1 });
-      return label + (hop.dialed === false ? " \u00b7 " + t("reused") : "");
+      const label = hop.url ? displayURL(hop.url) : t("hop", { number: hop.index + 1 });
+      return label + (hop.dialed === false ? " (" + t("reused") + ")" : "");
     });
-    return [t("chainLocal"), ...hops].join(" \u2192 ");
+    return [t("chainLocal"), ...hops, connection.target || t("chainTarget")].join(" \u2192 ");
   }
 
-  function currentConnections(rules, filter = "") {
-    return list(rules).filter(rule => !filter || rule.name === filter).flatMap(rule =>
-      list(rule.connections).slice().sort((left, right) => left.id - right.id)
-        .map(connection => ({ ...connection, rule: rule.name })));
+  function currentConnections(rules) {
+    return list(rules).flatMap(rule => list(rule.connections).map(connection => ({ ...connection, rule: rule.name })));
+  }
+
+  function displayClient(value) {
+    if (!value) return "\u2014";
+    try {
+      return new URL("http://" + value).hostname.replace(/^\[|\]$/g, "");
+    } catch {
+      return text(value);
+    }
+  }
+
+  function filterConnections(connections, rule, query) {
+    const needle = text(query).trim().toLocaleLowerCase(language);
+    const matches = value => {
+      let position = 0;
+      const haystack = text(value).toLocaleLowerCase(language);
+      for (const character of needle) {
+        position = haystack.indexOf(character, position);
+        if (position < 0) return false;
+        position++;
+      }
+      return true;
+    };
+    return connections.filter(connection => (!rule || connection.rule === rule)
+      && [connection.target, connection.client, connection.rule].some(matches));
+  }
+
+  function sortConnections(connections, sort = { key: "started", direction: "descending" }) {
+    const direction = sort.direction === "ascending" ? 1 : -1;
+    return connections.slice().sort((left, right) => {
+      const comparison = ["rule", "client", "target"].includes(sort.key)
+        ? text(left[sort.key]).localeCompare(text(right[sort.key]), language, { numeric: true })
+        : sort.key === "started" ? (Date.parse(left.started) || 0) - (Date.parse(right.started) || 0)
+          : (Number(left[sort.key]) || 0) - (Number(right[sort.key]) || 0);
+      return comparison * direction || left.id - right.id;
+    });
+  }
+
+  function sumStats(entries) {
+    const stats = { up: 0, down: 0, rate_up: 0, rate_down: 0, active: 0, total: 0,
+      dials: 0, dial_failures: 0, latency_ms: 0, avg_latency_ms: 0 };
+    let weightedLatency = 0;
+    let latest = -Infinity;
+    entries.forEach(entry => {
+      for (const key of ["up", "down", "rate_up", "rate_down", "active", "total", "dials", "dial_failures"]) {
+        stats[key] += Number(entry[key]) || 0;
+      }
+      weightedLatency += Math.max(0, (entry.dials || 0) - (entry.dial_failures || 0)) * (entry.avg_latency_ms || 0);
+      const timestamp = Date.parse(entry.last_active);
+      if (timestamp > latest) {
+        latest = timestamp;
+        stats.last_active = entry.last_active;
+        stats.latency_ms = entry.latency_ms || 0;
+      }
+    });
+    const successes = stats.dials - stats.dial_failures;
+    stats.avg_latency_ms = successes > 0 ? weightedLatency / successes : 0;
+    return stats;
+  }
+
+  function aggregateHosts(rules) {
+    const hosts = new Map();
+    list(rules).forEach(rule => {
+      for (const way of ["listen", "forward"]) {
+        list(rule[way]).forEach(hop => list(hop.urls).forEach(entry => {
+          let hostname = entry.url;
+          try { hostname = new URL(entry.url).hostname || entry.url; } catch {}
+          if (!hosts.has(hostname)) hosts.set(hostname, { host: hostname, rules: new Set(), endpoints: new Map() });
+          const host = hosts.get(hostname);
+          const label = displayURL(entry.url);
+          if (!host.endpoints.has(label)) host.endpoints.set(label, { endpoint: label, urls: new Set(), uses: [], samples: [] });
+          const endpoint = host.endpoints.get(label);
+          host.rules.add(rule.name);
+          endpoint.urls.add(entry.url);
+          endpoint.samples.push(entry.stats || {});
+          if (!endpoint.uses.some(use => use.rule === rule.name && use.way === way && use.index === hop.index)) {
+            endpoint.uses.push({ rule: rule.name, way, index: hop.index });
+          }
+        }));
+      }
+    });
+    const totalBytes = value => value.stats.up + value.stats.down;
+    return Array.from(hosts.values(), host => {
+      const endpoints = Array.from(host.endpoints.values());
+      return { host: host.host, rules: Array.from(host.rules), stats: sumStats(endpoints.flatMap(endpoint => endpoint.samples)),
+        endpoints: endpoints.map(endpoint => ({ endpoint: endpoint.endpoint, urls: Array.from(endpoint.urls),
+          uses: endpoint.uses, stats: sumStats(endpoint.samples) })).sort((left, right) => totalBytes(right) - totalBytes(left)) };
+    }).sort((left, right) => totalBytes(right) - totalBytes(left) || left.host.localeCompare(right.host));
   }
 
   function normalizeWay(way) {
@@ -444,6 +534,10 @@
   let builderLayouts = [];
   let builderRequest = null;
   let builderTarget = null;
+  const expandedRules = new Set();
+  const expandedHosts = new Set();
+  const connectionSort = { key: "started", direction: "descending" };
+  let detailsSequence = 0;
   let toastTimer;
 
   function setDirty(value) {
@@ -458,7 +552,7 @@
     if (fields) fields.disabled = value || !page.loaded;
     const panel = find("#rule-panel");
     if (panel) panel.setAttribute("aria-busy", String(value));
-    all("#retry, #reset-stats, #connection-rule").forEach(button => { button.disabled = value; });
+    all("#retry, #reset-stats, #connection-rule, #connection-filter, .sort-button, .expand-toggle").forEach(button => { button.disabled = value; });
     all("a[href^='#/']").forEach(link => {
       if (value) link.setAttribute("aria-disabled", "true");
       else link.removeAttribute("aria-disabled");
@@ -466,21 +560,28 @@
   }
 
   function routeFor(hash) {
-    if (["#/web-ui", "#/no-proxy"].includes(hash)) hash = "#/settings";
-    const stats = /^#\/stats(?:\/(rules|connections))?(?:\?(.*))?$/.exec(hash);
-    if (stats) return { hash, kind: "stats", view: stats[1] || "rules", rule: new URLSearchParams(stats[2]).get("rule") || "" };
-    const pages = { "#/": "rules", "#/rules": "rules", "#/settings": "settings", "#/yaml": "yaml" };
-    if (Object.prototype.hasOwnProperty.call(pages, hash)) return { hash, kind: pages[hash], name: null };
-    const match = /^#\/rules\/([^/]+)$/.exec(hash);
+    const queryIndex = hash.indexOf("?");
+    const pathname = queryIndex < 0 ? hash : hash.slice(0, queryIndex);
+    const query = queryIndex < 0 ? "" : hash.slice(queryIndex + 1);
+    const aliases = { "#/web-ui": "#/settings", "#/no-proxy": "#/settings",
+      "#/stats/rules": "#/stats", "#/stats/connections": "#/connections" };
+    const path = aliases[pathname] || pathname;
+    const canonical = path + (query ? "?" + query : "");
+    const pages = { "#/": "rules", "#/rules": "rules", "#/stats": "stats", "#/hosts": "hosts",
+      "#/connections": "connections", "#/settings": "settings", "#/yaml": "yaml" };
+    if (Object.prototype.hasOwnProperty.call(pages, path)) {
+      return { hash: canonical, kind: pages[path], name: null, rule: new URLSearchParams(query).get("rule") || "" };
+    }
+    const match = /^#\/rules\/([^/]+)$/.exec(path);
     if (match) {
-      try { return { hash, kind: "rules", name: decodeURIComponent(match[1]) }; } catch {}
+      try { return { hash: canonical, kind: "rules", name: decodeURIComponent(match[1]) }; } catch {}
     }
     return { hash: "#/", kind: "rules", name: null };
   }
 
   const ruleRoute = name => "#/rules/" + encodeURIComponent(name);
   const rulePath = name => "/rules/" + encodeURIComponent(name);
-  const statsRoute = (view, rule = "") => "#/stats" + (view === "connections" ? "/connections" : "")
+  const statsRoute = (kind, rule = "") => "#/" + kind
     + (rule ? "?" + new URLSearchParams({ rule }) : "");
 
   function mayLeave() {
@@ -512,9 +613,8 @@
 
   async function renderRoute(route, notify = "") {
     const focusPage = Boolean(activeHash);
-    const focusStats = page?.kind === "stats" && route.kind === "stats";
     activeHash = route.hash;
-    page = { kind: route.kind, view: route.view, save: null, loaded: false };
+    page = { kind: route.kind, save: null, loaded: false };
     startStats();
     setDirty(false);
     if (ui.builder.open) ui.builder.close();
@@ -537,7 +637,8 @@
       document.title = title + " | " + t("appName");
       setBusy(true);
       if (listError && route.kind === "rules") throw listError;
-      const loaders = { rules: loadRules, stats: loadStats, settings: loadSettings, yaml: loadYAML };
+      const loaders = { rules: loadRules, stats: loadStats, hosts: loadStats, connections: loadStats,
+        settings: loadSettings, yaml: loadYAML };
       await loaders[route.kind](route, entries);
       page.loaded = true;
       if (listError) throw listError;
@@ -554,7 +655,7 @@
       setBusy(false);
       startStats();
       if (focusPage) {
-        const target = focusStats ? find(".stats-tabs [aria-selected=true]") : find("[aria-selected=true]", ui.nav);
+        const target = find("[aria-selected=true]", ui.nav);
         (target || find("#page-heading")).focus();
       }
     }
@@ -670,24 +771,20 @@
   async function loadStats(route, entries) {
     const panel = clone("stats");
     find("#page-content").append(panel);
-    const connections = route.view === "connections";
+    const connections = route.kind === "connections";
     const content = find("#stats-content", panel);
-    content.append(clone(connections ? "connections" : "stats-rules"));
-    content.setAttribute("aria-labelledby", "stats-" + route.view + "-tab");
-    const tabs = find(".stats-tabs", panel);
-    all("[role=tab]", tabs).forEach(tab => {
-      const selected = tab.dataset.view === route.view;
-      tab.href = statsRoute(tab.dataset.view, route.rule);
-      tab.setAttribute("aria-selected", String(selected));
-      tab.tabIndex = selected ? 0 : -1;
-    });
-    bindRuleTabs(tabs);
+    content.append(clone(route.kind === "stats" ? "stats-rules" : route.kind));
     const configs = new Map(entries.map(rule => [rule.name, rule]));
     let latest = { rules: [] };
     let status = statusSnapshot;
     const filter = find("#connection-rule", panel);
+    const query = find("#connection-filter", panel);
     const render = () => {
-      if (connections) renderConnections(currentConnections(latest.rules, filter.value));
+      if (connections) {
+        const available = currentConnections(latest.rules);
+        const filtered = filterConnections(available, filter.value, query.value);
+        renderConnections(sortConnections(filtered, connectionSort), available.length, Boolean(filter.value || query.value.trim()));
+      } else if (route.kind === "hosts") renderHosts(panel, aggregateHosts(latest.rules));
       else renderStatsRules(panel, latest.rules, configs, status);
     };
     if (filter) {
@@ -696,8 +793,22 @@
       filter.addEventListener("change", () => {
         activeHash = statsRoute("connections", filter.value);
         history.replaceState(null, "", activeHash);
-        all("[role=tab]", tabs).forEach(tab => { tab.href = statsRoute(tab.dataset.view, filter.value); });
         render();
+      });
+      query.addEventListener("input", render);
+      all("th[data-sort]", panel).forEach(header => {
+        const labels = { rule: "ruleLabel", client: "client", target: "target", rate_up: "rateUp",
+          rate_down: "rateDown", up: "totalUp", down: "totalDown", started: "duration" };
+        const button = find("button", header);
+        button.title = t("sort") + ": " + t(labels[header.dataset.sort]);
+        button.setAttribute("aria-label", button.title);
+        header.addEventListener("click", () => {
+          if (busy) return;
+          connectionSort.direction = connectionSort.key === header.dataset.sort && connectionSort.direction === "ascending"
+            ? "descending" : "ascending";
+          connectionSort.key = header.dataset.sort;
+          render();
+        });
       });
     }
     page.renderStats = snapshot => {
@@ -710,7 +821,7 @@
     };
     page.renderStatus = snapshot => {
       status = snapshot;
-      if (!connections) render();
+      if (route.kind === "stats") render();
     };
     page.renderStats(latest);
     refreshStatus().catch(() => {});
@@ -733,31 +844,138 @@
 
   function renderStatsRules(panel, rules, configs, status) {
     const states = new Map(list(status?.rules).map(rule => [rule.name, rule]));
-    find("#stats-rules", panel).replaceChildren(...list(rules).map((rule, index) => {
-      const card = clone("stats-rule");
-      card.dataset.rule = rule.name;
-      const link = find(".stats-rule", card);
-      link.id = "stats-rule-" + index;
+    const snapshots = new Map(list(rules).map(rule => [rule.name, rule]));
+    const names = new Set([...configs.keys(), ...snapshots.keys()]);
+    const body = find("#stats-rules", panel);
+    const rows = new Map(all("tr[data-rule]", body).map(row => [row.dataset.rule, row]));
+    rows.forEach((row, name) => {
+      if (!names.has(name)) {
+        row.nextElementSibling.remove();
+        row.remove();
+        expandedRules.delete(name);
+      }
+    });
+    let next = body.firstElementChild;
+    names.forEach(name => {
+      const rule = snapshots.get(name) || { name, stats: {} };
+      const row = rows.get(name) || clone("stats-rule");
+      const details = rows.has(name) ? row.nextElementSibling : clone("rule-details");
+      row.dataset.rule = name;
+      if (row !== next) {
+        body.insertBefore(row, next);
+        body.insertBefore(details, next);
+      }
+      next = details.nextElementSibling;
+      const link = find(".stats-rule", row);
       link.textContent = rule.name;
       link.href = ruleRoute(rule.name);
-      card.setAttribute("aria-labelledby", link.id);
       const config = configs.get(rule.name);
       const runtime = states.get(rule.name);
       const state = runtime ? runtime.running ? "running" : runtime.attempt > 0 ? "retrying" : "stopped" : "unknown";
-      const chip = find(".rule-chip", card);
+      const chip = find(".rule-chip", row);
       chip.className = "rule-chip " + state;
       chip.title = text(runtime?.error);
       find(".chip-state", chip).textContent = t(state === "unknown" ? "checking" : state, { attempt: runtime?.attempt });
       const target = runtime?.target || (config?.forward?.port ? submittedAddress(config.forward) : "");
       const address = runtime?.address || (config?.listen ? submittedAddress(config.listen) : "") || "\u2014";
-      find(".stats-mode", card).textContent = target ? t("portForward") + " \u2192 " + target : t("proxy");
-      const summary = clone("stats-summary");
-      renderStatFields(summary, rule.stats);
-      find(".chain", card).before(summary);
-      renderRuleChain(find(".chain", card), rule, address, runtime?.remote);
-      return card;
-    }));
-    find("#stats-empty", panel).hidden = Boolean(list(rules).length);
+      find(".stats-address", row).textContent = address + (target ? " \u2192 " + target : "");
+      renderStatFields(row, rule.stats);
+      const count = list(rule.connections).length;
+      const connections = find(".rule-connections", row);
+      connections.textContent = t("connectionCount", { count: formatCount(count) }) + (count ? " \u2192" : "");
+      if (count) connections.href = statsRoute("connections", name);
+      else connections.removeAttribute("href");
+      updateExpansion(row, details, expandedRules, name, () => renderRuleChain(find(".chain", details), rule, address, runtime?.remote));
+    });
+    find("#stats-rules-table", panel).hidden = !names.size;
+    find("#stats-empty", panel).hidden = Boolean(names.size);
+  }
+
+  function updateExpansion(row, details, expanded, key, render) {
+    const button = find(".expand-toggle", row);
+    if (!details.id) details.id = "stats-details-" + ++detailsSequence;
+    button.setAttribute("aria-controls", details.id);
+    const update = () => {
+      const open = expanded.has(key);
+      button.setAttribute("aria-expanded", String(open));
+      button.title = t(open ? "collapse" : "expand") + ": " + key;
+      button.setAttribute("aria-label", button.title);
+      details.hidden = !open;
+      if (open) render();
+    };
+    row.onclick = event => {
+      if (busy || event.target.closest("a, input, select, button:not(.expand-toggle)")) return;
+      if (expanded.has(key)) expanded.delete(key);
+      else expanded.add(key);
+      update();
+    };
+    update();
+  }
+
+  function renderHostChips(container, uses) {
+    const chips = new Map(all("a", container).map(chip => [chip.dataset.use, chip]));
+    const keys = new Set();
+    uses.forEach(use => {
+      const key = JSON.stringify(use);
+      keys.add(key);
+      const chip = chips.get(key) || document.createElement("a");
+      chip.dataset.use = key;
+      chip.className = "host-chip";
+      chip.href = ruleRoute(use.rule);
+      chip.textContent = use.rule + (use.way ? " \u00b7 " + t(use.way === "listen" ? "listenThrough" : "exitChain")
+        + " \u00b7 " + t("hop", { number: use.index + 1 }) : "");
+      if (!chip.parentElement) container.append(chip);
+    });
+    chips.forEach((chip, key) => { if (!keys.has(key)) chip.remove(); });
+  }
+
+  function renderHostEndpoints(body, endpoints) {
+    const rows = new Map(all("tr[data-endpoint]", body).map(row => [row.dataset.endpoint, row]));
+    const keys = new Set(endpoints.map(endpoint => endpoint.endpoint));
+    rows.forEach((row, key) => { if (!keys.has(key)) row.remove(); });
+    let next = body.firstElementChild;
+    endpoints.forEach(endpoint => {
+      const row = rows.get(endpoint.endpoint) || clone("host-endpoint");
+      row.dataset.endpoint = endpoint.endpoint;
+      if (row !== next) body.insertBefore(row, next);
+      next = row.nextElementSibling;
+      const label = find(".host-endpoint", row);
+      label.textContent = endpoint.endpoint;
+      label.title = endpoint.urls.join("\n");
+      renderHostChips(find(".host-chips", row), endpoint.uses);
+      renderStatFields(row, endpoint.stats);
+    });
+  }
+
+  function renderHosts(panel, hosts) {
+    const body = find("#host-rows", panel);
+    const rows = new Map(all("tr[data-host]", body).map(row => [row.dataset.host, row]));
+    const keys = new Set(hosts.map(host => host.host));
+    rows.forEach((row, key) => {
+      if (!keys.has(key)) {
+        row.nextElementSibling.remove();
+        row.remove();
+        expandedHosts.delete(key);
+      }
+    });
+    let next = body.firstElementChild;
+    hosts.forEach(host => {
+      const row = rows.get(host.host) || clone("host-row");
+      const details = rows.has(host.host) ? row.nextElementSibling : clone("host-details");
+      row.dataset.host = host.host;
+      if (row !== next) {
+        body.insertBefore(row, next);
+        body.insertBefore(details, next);
+      }
+      next = details.nextElementSibling;
+      find(".host-name", row).textContent = host.host;
+      renderHostChips(find(".host-chips", row), host.rules.map(rule => ({ rule })));
+      find(".endpoint-count", row).textContent = formatCount(host.endpoints.length);
+      renderStatFields(row, host.stats);
+      updateExpansion(row, details, expandedHosts, host.host, () => renderHostEndpoints(find(".host-endpoints", details), host.endpoints));
+    });
+    find("#hosts-table", panel).hidden = !hosts.length;
+    find("#hosts-empty", panel).hidden = Boolean(hosts.length);
   }
 
   function renderRuleChain(chain, rule, address, remote) {
@@ -777,6 +995,8 @@
         labels.push(t("hopDialed"));
       }
       const element = stage(labels.join(" \u00b7 "));
+      element.dataset.way = role;
+      element.dataset.index = hop.index;
       const parent = find(".stage-parent", element);
       parent.hidden = false;
       parent.textContent = t("viaHop", {
@@ -789,7 +1009,9 @@
       urls.hidden = false;
       urls.replaceChildren(...list(hop.urls).map(entry => {
         const row = clone("stage-url");
-        find(".stage-url", row).textContent = entry.url;
+        const label = find(".stage-url", row);
+        label.textContent = displayURL(entry.url);
+        label.title = entry.url;
         renderStats(find(".stage-url-stats", row), entry.stats);
         return row;
       }));
@@ -806,7 +1028,9 @@
     rows.replaceChildren(...entries.slice().sort((left, right) => total(right) - total(left)).slice(0, 5).map(entry => {
       const row = clone("stage-target");
       find(".target-address", row).textContent = entry.address;
-      find(".target-via", row).textContent = entry.via || t("direct");
+      const via = find(".target-via", row);
+      via.textContent = entry.via ? displayURL(entry.via) : t("direct");
+      via.title = entry.via || "";
       find(".target-totals", row).textContent = "\u2191 " + formatBytes(entry.stats?.up) + " \u2193 " + formatBytes(entry.stats?.down);
       return row;
     }));
@@ -1050,18 +1274,19 @@
       up: formatBytes(stats.up), down: formatBytes(stats.down),
       connections: formatCount(stats.active) + " / " + formatCount(stats.total),
       latency: formatLatency(stats) + " / " + formatLatency(stats, "avg_latency_ms"),
-      latency_ms: formatLatency(stats), avg_latency_ms: formatLatency(stats, "avg_latency_ms"),
-      dial_failures: formatCount(stats.dial_failures), dials: formatCount(stats.dials),
-      last_active: formatLastActive(stats.last_active),
-      last_active_time: Number.isFinite(Date.parse(stats.last_active))
-        ? new Date(stats.last_active).toLocaleString(language) : "\u2014"
+      dial_failures: formatCount(stats.dial_failures)
     };
     all("[data-stat]", root).forEach(element => {
       element.textContent = values?.[element.dataset.stat] ?? "\u2014";
     });
   }
 
-  function renderConnections(connections) {
+  function renderConnections(connections, total, filtered) {
+    all("th[data-sort]").forEach(header => {
+      const direction = header.dataset.sort === connectionSort.key ? connectionSort.direction : "none";
+      header.setAttribute("aria-sort", direction);
+      find(".sort-indicator", header).textContent = direction === "none" ? "" : direction === "ascending" ? "\u25b2" : "\u25bc";
+    });
     const body = find("#connection-rows");
     const rows = new Map(all("tr[data-id]", body).map(row => [row.dataset.id, row]));
     const shown = connections.slice(0, 200);
@@ -1083,13 +1308,19 @@
       const link = find(".connection-rule", row);
       link.textContent = connection.rule;
       link.href = ruleRoute(connection.rule);
-      find(".connection-client", row).textContent = connection.client || "\u2014";
+      const client = find(".connection-client", row);
+      client.textContent = displayClient(connection.client);
+      client.title = connection.client || "";
       find(".connection-target", row).textContent = connection.target;
-      find(".conn-path", row).textContent = formatConnectionPath(connection);
+      const hint = find(".path-hint", row);
+      hint.title = formatConnectionPath(connection);
+      hint.setAttribute("aria-label", t("path") + ": " + hint.title);
       find(".connection-duration", row).textContent = formatDuration(connection.started);
       renderStatFields(row, connection);
     });
-    find("#connections-count").textContent = t("connectionCount", { count: formatCount(connections.length) });
+    find("#connections-count").textContent = t(filtered ? "filteredConnections" : "connectionCount", {
+      count: formatCount(connections.length), total: formatCount(total)
+    });
     find("#connections-table").hidden = !connections.length;
     find("#no-connections").hidden = Boolean(connections.length);
     const note = find("#connections-note");
@@ -1116,7 +1347,7 @@
   }
 
   function hasStatsView() {
-    return page?.loaded && page.kind === "stats" && page.renderStats;
+    return page?.loaded && ["stats", "hosts", "connections"].includes(page.kind) && page.renderStats;
   }
 
   function refreshStats() {

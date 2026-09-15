@@ -29,6 +29,8 @@
 
 		<nav id="page-nav" class="page-nav" role="tablist" data-i18n-aria="ruleTabs">
 			<a href="#/stats" data-page="stats" data-i18n="stats" role="tab" aria-selected="false" aria-controls="page-panel" tabindex="-1"></a>
+			<a href="#/hosts" data-page="hosts" data-i18n="hosts" role="tab" aria-selected="false" aria-controls="page-panel" tabindex="-1"></a>
+			<a href="#/connections" data-page="connections" data-i18n="connections" role="tab" aria-selected="false" aria-controls="page-panel" tabindex="-1"></a>
 			<a href="#/settings" data-page="settings" data-i18n="settings" role="tab" aria-selected="false" aria-controls="page-panel" tabindex="-1"></a>
 			<a href="#/yaml" data-page="yaml" data-i18n="yaml" role="tab" aria-selected="false" aria-controls="page-panel" tabindex="-1"></a>
 		</nav>
@@ -181,43 +183,6 @@
 		</div>
 	</template>
 
-	<template id="stats-summary-template">
-		<div class="stats-summary" role="group" data-i18n-aria="stats">
-			<div class="stat">
-				<span class="stat-label">&#8593; <span data-i18n="rateUp"></span></span><strong class="stat-value" data-stat="rate_up"></strong>
-				<span class="stat-sub" data-i18n="rateWindow"></span>
-			</div>
-			<div class="stat">
-				<span class="stat-label">&#8595; <span data-i18n="rateDown"></span></span><strong class="stat-value" data-stat="rate_down"></strong>
-				<span class="stat-sub" data-i18n="rateWindow"></span>
-			</div>
-			<div class="stat">
-				<span class="stat-label">&#8593; <span data-i18n="totalUp"></span></span><strong class="stat-value" data-stat="up"></strong>
-				<span class="stat-sub" data-i18n="statsLifetime"></span>
-			</div>
-			<div class="stat">
-				<span class="stat-label">&#8595; <span data-i18n="totalDown"></span></span><strong class="stat-value" data-stat="down"></strong>
-				<span class="stat-sub" data-i18n="statsLifetime"></span>
-			</div>
-			<div class="stat">
-				<span class="stat-label" data-i18n="connections"></span><strong class="stat-value" data-stat="connections"></strong>
-				<span class="stat-sub"><span data-i18n="activeConns"></span> / <span data-i18n="totalConns"></span></span>
-			</div>
-			<div class="stat">
-				<span class="stat-label" data-i18n="latency"></span><strong class="stat-value" data-stat="latency_ms"></strong>
-				<span class="stat-sub"><span data-i18n="avgLatency"></span> <span data-stat="avg_latency_ms"></span></span>
-			</div>
-			<div class="stat">
-				<span class="stat-label" data-i18n="dialFailures"></span><strong class="stat-value" data-stat="dial_failures"></strong>
-				<span class="stat-sub"><span data-stat="dials"></span> <span data-i18n="dialAttempts"></span></span>
-			</div>
-			<div class="stat">
-				<span class="stat-label" data-i18n="lastActive"></span><strong class="stat-value" data-stat="last_active"></strong>
-				<span class="stat-sub" data-stat="last_active_time"></span>
-			</div>
-		</div>
-	</template>
-
 	<template id="connections-template">
 		<div class="connections-view">
 			<div class="connections-toolbar">
@@ -225,20 +190,24 @@
 					<label for="connection-rule" data-i18n="ruleLabel"></label>
 					<select id="connection-rule"></select>
 				</div>
+				<div class="field connection-filter-field">
+					<label for="connection-filter" data-i18n="filter"></label>
+					<input id="connection-filter" type="search" spellcheck="false" autocomplete="off">
+				</div>
 				<p id="connections-count" class="hint" role="status"></p>
 			</div>
 			<div id="connections-table" class="stats-scroll" role="region" tabindex="0" aria-labelledby="connections-count" hidden>
 				<table class="stats-table">
-					<colgroup><col class="conn-rule-col"><col class="conn-client-col"><col class="conn-path-col"><col class="conn-target-col"><col span="4" class="conn-number-col"><col class="conn-duration-col"><col class="conn-action-col"></colgroup>
+					<colgroup><col class="conn-rule-col"><col class="conn-client-col"><col class="conn-target-col"><col span="4" class="conn-number-col"><col class="conn-duration-col"><col class="conn-action-col"></colgroup>
 					<thead><tr>
-						<th scope="col" data-i18n="ruleLabel"></th>
-						<th scope="col" data-i18n="client"></th>
-						<th scope="col" data-i18n="path"></th><th scope="col" data-i18n="target"></th>
-						<th scope="col" class="number" data-i18n-title="rateUp" data-i18n-aria="rateUp">&#8593; /s</th>
-						<th scope="col" class="number" data-i18n-title="rateDown" data-i18n-aria="rateDown">&#8595; /s</th>
-						<th scope="col" class="number" data-i18n-title="totalUp" data-i18n-aria="totalUp">&#8593; <span data-i18n="totalShort"></span></th>
-						<th scope="col" class="number" data-i18n-title="totalDown" data-i18n-aria="totalDown">&#8595; <span data-i18n="totalShort"></span></th>
-						<th scope="col" class="number" data-i18n="duration"></th>
+						<th scope="col" data-sort="rule"><button type="button" class="sort-button"><span data-i18n="ruleLabel"></span><span class="sort-indicator" aria-hidden="true"></span></button></th>
+						<th scope="col" data-sort="client"><button type="button" class="sort-button"><span data-i18n="client"></span><span class="sort-indicator" aria-hidden="true"></span></button></th>
+						<th scope="col" data-sort="target"><button type="button" class="sort-button"><span data-i18n="target"></span><span class="sort-indicator" aria-hidden="true"></span></button></th>
+						<th scope="col" class="number" data-sort="rate_up"><button type="button" class="sort-button"><span>&#8593; /s</span><span class="sort-indicator" aria-hidden="true"></span></button></th>
+						<th scope="col" class="number" data-sort="rate_down"><button type="button" class="sort-button"><span>&#8595; /s</span><span class="sort-indicator" aria-hidden="true"></span></button></th>
+						<th scope="col" class="number" data-sort="up"><button type="button" class="sort-button"><span>&#8593; <span data-i18n="totalShort"></span></span><span class="sort-indicator" aria-hidden="true"></span></button></th>
+						<th scope="col" class="number" data-sort="down"><button type="button" class="sort-button"><span>&#8595; <span data-i18n="totalShort"></span></span><span class="sort-indicator" aria-hidden="true"></span></button></th>
+						<th scope="col" class="number" data-sort="started"><button type="button" class="sort-button"><span data-i18n="duration"></span><span class="sort-indicator" aria-hidden="true"></span></button></th>
 						<th scope="col"><span class="sr-only" data-i18n="disconnect"></span></th>
 					</tr></thead>
 					<tbody id="connection-rows"></tbody>
@@ -251,9 +220,9 @@
 
 	<template id="connection-row-template">
 		<tr>
-			<th scope="row"><a class="connection-rule stats-rule"></a></th>
+			<th scope="row"><div class="table-label"><a class="connection-rule stats-rule"></a><button type="button" class="path-hint" data-i18n-aria="path">?</button></div></th>
 			<td class="connection-client address"></td>
-			<td class="conn-path"></td><td class="connection-target address"></td>
+			<td class="connection-target address"></td>
 			<td class="number" data-stat="rate_up"></td><td class="number" data-stat="rate_down"></td>
 			<td class="number" data-stat="up"></td><td class="number" data-stat="down"></td>
 			<td class="number connection-duration"></td>
@@ -269,10 +238,6 @@
 
 	<template id="stats-template">
 		<div class="stats-page">
-			<div class="stats-tabs" role="tablist" data-i18n-aria="stats">
-				<a id="stats-rules-tab" href="#/stats" data-view="rules" data-i18n="byRule" role="tab" aria-selected="false" aria-controls="stats-content" tabindex="-1"></a>
-				<a id="stats-connections-tab" href="#/stats/connections" data-view="connections" data-i18n="byConnection" role="tab" aria-selected="false" aria-controls="stats-content" tabindex="-1"></a>
-			</div>
 			<div class="stats-toolbar">
 				<p id="stats-since" class="hint"></p>
 				<div class="stats-actions">
@@ -280,26 +245,107 @@
 					<button id="reset-stats" type="button" data-i18n="resetStats"></button>
 				</div>
 			</div>
-			<div id="stats-content" role="tabpanel" tabindex="0"></div>
+			<div id="stats-content"></div>
 		</div>
 	</template>
 
 	<template id="stats-rules-template">
 		<div class="rules-view">
-			<div id="stats-rules"></div>
+			<div id="stats-rules-table" class="stats-scroll" role="region" tabindex="0" aria-labelledby="page-heading">
+				<table class="stats-table rules-table">
+					<colgroup><col class="stats-rule-col"><col class="stats-state-col"><col class="stats-address-col"><col span="4" class="stats-number-col"><col class="stats-connections-col"><col class="stats-latency-col"><col class="stats-failures-col"><col class="stats-link-col"></colgroup>
+					<thead><tr>
+						<th scope="col" data-i18n="ruleLabel"></th><th scope="col" data-i18n="state"></th><th scope="col" data-i18n="address"></th>
+						<th scope="col" class="number" data-i18n-title="rateUp" data-i18n-aria="rateUp">&#8593; /s</th>
+						<th scope="col" class="number" data-i18n-title="rateDown" data-i18n-aria="rateDown">&#8595; /s</th>
+						<th scope="col" class="number" data-i18n-title="totalUp" data-i18n-aria="totalUp">&#8593; <span data-i18n="totalShort"></span></th>
+						<th scope="col" class="number" data-i18n-title="totalDown" data-i18n-aria="totalDown">&#8595; <span data-i18n="totalShort"></span></th>
+						<th scope="col" class="number"><span data-i18n="connections"></span><span class="table-sub" data-i18n="connectionsTotals"></span></th>
+						<th scope="col" class="number"><span data-i18n="latency"></span><span class="table-sub" data-i18n="latencyTotals"></span></th>
+						<th scope="col" class="number" data-i18n="dialFailures"></th>
+						<th scope="col"><span class="sr-only" data-i18n="connections"></span></th>
+					</tr></thead>
+					<tbody id="stats-rules"></tbody>
+				</table>
+			</div>
 			<p id="stats-empty" class="hint" data-i18n="noRules" hidden></p>
 		</div>
 	</template>
 
 	<template id="stats-rule-template">
-		<article class="rule-card">
-			<header class="rule-card-heading">
-				<h3><a class="stats-rule"></a></h3>
-				<span class="rule-chip"><span class="status-dot" aria-hidden="true"></span><span class="chip-state"></span></span>
-				<p class="stats-mode"></p>
-			</header>
-			<ol class="chain" data-i18n-aria="path"></ol>
-		</article>
+		<tr>
+			<th scope="row"><div class="table-label"><button type="button" class="expand-toggle" aria-expanded="false" data-i18n-aria="expand"><span aria-hidden="true">&#9656;</span></button><a class="stats-rule"></a></div></th>
+			<td><span class="rule-chip"><span class="status-dot" aria-hidden="true"></span><span class="chip-state"></span></span></td>
+			<td class="stats-address address"></td>
+			<td class="number" data-stat="rate_up"></td><td class="number" data-stat="rate_down"></td>
+			<td class="number" data-stat="up"></td><td class="number" data-stat="down"></td>
+			<td class="number" data-stat="connections"></td><td class="number" data-stat="latency"></td>
+			<td class="number" data-stat="dial_failures"></td><td><a class="rule-connections"></a></td>
+		</tr>
+	</template>
+
+	<template id="rule-details-template">
+		<tr class="rule-details" hidden><td colspan="11"><ol class="chain" data-i18n-aria="path"></ol></td></tr>
+	</template>
+
+	<template id="hosts-template">
+		<div class="hosts-view">
+			<div id="hosts-table" class="stats-scroll" role="region" tabindex="0" aria-labelledby="page-heading" hidden>
+				<table class="stats-table hosts-table">
+					<colgroup><col class="host-name-col"><col class="host-uses-col"><col class="host-count-col"><col span="4" class="host-number-col"><col class="host-connections-col"><col class="host-latency-col"><col class="host-failures-col"></colgroup>
+					<thead><tr>
+						<th scope="col" data-i18n="host"></th><th scope="col" data-i18n="usedBy"></th><th scope="col" class="number" data-i18n="endpoints"></th>
+						<th scope="col" class="number" data-i18n-title="rateUp" data-i18n-aria="rateUp">&#8593; /s</th>
+						<th scope="col" class="number" data-i18n-title="rateDown" data-i18n-aria="rateDown">&#8595; /s</th>
+						<th scope="col" class="number" data-i18n-title="totalUp" data-i18n-aria="totalUp">&#8593; <span data-i18n="totalShort"></span></th>
+						<th scope="col" class="number" data-i18n-title="totalDown" data-i18n-aria="totalDown">&#8595; <span data-i18n="totalShort"></span></th>
+						<th scope="col" class="number"><span data-i18n="connections"></span><span class="table-sub" data-i18n="connectionsTotals"></span></th>
+						<th scope="col" class="number"><span data-i18n="latency"></span><span class="table-sub" data-i18n="latencyTotals"></span></th>
+						<th scope="col" class="number" data-i18n="dialFailures"></th>
+					</tr></thead>
+					<tbody id="host-rows"></tbody>
+				</table>
+			</div>
+			<p id="hosts-empty" class="hint" data-i18n="noHosts"></p>
+		</div>
+	</template>
+
+	<template id="host-row-template">
+		<tr>
+			<th scope="row"><div class="table-label"><button type="button" class="expand-toggle" aria-expanded="false" data-i18n-aria="expand"><span aria-hidden="true">&#9656;</span></button><span class="host-name address"></span></div></th>
+			<td><div class="host-chips"></div></td><td class="endpoint-count number"></td>
+			<td class="number" data-stat="rate_up"></td><td class="number" data-stat="rate_down"></td>
+			<td class="number" data-stat="up"></td><td class="number" data-stat="down"></td>
+			<td class="number" data-stat="connections"></td><td class="number" data-stat="latency"></td><td class="number" data-stat="dial_failures"></td>
+		</tr>
+	</template>
+
+	<template id="host-details-template">
+		<tr class="host-details" hidden><td colspan="10">
+			<table class="stats-table endpoint-table">
+				<colgroup><col class="endpoint-name-col"><col class="endpoint-uses-col"><col span="4" class="endpoint-number-col"><col class="endpoint-connections-col"><col class="endpoint-latency-col"><col class="endpoint-failures-col"></colgroup>
+				<thead><tr>
+					<th scope="col" data-i18n="endpoints"></th><th scope="col" data-i18n="usedBy"></th>
+					<th scope="col" class="number" data-i18n-title="rateUp" data-i18n-aria="rateUp">&#8593; /s</th>
+					<th scope="col" class="number" data-i18n-title="rateDown" data-i18n-aria="rateDown">&#8595; /s</th>
+					<th scope="col" class="number" data-i18n-title="totalUp" data-i18n-aria="totalUp">&#8593; <span data-i18n="totalShort"></span></th>
+					<th scope="col" class="number" data-i18n-title="totalDown" data-i18n-aria="totalDown">&#8595; <span data-i18n="totalShort"></span></th>
+					<th scope="col" class="number"><span data-i18n="connections"></span><span class="table-sub" data-i18n="connectionsTotals"></span></th>
+					<th scope="col" class="number"><span data-i18n="latency"></span><span class="table-sub" data-i18n="latencyTotals"></span></th>
+					<th scope="col" class="number" data-i18n="dialFailures"></th>
+				</tr></thead>
+				<tbody class="host-endpoints"></tbody>
+			</table>
+		</td></tr>
+	</template>
+
+	<template id="host-endpoint-template">
+		<tr>
+			<th scope="row" class="host-endpoint address"></th><td><div class="host-chips"></div></td>
+			<td class="number" data-stat="rate_up"></td><td class="number" data-stat="rate_down"></td>
+			<td class="number" data-stat="up"></td><td class="number" data-stat="down"></td>
+			<td class="number" data-stat="connections"></td><td class="number" data-stat="latency"></td><td class="number" data-stat="dial_failures"></td>
+		</tr>
 	</template>
 
 	<template id="stage-template">
