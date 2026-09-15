@@ -153,5 +153,5 @@ func (a *App) rebuildMenu() {
 		return
 	}
 	a.restoreSystemProxy()
-	runOnMain(func() { a.tray.SetMenu(a.buildMenu()) })
+	a.tray.SetMenu(a.buildMenu())
 }
