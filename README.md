@@ -114,6 +114,10 @@ no_proxy:
   from_env: [NO_PROXY, no_proxy]
 ```
 
+Saving from the Web UI or selecting `Reload Config` restarts only rules whose
+definition changed (or whose `no_proxy` lists changed, for proxy rules); other
+rules keep their listeners and connections.
+
 Every save validates the change, writes the file and reloads the rules; a rule
 whose port cannot be bound keeps retrying with backoff and the page and tray
 show its state. The same operations are available as a REST API under

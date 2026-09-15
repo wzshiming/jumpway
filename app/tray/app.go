@@ -30,6 +30,7 @@ type App struct {
 	web     http.Handler
 	metrics *metrics.Registry
 
+	root          context.Context
 	cancel        context.CancelFunc
 	metricsCancel context.CancelFunc
 	wg            sync.WaitGroup
@@ -43,9 +44,17 @@ type App struct {
 	webErr             error
 	lastErr            error
 	rules              []*ruleState
+	runtimes           map[string]*ruleRuntime
 	menuItems          *menuItems
 	systemProxyRule    string
 	systemProxyAddress string
+}
+
+type ruleRuntime struct {
+	fingerprint string
+	state       *ruleState
+	cancel      context.CancelFunc
+	done        chan struct{}
 }
 
 type ruleState struct {

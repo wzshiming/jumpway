@@ -2,6 +2,7 @@ package tray
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -43,15 +44,10 @@ func (a *App) reload() error {
 		return err
 	}
 	a.mu.Lock()
-	previousCancel := a.cancel
-	a.mu.Unlock()
-	if previousCancel != nil {
-		previousCancel()
+	if a.root == nil {
+		a.root, a.cancel = context.WithCancel(context.Background())
+		a.runtimes = make(map[string]*ruleRuntime)
 	}
-	a.wg.Wait()
-	ctx, cancel := context.WithCancel(context.Background())
-	a.mu.Lock()
-	a.cancel = cancel
 	a.lastErr = nil
 	a.mu.Unlock()
 
@@ -59,12 +55,41 @@ func (a *App) reload() error {
 	noProxy := conf.NoProxy.GetList(a.store.Dir())
 	matcher := hostmatcher.NewMatcher(noProxy)
 	enabled := make([]config.Rule, 0, len(conf.Rules))
-	rules := make([]*ruleState, 0, len(conf.Rules))
+	fingerprints := make(map[string]string, len(conf.Rules))
+	noProxyJSON, _ := json.Marshal(noProxy)
 	for _, rule := range conf.Rules {
 		if rule.Disabled {
 			continue
 		}
 		enabled = append(enabled, rule)
+		ruleJSON, _ := json.Marshal(rule)
+		fingerprint := string(ruleJSON)
+		if rule.Forward.IsProxy() {
+			fingerprint += string(noProxyJSON)
+		}
+		fingerprints[rule.Name] = fingerprint
+	}
+	var stopped []*ruleRuntime
+	for name, runtime := range a.runtimes {
+		a.mu.Lock()
+		running := runtime.state.running
+		a.mu.Unlock()
+		if fingerprint, ok := fingerprints[name]; ok && fingerprint == runtime.fingerprint && running {
+			continue
+		}
+		runtime.cancel()
+		stopped = append(stopped, runtime)
+		delete(a.runtimes, name)
+	}
+	for _, runtime := range stopped {
+		<-runtime.done
+	}
+	rules := make([]*ruleState, 0, len(enabled))
+	for _, rule := range enabled {
+		if runtime, ok := a.runtimes[rule.Name]; ok {
+			rules = append(rules, runtime.state)
+			continue
+		}
 		rules = append(rules, &ruleState{
 			name:          rule.Name,
 			listenAddress: rule.Listen.Address(),
@@ -82,9 +107,20 @@ func (a *App) reload() error {
 	defer timer.Stop()
 	firsts := make([]chan error, len(enabled))
 	for index, rule := range enabled {
+		if _, ok := a.runtimes[rule.Name]; ok {
+			continue
+		}
+		ctx, cancel := context.WithCancel(a.root)
 		rs := a.metrics.Rule(rule.Name)
 		target := rule.Forward.Target()
 		state := rules[index]
+		done := make(chan struct{})
+		a.runtimes[rule.Name] = &ruleRuntime{
+			fingerprint: fingerprints[rule.Name],
+			state:       state,
+			cancel:      cancel,
+			done:        done,
+		}
 		first := make(chan error, 1)
 		firsts[index] = first
 		var once sync.Once
@@ -119,6 +155,8 @@ func (a *App) reload() error {
 		listenConfig, err := jumpway.NewListenConfig(ctx, rule.Listen.Way, rs.HopWrapper(metrics.Listen))
 		if err != nil {
 			report(jumpway.Event{Err: err})
+			cancel()
+			close(done)
 			continue
 		}
 		dialer := jumpway.NewLogDialer(local.LOCAL, func(ctx context.Context, network, address string) {
@@ -127,6 +165,8 @@ func (a *App) reload() error {
 		dialer, err = jumpway.NewChainDialer(ctx, dialer, rule.Forward.Way, rs.HopWrapper(metrics.Forward))
 		if err != nil {
 			report(jumpway.Event{Err: err})
+			cancel()
+			close(done)
 			continue
 		}
 		if target == "" && len(rule.Forward.Way) > 0 {
@@ -151,6 +191,7 @@ func (a *App) reload() error {
 		a.wg.Add(1)
 		go func() {
 			defer a.wg.Done()
+			defer close(done)
 			jumpway.Serve(ctx, func(ctx context.Context) (net.Listener, error) {
 				return listenConfig.Listen(ctx, "tcp", rule.Listen.Address())
 			}, func(ctx context.Context, listener net.Listener) error {
@@ -166,6 +207,9 @@ func (a *App) reload() error {
 	var failures []error
 	timedOut := false
 	for index, first := range firsts {
+		if first == nil {
+			continue
+		}
 		var firstErr error
 		if !timedOut {
 			select {

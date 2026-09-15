@@ -115,8 +115,10 @@ func TestReloadAllRulesAndAuth(test *testing.T) {
 	if app.webListener != listener || app.Status().Address != status.Address {
 		test.Fatal("same configured Web UI address replaced the listener")
 	}
-	for _, rule := range status.Rules {
-		assertListenerClosed(test, rule.Address)
+	for index, rule := range app.Status().Rules {
+		if !rule.Running || rule.Address != status.Rules[index].Address {
+			test.Fatalf("unchanged rule listener replaced: before=%+v, after=%+v", status.Rules[index], rule)
+		}
 	}
 }
 
@@ -206,6 +208,189 @@ func TestReloadForwardRule(test *testing.T) {
 	}
 	if status.Rules[0].Target != target.Addr().String() {
 		test.Fatalf("forward target = %q, want %q", status.Rules[0].Target, target.Addr().String())
+	}
+}
+
+func TestReloadKeepsUnchangedRuleConnections(test *testing.T) {
+	target := startEchoServer(test)
+	conf := &config.Config{Rules: []config.Rule{
+		{
+			Name:    "a",
+			Listen:  config.Listen{Host: "127.0.0.1"},
+			Forward: config.Forward{Host: "127.0.0.1", Port: uint32(target.Addr().(*net.TCPAddr).Port)},
+		},
+		{Name: "b"},
+	}}
+	app := newTestApp(test, conf)
+	if err := app.Reload(); err != nil {
+		test.Fatal(err)
+	}
+	before := app.Status()
+	connection, err := net.DialTimeout("tcp", before.Rules[0].Address, time.Second)
+	if err != nil {
+		test.Fatal(err)
+	}
+	defer connection.Close()
+	reader := bufio.NewReader(connection)
+	assertTunnelEcho(test, connection, reader, "before reload\n")
+	if err := app.Reload(); err != nil {
+		test.Fatal(err)
+	}
+	assertTunnelEcho(test, connection, reader, "after identical reload\n")
+	if address := app.Status().Rules[0].Address; address != before.Rules[0].Address {
+		test.Fatalf("identical reload changed a's address: got %q, want %q", address, before.Rules[0].Address)
+	}
+	available := occupyPort(test)
+	conf.Rules[1].Listen.Port = uint32(available.Addr().(*net.TCPAddr).Port)
+	if err := available.Close(); err != nil {
+		test.Fatal(err)
+	}
+	if err := app.store.Save(conf); err != nil {
+		test.Fatal(err)
+	}
+	if err := app.Reload(); err != nil {
+		test.Fatal(err)
+	}
+	assertTunnelEcho(test, connection, reader, "after changing b\n")
+	after := app.Status()
+	if len(after.Rules) != 2 || after.Rules[0].Name != "a" || after.Rules[1].Name != "b" {
+		test.Fatalf("rule order after reload: %+v", after.Rules)
+	}
+	if !after.Rules[0].Running || after.Rules[0].Address != before.Rules[0].Address {
+		test.Fatalf("changing b replaced a's listener: before=%+v, after=%+v", before.Rules[0], after.Rules[0])
+	}
+	assertListenerClosed(test, before.Rules[1].Address)
+	if !after.Rules[1].Running || after.Rules[1].Address != available.Addr().String() {
+		test.Fatalf("changed rule listener: %+v", after.Rules[1])
+	}
+	proxy, err := net.DialTimeout("tcp", after.Rules[1].Address, time.Second)
+	if err != nil {
+		test.Fatal(err)
+	}
+	defer proxy.Close()
+	if snapshot := app.metrics.Snapshot(); len(snapshot.Rules[0].Connections) != 1 {
+		test.Fatalf("unchanged rule lost its live connection: %+v", snapshot.Rules[0])
+	}
+}
+
+func TestReloadRestartsChangedRule(test *testing.T) {
+	firstTarget, secondTarget := startEchoServer(test), startEchoServer(test)
+	available := occupyPort(test)
+	conf := &config.Config{Rules: []config.Rule{{
+		Name:    "a",
+		Listen:  config.Listen{Host: "127.0.0.1", Port: uint32(available.Addr().(*net.TCPAddr).Port)},
+		Forward: config.Forward{Host: "127.0.0.1", Port: uint32(firstTarget.Addr().(*net.TCPAddr).Port)},
+	}}}
+	if err := available.Close(); err != nil {
+		test.Fatal(err)
+	}
+	app := newTestApp(test, conf)
+	if err := app.Reload(); err != nil {
+		test.Fatal(err)
+	}
+	connection, err := net.DialTimeout("tcp", app.Status().Rules[0].Address, time.Second)
+	if err != nil {
+		test.Fatal(err)
+	}
+	defer connection.Close()
+	assertTunnelEcho(test, connection, connection, "first target\n")
+	conf.Rules[0].Forward.Port = uint32(secondTarget.Addr().(*net.TCPAddr).Port)
+	if err := app.store.Save(conf); err != nil {
+		test.Fatal(err)
+	}
+	if err := app.Reload(); err != nil {
+		test.Fatal(err)
+	}
+	assertTunnelClosed(test, connection)
+	status := app.Status()
+	if status.Rules[0].Target != secondTarget.Addr().String() || status.Rules[0].Address != available.Addr().String() {
+		test.Fatalf("changed forward target/listener: %+v", status.Rules[0])
+	}
+	replacement, err := net.DialTimeout("tcp", status.Rules[0].Address, time.Second)
+	if err != nil {
+		test.Fatal(err)
+	}
+	defer replacement.Close()
+	assertTunnelEcho(test, replacement, replacement, "second target\n")
+}
+
+func TestReloadNoProxyChangeRestartsProxyRulesOnly(test *testing.T) {
+	target := startMultiEchoServer(test)
+	conf := &config.Config{Rules: []config.Rule{
+		{
+			Name:    "a",
+			Listen:  config.Listen{Host: "127.0.0.1"},
+			Forward: config.Forward{Host: "127.0.0.1", Port: uint32(target.Addr().(*net.TCPAddr).Port)},
+		},
+		{Name: "p"},
+	}}
+	app := newTestApp(test, conf)
+	if err := app.Reload(); err != nil {
+		test.Fatal(err)
+	}
+	before := app.Status()
+	forward, err := net.DialTimeout("tcp", before.Rules[0].Address, time.Second)
+	if err != nil {
+		test.Fatal(err)
+	}
+	defer forward.Close()
+	assertTunnelEcho(test, forward, forward, "forward before no_proxy change\n")
+	proxy, err := net.DialTimeout("tcp", before.Rules[1].Address, time.Second)
+	if err != nil {
+		test.Fatal(err)
+	}
+	defer proxy.Close()
+	if err := proxy.SetDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		test.Fatal(err)
+	}
+	address := target.Addr().String()
+	if _, err := io.WriteString(proxy, "CONNECT "+address+" HTTP/1.1\r\nHost: "+address+"\r\n\r\n"); err != nil {
+		test.Fatal(err)
+	}
+	reader := bufio.NewReader(proxy)
+	response, err := http.ReadResponse(reader, &http.Request{Method: http.MethodConnect})
+	if err != nil {
+		test.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.Proto != "HTTP/1.1" || response.StatusCode != http.StatusOK {
+		test.Fatalf("CONNECT response = %s %s, want HTTP/1.1 200", response.Proto, response.Status)
+	}
+	assertTunnelEcho(test, proxy, reader, "proxy before no_proxy change\n")
+	conf.NoProxy.List = []string{"example.invalid"}
+	if err := app.store.Save(conf); err != nil {
+		test.Fatal(err)
+	}
+	if err := app.Reload(); err != nil {
+		test.Fatal(err)
+	}
+	assertTunnelClosed(test, proxy)
+	assertTunnelEcho(test, forward, forward, "forward after no_proxy change\n")
+	if address := app.Status().Rules[0].Address; address != before.Rules[0].Address {
+		test.Fatalf("no_proxy changed forward address: got %q, want %q", address, before.Rules[0].Address)
+	}
+}
+
+func TestReloadRestartsNotRunningRule(test *testing.T) {
+	occupied := occupyPort(test)
+	app := newTestApp(test, &config.Config{Rules: []config.Rule{
+		{Name: "occupied", Listen: config.Listen{Port: uint32(occupied.Addr().(*net.TCPAddr).Port)}},
+		{Name: "direct"},
+	}})
+	if err := app.Reload(); err == nil || !strings.Contains(err.Error(), `rule "occupied": `) {
+		test.Fatalf("initial reload error = %v", err)
+	}
+	if status := app.Status(); status.Rules[0].Running || !status.Rules[1].Running {
+		test.Fatalf("initial bind failure status: %+v", status)
+	}
+	if err := occupied.Close(); err != nil {
+		test.Fatal(err)
+	}
+	if err := app.Reload(); err != nil {
+		test.Fatal(err)
+	}
+	if status := app.Status(); !status.Rules[0].Running || status.Rules[0].Error != "" {
+		test.Fatalf("reload did not restart failed rule: %+v", status)
 	}
 }
 
@@ -934,6 +1119,56 @@ func startEchoServer(test *testing.T) net.Listener {
 		io.Copy(connection, connection)
 	}()
 	return listener
+}
+
+func startMultiEchoServer(test *testing.T) net.Listener {
+	test.Helper()
+	listener := occupyPort(test)
+	go func() {
+		for {
+			connection, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer connection.Close()
+				io.Copy(connection, connection)
+			}()
+		}
+	}()
+	return listener
+}
+
+func assertTunnelEcho(test *testing.T, connection net.Conn, reader io.Reader, payload string) {
+	test.Helper()
+	if err := connection.SetDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		test.Fatal(err)
+	}
+	if _, err := io.WriteString(connection, payload); err != nil {
+		test.Fatalf("write %q: %v", payload, err)
+	}
+	reply := make([]byte, len(payload))
+	if _, err := io.ReadFull(reader, reply); err != nil {
+		test.Fatalf("read %q: %v", payload, err)
+	}
+	if string(reply) != payload {
+		test.Fatalf("echo = %q, want %q", reply, payload)
+	}
+}
+
+func assertTunnelClosed(test *testing.T, connection net.Conn) {
+	test.Helper()
+	if err := connection.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		test.Fatal(err)
+	}
+	size, err := connection.Read(make([]byte, 1))
+	if size != 0 || err == nil {
+		test.Fatalf("Read after reload = (%d, %v), want EOF or reset", size, err)
+	}
+	var networkError net.Error
+	if errors.As(err, &networkError) && networkError.Timeout() {
+		test.Fatalf("reload did not close the tunnel: %v", err)
+	}
 }
 
 func assertListenerClosed(test *testing.T, address string) {
