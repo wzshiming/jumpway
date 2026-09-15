@@ -48,6 +48,45 @@
       newRule: "New rule",
       noRules: "No rules yet.",
       direct: "direct",
+      connectionsShort: "{active}/{total} conns",
+      latencyPair: "{last} (avg {average})",
+      failedCount: "{count} failed",
+      stats: "Statistics",
+      rateUp: "Upload rate",
+      rateDown: "Download rate",
+      totalUp: "Total upload",
+      totalDown: "Total download",
+      rateWindow: "Last 1 s",
+      statsLifetime: "Since last reset",
+      connections: "Connections",
+      activeConns: "Active connections",
+      totalConns: "Total connections",
+      connectionsOrder: "Active / total",
+      latency: "Latency",
+      avgLatency: "Average",
+      latencyOrder: "Last / avg",
+      dialFailures: "Dial failures",
+      dialAttempts: "dial attempts",
+      lastActive: "Last activity",
+      secondsAgo: "{count} s ago",
+      minutesAgo: "{count} min ago",
+      hoursAgo: "{count} h ago",
+      daysAgo: "{count} d ago",
+      via: "Via",
+      viaHop: "via {parent}",
+      saveStats: "Save to see live stats",
+      targets: "Targets",
+      target: "Target",
+      noTargets: "No connections yet",
+      showingTargets: "Showing {shown} of {total}",
+      targetsEvicted: "{count} targets evicted",
+      state: "State",
+      address: "Address",
+      statsSince: "Since {time}",
+      resetStats: "Reset statistics",
+      resetStatsConfirm: "Reset statistics for all rules?",
+      statsReset: "Statistics reset.",
+      prometheus: "Prometheus metrics",
       hop: "Hop {number}",
       hopExit: "exit node",
       hopBinds: "binds the port",
@@ -148,6 +187,45 @@
       newRule: "新建规则",
       noRules: "尚无规则。",
       direct: "直连",
+      connectionsShort: "连接 {active}/{total}",
+      latencyPair: "{last}（平均 {average}）",
+      failedCount: "失败 {count}",
+      stats: "统计",
+      rateUp: "上传速率",
+      rateDown: "下载速率",
+      totalUp: "累计上传",
+      totalDown: "累计下载",
+      rateWindow: "最近 1 秒",
+      statsLifetime: "自上次重置以来",
+      connections: "连接数",
+      activeConns: "当前连接",
+      totalConns: "总连接",
+      connectionsOrder: "当前 / 总连接",
+      latency: "延迟",
+      avgLatency: "平均",
+      latencyOrder: "最近 / 平均",
+      dialFailures: "连接失败",
+      dialAttempts: "次连接尝试",
+      lastActive: "最近活动",
+      secondsAgo: "{count} 秒前",
+      minutesAgo: "{count} 分钟前",
+      hoursAgo: "{count} 小时前",
+      daysAgo: "{count} 天前",
+      via: "上一级",
+      viaHop: "上一级：{parent}",
+      saveStats: "保存后查看实时统计",
+      targets: "目标",
+      target: "目标",
+      noTargets: "尚无连接",
+      showingTargets: "显示 {total} 个目标中的 {shown} 个",
+      targetsEvicted: "已移除 {count} 个历史目标",
+      state: "状态",
+      address: "地址",
+      statsSince: "统计起始：{time}",
+      resetStats: "重置统计",
+      resetStatsConfirm: "重置所有规则的统计吗？",
+      statsReset: "已重置统计。",
+      prometheus: "Prometheus 指标",
       hop: "跳板节点 {number}",
       hopExit: "出口节点",
       hopBinds: "绑定端口",
@@ -213,11 +291,11 @@
   const t = (key, values = {}) => STR[language][key].replace(/\{(\w+)\}/g, (_, name) => values[name]);
   document.documentElement.lang = language === "zh" ? "zh-CN" : "en";
 
-  async function api(route, { method = "GET", body } = {}) {
+  async function api(route, { method = "GET", body, base = "/apis/configs" } = {}) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
     try {
-      const response = await fetch("/apis/configs" + route, {
+      const response = await fetch(base + route, {
         method,
         headers: body === undefined ? { Accept: "application/json" }
           : { Accept: "application/json", "Content-Type": "application/json" },
@@ -238,6 +316,46 @@
   const list = value => Array.isArray(value) ? value : [];
   const text = value => String(value ?? "");
   const cleanLines = value => value.map(entry => text(entry).trim()).filter(Boolean);
+  const countFormatter = new Intl.NumberFormat(language, { maximumFractionDigits: 0 });
+  const formatCount = value => countFormatter.format(value || 0);
+
+  function formatBytes(value) {
+    const bytes = Math.max(0, Number(value) || 0);
+    const unit = Math.max(0, Math.min(4, Math.floor(Math.log2(bytes || 1) / 10)));
+    return (bytes / 1024 ** unit).toFixed(unit ? 1 : 0) + " " + ["B", "KB", "MB", "GB", "TB"][unit];
+  }
+
+  const formatRate = value => formatBytes(value) + "/s";
+
+  function formatLatency(stats = {}, key = "latency_ms") {
+    return (stats.dials || 0) <= (stats.dial_failures || 0)
+      ? "\u2014" : Number(stats[key] || 0).toFixed(1) + " ms";
+  }
+
+  function renderStats(element, stats) {
+    element.title = "";
+    if (!stats) {
+      element.textContent = "\u2014";
+      return;
+    }
+    const parts = ["\u2191 " + formatRate(stats.rate_up) + " \u2193 " + formatRate(stats.rate_down),
+      t("connectionsShort", { active: formatCount(stats.active), total: formatCount(stats.total) }),
+      t("latencyPair", { last: formatLatency(stats), average: formatLatency(stats, "avg_latency_ms") })];
+    if (stats.dial_failures) parts.push(t("failedCount", { count: formatCount(stats.dial_failures) }));
+    element.textContent = parts.join(" \u00b7 ");
+    element.title = t("totalUp") + ": " + formatBytes(stats.up) + " \u00b7 "
+      + t("totalDown") + ": " + formatBytes(stats.down) + " \u00b7 "
+      + formatCount(stats.dials) + " " + t("dialAttempts");
+  }
+
+  function formatLastActive(value) {
+    const timestamp = Date.parse(value);
+    if (!Number.isFinite(timestamp)) return "\u2014";
+    const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+    const [key, unit] = seconds < 60 ? ["secondsAgo", 1] : seconds < 3600 ? ["minutesAgo", 60]
+      : seconds < 86400 ? ["hoursAgo", 3600] : ["daysAgo", 86400];
+    return t(key, { count: formatCount(Math.floor(seconds / unit)) });
+  }
 
   function normalizeWay(way) {
     return list(way).map(node => ({
@@ -268,6 +386,9 @@
   let busy = false;
   let movedAddress = "";
   let statusRequest = null;
+  let statusSnapshot = null;
+  let statsRequest = null;
+  let statsTimer = null;
   let pendingWarning = null;
   let requestUnreachable = false;
   let builderLayouts = [];
@@ -278,6 +399,7 @@
   function setDirty(value) {
     dirty = value;
     ui.dirty.hidden = !value;
+    if (value) page?.updateStats?.();
   }
 
   function setBusy(value) {
@@ -287,7 +409,7 @@
     if (fields) fields.disabled = value || !page.loaded;
     const panel = find("#rule-panel");
     if (panel) panel.setAttribute("aria-busy", String(value));
-    all("#retry").forEach(button => { button.disabled = value; });
+    all("#retry, #reset-stats").forEach(button => { button.disabled = value; });
     all("a[href^='#/']").forEach(link => {
       if (value) link.setAttribute("aria-disabled", "true");
       else link.removeAttribute("aria-disabled");
@@ -296,7 +418,7 @@
 
   function routeFor(hash) {
     if (["#/web-ui", "#/no-proxy"].includes(hash)) hash = "#/settings";
-    const pages = { "#/": "rules", "#/rules": "rules", "#/settings": "settings", "#/yaml": "yaml" };
+    const pages = { "#/": "rules", "#/rules": "rules", "#/stats": "stats", "#/settings": "settings", "#/yaml": "yaml" };
     if (Object.prototype.hasOwnProperty.call(pages, hash)) return { hash, kind: pages[hash], name: null };
     const match = /^#\/rules\/([^/]+)$/.exec(hash);
     if (match) {
@@ -339,6 +461,7 @@
     const focusPage = Boolean(activeHash);
     activeHash = route.hash;
     page = { kind: route.kind, save: null, loaded: false };
+    startStats();
     setDirty(false);
     if (ui.builder.open) ui.builder.close();
     ui.main.replaceChildren(clone("page"));
@@ -351,7 +474,7 @@
       let listError;
       const entries = await api("/rules").then(list).catch(error => { listError = error; return []; });
       if (route.kind === "rules") {
-        route = { ...route, name: route.name ?? (newRule ? null : entries[0]?.name ?? null) };
+        route = { ...route, name: route.name ?? (newRule || route.hash === "#/rules" ? null : entries[0]?.name ?? null) };
         if (!listError) newRule = route.name === null;
       }
       renderNav(entries, route);
@@ -360,7 +483,7 @@
       document.title = title + " | " + t("appName");
       setBusy(true);
       if (listError && route.kind === "rules") throw listError;
-      const loaders = { rules: loadRules, settings: loadSettings, yaml: loadYAML };
+      const loaders = { rules: loadRules, stats: loadStats, settings: loadSettings, yaml: loadYAML };
       await loaders[route.kind](route, entries);
       page.loaded = true;
       if (listError) throw listError;
@@ -375,6 +498,7 @@
       find("#retry").hidden = false;
     } finally {
       setBusy(false);
+      startStats();
       if (focusPage) {
         const target = find("[aria-selected=true]", ui.nav);
         (target || find("#page-heading")).focus();
@@ -428,6 +552,20 @@
         idPrefix: "exit", roles: { first: "hopExit", last: "hopDialed" }, target: forwardTarget })
     };
     Object.values(editors).forEach(editor => editor.render());
+    if (originalName !== null) {
+      const strip = clone("rule-stats");
+      find("#rule-panel").before(strip);
+      find("#targets-slot").append(clone("targets"));
+      page.updateStats = () => Object.values(editors).forEach(editor => editor.applyStats());
+      page.renderStats = snapshot => {
+        const current = list(snapshot.rules).find(entry => entry.name === originalName);
+        renderStatFields(strip, current?.stats);
+        editors.listen.applyStats(list(current?.listen));
+        editors.forward.applyStats(list(current?.forward));
+        renderTargets(current);
+      };
+      page.renderStats({ rules: [] });
+    }
     const updateMode = () => {
       const forwarding = find("#mode-forward").checked;
       find("#target-fields").hidden = find("#target-fields").disabled = !forwarding;
@@ -487,6 +625,63 @@
     let host = find("#target-host").value.trim() || "127.0.0.1";
     if (host.includes(":") && !host.startsWith("[")) host = "[" + host + "]";
     return host + ":" + port;
+  }
+
+  async function loadStats(route, entries) {
+    const panel = clone("stats");
+    find("#page-content").append(panel);
+    const rows = new Map(entries.map(rule => {
+      const row = clone("stats-row");
+      const link = find(".stats-rule", row);
+      link.textContent = rule.name;
+      link.href = ruleRoute(rule.name);
+      find("#stats-rows", panel).append(row);
+      return [rule.name, row];
+    }));
+    find("#stats-empty", panel).hidden = Boolean(rows.size);
+    find("#stats-table", panel).hidden = !rows.size;
+    page.renderStats = snapshot => {
+      const timestamp = Date.parse(snapshot.since);
+      find("#stats-since", panel).textContent = t("statsSince", {
+        time: Number.isFinite(timestamp) ? new Date(timestamp).toLocaleString(language) : "\u2014"
+      });
+      const rules = new Map(list(snapshot.rules).map(rule => [rule.name, rule]));
+      rows.forEach((row, name) => {
+        const rule = rules.get(name);
+        renderStatFields(row, rule?.stats);
+        find(".stats-targets", row).textContent = formatCount(list(rule?.targets).length);
+      });
+    };
+    page.renderStatus = status => {
+      const rules = new Map(list(status?.rules).map(rule => [rule.name, rule]));
+      rows.forEach((row, name) => {
+        const rule = rules.get(name);
+        const state = rule ? rule.running ? "running" : rule.attempt > 0 ? "retrying" : "stopped" : "unknown";
+        const chip = find(".rule-chip", row);
+        chip.className = "rule-chip " + state;
+        chip.title = text(rule?.error);
+        find(".chip-state", chip).textContent = t(state === "unknown" ? "checking" : state, { attempt: rule?.attempt });
+        find(".stats-address", row).textContent = rule?.address || "\u2014";
+      });
+    };
+    page.renderStats({ rules: [] });
+    page.renderStatus(statusSnapshot);
+    refreshStatus().catch(() => {});
+    find("#reset-stats", panel).addEventListener("click", async () => {
+      if (busy || !confirm(t("resetStatsConfirm"))) return;
+      setBusy(true);
+      clearErrors();
+      try {
+        if (statsRequest) await statsRequest;
+        await api("", { method: "DELETE", base: "/apis/stats" });
+        activity("statsReset", true);
+      } catch (error) {
+        showError(error, true);
+      } finally {
+        setBusy(false);
+        await refreshStats();
+      }
+    });
   }
 
   async function loadSettings() {
@@ -679,6 +874,7 @@
   }
 
   function renderStatus(status) {
+    statusSnapshot = status;
     const kind = status.running === true ? "running" : status.running === false ? "stopped" : "unknown";
     ui.statusDot.className = "status-dot " + kind;
     ui.statusLabel.textContent = t(kind === "unknown" ? "checking" : kind);
@@ -704,6 +900,7 @@
       if (busy) chip.setAttribute("aria-disabled", "true");
       return chip;
     }));
+    page?.renderStatus?.(status);
     ui.unreachable.hidden = !requestUnreachable;
   }
 
@@ -714,6 +911,66 @@
       return status;
     }).finally(() => { statusRequest = null; });
     return statusRequest;
+  }
+
+  function renderStatFields(root, stats) {
+    const values = stats && {
+      rate_up: formatRate(stats.rate_up), rate_down: formatRate(stats.rate_down),
+      up: formatBytes(stats.up), down: formatBytes(stats.down),
+      connections: formatCount(stats.active) + " / " + formatCount(stats.total),
+      latency: formatLatency(stats) + " / " + formatLatency(stats, "avg_latency_ms"),
+      latency_ms: formatLatency(stats), avg_latency_ms: formatLatency(stats, "avg_latency_ms"),
+      dial_failures: formatCount(stats.dial_failures), dials: formatCount(stats.dials),
+      last_active: formatLastActive(stats.last_active),
+      last_active_time: Number.isFinite(Date.parse(stats.last_active))
+        ? new Date(stats.last_active).toLocaleString(language) : "\u2014"
+    };
+    all("[data-stat]", root).forEach(element => {
+      element.textContent = values?.[element.dataset.stat] ?? "\u2014";
+    });
+  }
+
+  function renderTargets(rule) {
+    const targets = list(rule?.targets);
+    find("#target-rows").replaceChildren(...targets.slice(0, 100).map(target => {
+      const row = clone("target-row");
+      find(".target-address", row).textContent = target.address;
+      find(".target-via", row).textContent = target.via || t("direct");
+      renderStatFields(row, target.stats);
+      return row;
+    }));
+    find("#targets-table").hidden = !targets.length;
+    find("#no-targets").hidden = Boolean(targets.length);
+    const notes = [];
+    if (targets.length > 100) notes.push(t("showingTargets", { shown: formatCount(100), total: formatCount(targets.length) }));
+    if (rule?.targets_evicted) notes.push(t("targetsEvicted", { count: formatCount(rule.targets_evicted) }));
+    find("#targets-note").textContent = notes.join(" \u00b7 ");
+    find("#targets-note").hidden = !notes.length;
+  }
+
+  function hasStatsView() {
+    return page?.loaded && page.renderStats && (page.kind === "stats" || page.kind === "rules" && !newRule);
+  }
+
+  function refreshStats() {
+    if (busy || !hasStatsView() || document.visibilityState !== "visible") return Promise.resolve();
+    if (statsRequest) return statsRequest;
+    const view = page;
+    statsRequest = api("", { base: "/apis/stats" }).then(snapshot => {
+      if (page === view && hasStatsView() && document.visibilityState === "visible") view.renderStats(snapshot);
+      return snapshot;
+    }).catch(() => {}).finally(() => { statsRequest = null; });
+    return statsRequest;
+  }
+
+  function startStats() {
+    clearInterval(statsTimer);
+    statsTimer = null;
+    if (!hasStatsView() || document.visibilityState !== "visible") return;
+    const view = page;
+    if (statsRequest) statsRequest.then(() => { if (page === view) refreshStats(); });
+    else refreshStats();
+    statsTimer = setInterval(refreshStats, 2000);
   }
 
   function chainSummary(way, target = "") {
@@ -739,6 +996,7 @@
     const hops = find(".hops", container);
     const add = find(".add-hop", container);
     const summary = find(".chain-summary", container);
+    let statsHops = null;
     add.id = idPrefix + "-add-hop";
 
     function readModel() {
@@ -764,6 +1022,25 @@
     function render() {
       hops.replaceChildren(...model.map(renderHop));
       updateSummary();
+      applyStats();
+    }
+
+    function applyStats(snapshot = statsHops) {
+      statsHops = snapshot;
+      const apply = (element, stats) => {
+        element.hidden = statsHops === null;
+        renderStats(element, dirty ? null : stats);
+        if (dirty) element.textContent = "\u2014 \u00b7 " + t("saveStats");
+      };
+      all(".hop", hops).forEach((hop, hopIndex) => {
+        const current = statsHops?.[hopIndex];
+        const aggregate = find(".hop-stats", hop);
+        apply(aggregate, current?.stats);
+        if (!dirty && current) aggregate.textContent += " \u00b7 " + t("viaHop", {
+          parent: current.parent_index === -1 ? t("chainLocal") : t("hop", { number: current.parent_index + 1 })
+        });
+        all(".url-stats", hop).forEach((element, urlIndex) => apply(element, current?.urls?.[urlIndex]?.stats));
+      });
     }
 
     function updateSummary() {
@@ -822,7 +1099,7 @@
       model.push({ lb: [""] });
       return "#" + idPrefix + "-url-" + (model.length - 1) + "-0";
     }));
-    return { render, read, updateSummary };
+    return { render, read, updateSummary, applyStats };
   }
 
   function updateBuilderPreview() {
@@ -940,6 +1217,7 @@
     });
     bindRuleTabs(ui.nav);
     window.addEventListener("hashchange", hashChanged);
+    document.addEventListener("visibilitychange", startStats);
     ["input", "change"].forEach(event => {
       ui.builderFields.addEventListener(event, updateBuilderPreview);
     });

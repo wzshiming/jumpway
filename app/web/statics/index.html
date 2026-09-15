@@ -28,6 +28,7 @@
 		<div id="rule-status" class="status-rules" aria-live="polite" data-i18n-aria="ruleTabs"></div>
 
 		<nav id="page-nav" class="page-nav" role="tablist" data-i18n-aria="ruleTabs">
+			<a href="#/stats" data-page="stats" data-i18n="stats" role="tab" aria-selected="false" aria-controls="page-panel" tabindex="-1"></a>
 			<a href="#/settings" data-page="settings" data-i18n="settings" role="tab" aria-selected="false" aria-controls="page-panel" tabindex="-1"></a>
 			<a href="#/yaml" data-page="yaml" data-i18n="yaml" role="tab" aria-selected="false" aria-controls="page-panel" tabindex="-1"></a>
 		</nav>
@@ -51,6 +52,7 @@
 			<nav data-i18n-aria="resources">
 				<a href="/swaggerui/" data-i18n="apiDocs"></a>
 				<a href="/debug/pprof/" data-i18n="pprof"></a>
+				<a href="/metrics" data-i18n="prometheus"></a>
 				<a href="https://github.com/wzshiming/jumpway" target="_blank" rel="noopener noreferrer" data-i18n="github"></a>
 			</nav>
 		</footer>
@@ -169,6 +171,7 @@
 								<button class="add-hop add-button" type="button" data-i18n="addHop"></button>
 							</div>
 						</section>
+						<div id="targets-slot"></div>
 						<div class="page-actions">
 							<button id="save" class="primary" type="submit" data-i18n="saveApply"></button>
 							<button id="delete-rule" class="danger" type="button" data-i18n="deleteRule"></button>
@@ -179,10 +182,120 @@
 		</div>
 	</template>
 
+	<template id="rule-stats-template">
+		<div id="rule-stats" class="stats-strip" role="group" data-i18n-aria="stats">
+			<div class="stat">
+				<span class="stat-label" data-i18n="rateUp"></span><strong class="stat-value" data-stat="rate_up"></strong>
+				<span class="stat-sub" data-i18n="rateWindow"></span>
+			</div>
+			<div class="stat">
+				<span class="stat-label" data-i18n="rateDown"></span><strong class="stat-value" data-stat="rate_down"></strong>
+				<span class="stat-sub" data-i18n="rateWindow"></span>
+			</div>
+			<div class="stat">
+				<span class="stat-label" data-i18n="totalUp"></span><strong class="stat-value" data-stat="up"></strong>
+				<span class="stat-sub" data-i18n="statsLifetime"></span>
+			</div>
+			<div class="stat">
+				<span class="stat-label" data-i18n="totalDown"></span><strong class="stat-value" data-stat="down"></strong>
+				<span class="stat-sub" data-i18n="statsLifetime"></span>
+			</div>
+			<div class="stat">
+				<span class="stat-label" data-i18n="connections"></span><strong class="stat-value" data-stat="connections"></strong>
+				<span class="stat-sub"><span data-i18n="activeConns"></span> / <span data-i18n="totalConns"></span></span>
+			</div>
+			<div class="stat">
+				<span class="stat-label" data-i18n="latency"></span><strong class="stat-value" data-stat="latency_ms"></strong>
+				<span class="stat-sub"><span data-i18n="avgLatency"></span> <span data-stat="avg_latency_ms"></span></span>
+			</div>
+			<div class="stat">
+				<span class="stat-label" data-i18n="dialFailures"></span><strong class="stat-value" data-stat="dial_failures"></strong>
+				<span class="stat-sub"><span data-stat="dials"></span> <span data-i18n="dialAttempts"></span></span>
+			</div>
+			<div class="stat">
+				<span class="stat-label" data-i18n="lastActive"></span><strong class="stat-value" data-stat="last_active"></strong>
+				<span class="stat-sub" data-stat="last_active_time"></span>
+			</div>
+		</div>
+	</template>
+
+	<template id="targets-template">
+		<section class="rule-section" aria-labelledby="targets-heading">
+			<h3 id="targets-heading" data-i18n="targets"></h3>
+			<div id="targets-table" class="stats-scroll" role="region" tabindex="0" aria-labelledby="targets-heading" hidden>
+				<table class="stats-table">
+					<thead><tr>
+						<th scope="col" data-i18n="target"></th><th scope="col" data-i18n="via"></th>
+						<th scope="col" class="number" data-i18n-title="rateUp" data-i18n-aria="rateUp">&#8593; /s</th>
+						<th scope="col" class="number" data-i18n-title="rateDown" data-i18n-aria="rateDown">&#8595; /s</th>
+						<th scope="col" class="number" data-i18n-title="totalUp" data-i18n-aria="totalUp">&#8593;</th>
+						<th scope="col" class="number" data-i18n-title="totalDown" data-i18n-aria="totalDown">&#8595;</th>
+						<th scope="col" class="number"><span data-i18n="connections"></span><span class="table-sub" data-i18n="connectionsOrder"></span></th>
+						<th scope="col" class="number"><span data-i18n="latency"></span><span class="table-sub" data-i18n="latencyOrder"></span></th>
+						<th scope="col" class="number" data-i18n="dialFailures"></th>
+					</tr></thead>
+					<tbody id="target-rows"></tbody>
+				</table>
+			</div>
+			<p id="no-targets" class="hint" data-i18n="noTargets"></p>
+			<p id="targets-note" class="hint" hidden></p>
+		</section>
+	</template>
+
+	<template id="target-row-template">
+		<tr>
+			<th scope="row" class="target-address address"></th><td class="target-via address"></td>
+			<td class="number" data-stat="rate_up"></td><td class="number" data-stat="rate_down"></td>
+			<td class="number" data-stat="up"></td><td class="number" data-stat="down"></td>
+			<td class="number" data-stat="connections"></td><td class="number" data-stat="latency"></td>
+			<td class="number" data-stat="dial_failures"></td>
+		</tr>
+	</template>
+
 	<template id="rule-tab-template">
 		<a role="tab" aria-selected="false" aria-controls="page-panel" tabindex="-1">
 			<span class="tab-name"></span>
 		</a>
+	</template>
+
+	<template id="stats-template">
+		<div class="stats-page">
+			<div class="stats-toolbar">
+				<p id="stats-since" class="hint"></p>
+				<div class="stats-actions">
+					<a href="/metrics" data-i18n="prometheus"></a>
+					<button id="reset-stats" type="button" data-i18n="resetStats"></button>
+				</div>
+			</div>
+			<div id="stats-table" class="stats-scroll" role="region" tabindex="0" aria-labelledby="page-heading">
+				<table class="stats-table">
+					<thead><tr>
+						<th scope="col" data-i18n="rule"></th><th scope="col" data-i18n="state"></th><th scope="col" data-i18n="address"></th>
+						<th scope="col" class="number" data-i18n-title="rateUp" data-i18n-aria="rateUp">&#8593; /s</th>
+						<th scope="col" class="number" data-i18n-title="rateDown" data-i18n-aria="rateDown">&#8595; /s</th>
+						<th scope="col" class="number" data-i18n-title="totalUp" data-i18n-aria="totalUp">&#8593;</th>
+						<th scope="col" class="number" data-i18n-title="totalDown" data-i18n-aria="totalDown">&#8595;</th>
+						<th scope="col" class="number"><span data-i18n="connections"></span><span class="table-sub" data-i18n="connectionsOrder"></span></th>
+						<th scope="col" class="number"><span data-i18n="latency"></span><span class="table-sub" data-i18n="latencyOrder"></span></th>
+						<th scope="col" class="number" data-i18n="dialFailures"></th><th scope="col" class="number" data-i18n="targets"></th>
+					</tr></thead>
+					<tbody id="stats-rows"></tbody>
+				</table>
+			</div>
+			<p id="stats-empty" class="hint" data-i18n="noRules" hidden></p>
+		</div>
+	</template>
+
+	<template id="stats-row-template">
+		<tr>
+			<th scope="row"><a class="stats-rule"></a></th>
+			<td><span class="rule-chip"><span class="status-dot" aria-hidden="true"></span><span class="chip-state"></span></span></td>
+			<td class="stats-address address"></td>
+			<td class="number" data-stat="rate_up"></td><td class="number" data-stat="rate_down"></td>
+			<td class="number" data-stat="up"></td><td class="number" data-stat="down"></td>
+			<td class="number" data-stat="connections"></td><td class="number" data-stat="latency"></td>
+			<td class="number" data-stat="dial_failures"></td><td class="number stats-targets"></td>
+		</tr>
 	</template>
 
 	<template id="new-tab-template">
@@ -262,6 +375,7 @@
 					<button class="hop-down" type="button" data-i18n="down"></button>
 					<button class="delete-hop danger" type="button" data-i18n="deleteHop"></button>
 				</div>
+				<p class="hop-stats" hidden></p>
 			</div>
 			<div class="url-rows"></div>
 			<button class="add-url add-button" type="button" data-i18n="addURL"></button>
@@ -280,6 +394,7 @@
 				</span>
 				<button class="remove-url danger" type="button" data-i18n="remove"></button>
 			</div>
+			<p class="url-stats" hidden></p>
 		</div>
 	</template>
 </body>
