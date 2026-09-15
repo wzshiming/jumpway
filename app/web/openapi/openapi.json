@@ -496,6 +496,33 @@
      }
     }
    }
+  },
+  "/stats/connections/{id}": {
+   "delete": {
+    "tags": [
+     "StatsService"
+    ],
+    "summary": "Disconnect closes one current connection",
+    "description": "Disconnect closes one current connection\n\n\n#route:\"DELETE /connections/{id}\"#",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/id_path"
+     }
+    ],
+    "responses": {
+     "400": {
+      "description": "Response code is 400",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string",
+         "format": "error"
+        }
+       }
+      }
+     }
+    }
+   }
   }
  },
  "components": {
@@ -562,6 +589,53 @@
        }
       ],
       "description": "Address is a local TCP listen address; an empty Host means 127.0.0.1.\n"
+     }
+    }
+   },
+   "Connection": {
+    "required": [
+     "id",
+     "target",
+     "via",
+     "started",
+     "up",
+     "down",
+     "rate_up",
+     "rate_down"
+    ],
+    "type": "object",
+    "properties": {
+     "client": {
+      "type": "string"
+     },
+     "down": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "id": {
+      "type": "integer",
+      "format": "uint64"
+     },
+     "rate_down": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "rate_up": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "started": {
+      "type": "string"
+     },
+     "target": {
+      "type": "string"
+     },
+     "up": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "via": {
+      "type": "string"
      }
     }
    },
@@ -800,10 +874,17 @@
      "listen",
      "forward",
      "targets",
+     "connections",
      "targets_evicted"
     ],
     "type": "object",
     "properties": {
+     "connections": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Connection"
+      }
+     },
      "forward": {
       "type": "array",
       "items": {
@@ -1128,6 +1209,16 @@
    }
   },
   "parameters": {
+   "id_path": {
+    "name": "id",
+    "in": "path",
+    "description": "\n\n#name:\"id\"#",
+    "required": true,
+    "explode": false,
+    "schema": {
+     "type": "string"
+    }
+   },
    "name_path": {
     "name": "name",
     "in": "path",

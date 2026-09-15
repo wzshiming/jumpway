@@ -1,11 +1,16 @@
 package stats
 
-import "github.com/wzshiming/jumpway/metrics"
+import (
+	"strconv"
 
-// Source is the running registry the service reads and resets.
+	"github.com/wzshiming/jumpway/metrics"
+)
+
+// Source is the running registry the service reads and manages.
 type Source interface {
 	Snapshot() metrics.Snapshot
 	Reset()
+	Disconnect(id uint64) error
 }
 
 // StatsService exposes traffic statistics of the running rules
@@ -31,4 +36,14 @@ func (s *StatsService) Get() (snapshot *metrics.Snapshot, err error) {
 func (s *StatsService) Reset() (err error) {
 	s.source.Reset()
 	return nil
+}
+
+// Disconnect closes one current connection
+// #route:"DELETE /connections/{id}"#
+func (s *StatsService) Disconnect(id string /* #name:"id"# */) (err error) {
+	parsed, err := strconv.ParseUint(id, 10, 64)
+	if err != nil {
+		return err
+	}
+	return s.source.Disconnect(parsed)
 }

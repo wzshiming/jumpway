@@ -10,8 +10,10 @@ import (
 type conn struct {
 	net.Conn
 	count      *counter
+	extra      *counter
 	accepted   bool
 	generation uint64
+	onClose    func()
 	once       sync.Once
 	err        error
 }
@@ -25,8 +27,14 @@ func (c *conn) Read(buffer []byte) (int, error) {
 	if size > 0 {
 		if c.accepted {
 			c.count.up.Add(int64(size))
+			if c.extra != nil {
+				c.extra.up.Add(int64(size))
+			}
 		} else {
 			c.count.down.Add(int64(size))
+			if c.extra != nil {
+				c.extra.down.Add(int64(size))
+			}
 		}
 		c.count.touch(time.Now().UnixNano())
 	}
@@ -38,8 +46,14 @@ func (c *conn) Write(buffer []byte) (int, error) {
 	if size > 0 {
 		if c.accepted {
 			c.count.down.Add(int64(size))
+			if c.extra != nil {
+				c.extra.down.Add(int64(size))
+			}
 		} else {
 			c.count.up.Add(int64(size))
+			if c.extra != nil {
+				c.extra.up.Add(int64(size))
+			}
 		}
 		c.count.touch(time.Now().UnixNano())
 	}
@@ -50,6 +64,9 @@ func (c *conn) Close() error {
 	c.once.Do(func() {
 		c.err = c.Conn.Close()
 		c.count.close(c.generation)
+		if c.onClose != nil {
+			c.onClose()
+		}
 	})
 	return c.err
 }

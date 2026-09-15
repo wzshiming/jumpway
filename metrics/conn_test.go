@@ -190,3 +190,18 @@ func setDeadlines(t *testing.T, connections ...net.Conn) {
 		}
 	}
 }
+
+func transferBytes(t *testing.T, writer, reader net.Conn, size int) {
+	t.Helper()
+	done := make(chan error, 1)
+	go func() {
+		_, err := writer.Write(make([]byte, size))
+		done <- err
+	}()
+	if _, err := io.ReadFull(reader, make([]byte, size)); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}

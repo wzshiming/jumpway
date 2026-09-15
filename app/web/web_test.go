@@ -49,8 +49,10 @@ func (fake *fakeRuntime) Status() configs.Status {
 }
 
 type fakeSource struct {
-	snapshot metrics.Snapshot
-	resets   int
+	snapshot      metrics.Snapshot
+	resets        int
+	disconnected  []uint64
+	disconnectErr error
 }
 
 func (fake *fakeSource) Snapshot() metrics.Snapshot {
@@ -59,6 +61,11 @@ func (fake *fakeSource) Snapshot() metrics.Snapshot {
 
 func (fake *fakeSource) Reset() {
 	fake.resets++
+}
+
+func (fake *fakeSource) Disconnect(id uint64) error {
+	fake.disconnected = append(fake.disconnected, id)
+	return fake.disconnectErr
 }
 
 func setupConfigAPI(t *testing.T) (http.Handler, *fakeRuntime, *config.Store, *fakeSource) {
@@ -137,6 +144,10 @@ func TestStatsGet(t *testing.T) {
 				URLs:        []metrics.URLStats{{URL: "ssh://u:xxxxx@h:22"}},
 			}},
 			Targets: []metrics.Target{{Address: "example.com:443", Via: "ssh://u:xxxxx@h:22"}},
+			Connections: []metrics.Connection{{
+				ID: 42, Client: "127.0.0.1:12345", Target: "example.com:443", Via: "ssh://u:xxxxx@h:22",
+				Started: "2026-09-15T12:00:01.123Z", Up: 3, Down: 5, RateUp: 1, RateDown: 2,
+			}},
 		}},
 	}
 	response := requestAPI(t, handler, http.MethodGet, "/apis/stats", "", http.StatusOK)
@@ -195,6 +206,17 @@ func TestStatsGet(t *testing.T) {
 	if !ok || target["address"] != "example.com:443" || target["via"] != "ssh://u:xxxxx@h:22" {
 		t.Fatalf("target = %#v, want example.com:443 via the redacted SSH URL", targets[0])
 	}
+	connections, ok := rule["connections"].([]any)
+	if !ok || len(connections) != 1 {
+		t.Fatalf("connections = %#v, want one connection", rule["connections"])
+	}
+	want := map[string]any{
+		"id": float64(42), "client": "127.0.0.1:12345", "target": "example.com:443", "via": "ssh://u:xxxxx@h:22",
+		"started": "2026-09-15T12:00:01.123Z", "up": float64(3), "down": float64(5), "rate_up": float64(1), "rate_down": float64(2),
+	}
+	if !reflect.DeepEqual(connections[0], want) {
+		t.Fatalf("connection = %#v, want %#v", connections[0], want)
+	}
 }
 
 func TestStatsReset(t *testing.T) {
@@ -207,6 +229,45 @@ func TestStatsReset(t *testing.T) {
 		if fake.resets != want {
 			t.Fatalf("resets = %d, want %d", fake.resets, want)
 		}
+	}
+}
+
+func TestStatsDisconnect(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		path   string
+		id     uint64
+		err    error
+		status int
+	}{
+		{name: "success", path: "42", id: 42, status: http.StatusOK},
+		{name: "max uint64", path: "18446744073709551615", id: ^uint64(0), status: http.StatusOK},
+		{name: "source error", path: "42", id: 42, err: errors.New("connection 42 not found"), status: http.StatusBadRequest},
+		{name: "invalid", path: "invalid", status: http.StatusBadRequest},
+		{name: "negative", path: "-1", status: http.StatusBadRequest},
+		{name: "overflow", path: "18446744073709551616", status: http.StatusBadRequest},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			handler, _, _, fake := setupConfigAPI(t)
+			fake.disconnectErr = test.err
+			response := requestAPI(t, handler, http.MethodDelete, "/apis/stats/connections/"+test.path, "", test.status)
+			if test.id != 0 {
+				if !slices.Equal(fake.disconnected, []uint64{test.id}) {
+					t.Fatalf("disconnected = %v, want [%d]", fake.disconnected, test.id)
+				}
+			} else if len(fake.disconnected) != 0 {
+				t.Fatalf("invalid ID reached source: %v", fake.disconnected)
+			}
+			if test.err != nil && !strings.Contains(response.Body.String(), test.err.Error()) {
+				t.Fatalf("body = %q, want %q", response.Body.String(), test.err.Error())
+			}
+			if test.status == http.StatusOK && strings.TrimSpace(response.Body.String()) != "null" {
+				t.Fatalf("body = %q, want null", response.Body.String())
+			}
+			if fake.resets != 0 {
+				t.Fatal("disconnect reset statistics")
+			}
+		})
 	}
 }
 

@@ -182,6 +182,13 @@ func RouteStatsService(router *mux.Router, _statsService *githubComWzshimingJump
 	})
 	_routeStats.Methods("DELETE").Path("").Handler(__operationDeleteStats)
 
+	// Registered routing DELETE /stats/connections/{id}
+	var __operationDeleteStatsConnectionsID http.Handler
+	__operationDeleteStatsConnectionsID = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_operationDeleteStatsConnectionsID(_statsService, w, r)
+	})
+	_routeStats.Methods("DELETE").Path("/connections/{id}").Handler(__operationDeleteStatsConnectionsID)
+
 	if router.NotFoundHandler == nil {
 		router.NotFoundHandler = http.HandlerFunc(notFoundHandler)
 	}
@@ -225,6 +232,20 @@ func _requestBodyConf(w http.ResponseWriter, r *http.Request) (_conf *githubComW
 	}
 
 	err = json.Unmarshal(__conf, &_conf)
+	if err != nil {
+		http.Error(w, err.Error(), 400)
+
+		return
+	}
+
+	return
+}
+
+// _requestPathID Parsing the path for of id
+func _requestPathID(w http.ResponseWriter, r *http.Request) (_id string, err error) {
+
+	var _rawID = mux.Vars(r)["id"]
+	_id = string(_rawID)
 	if err != nil {
 		http.Error(w, err.Error(), 400)
 
@@ -929,6 +950,35 @@ func _operationGetStats(s *githubComWzshimingJumpwayAppWebServicesStats.StatsSer
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(200)
 	w.Write(__snapshot)
+
+	return
+}
+
+// _operationDeleteStatsConnectionsID Is the route of Disconnect
+func _operationDeleteStatsConnectionsID(s *githubComWzshimingJumpwayAppWebServicesStats.StatsService, w http.ResponseWriter, r *http.Request) {
+	// requests github.com/wzshiming/jumpway/app/web/services/stats StatsService.Disconnect.id
+	var _id string
+	// responses github.com/wzshiming/jumpway/app/web/services/stats StatsService.Disconnect.err
+	var _err_1 error
+
+	// Parsing id.
+	_id, _err_1 = _requestPathID(w, r)
+	if _err_1 != nil {
+		return
+	}
+
+	// Call github.com/wzshiming/jumpway/app/web/services/stats StatsService.Disconnect.
+	_err_1 = s.Disconnect(_id)
+
+	// Response code 400 Bad Request for err.
+	if _err_1 != nil {
+		http.Error(w, _err_1.Error(), 400)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(200)
+	w.Write([]byte("null"))
 
 	return
 }

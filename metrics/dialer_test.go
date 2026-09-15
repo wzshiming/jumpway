@@ -6,8 +6,10 @@ import (
 	"io"
 	"net"
 	"testing"
+	"time"
 
 	"github.com/wzshiming/bridge"
+	"github.com/wzshiming/jumpway"
 	"github.com/wzshiming/jumpway/config"
 )
 
@@ -173,6 +175,8 @@ func TestRuleDialerTargets(t *testing.T) {
 			closeOnCleanup(t, peer)
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
+			client := &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12345}
+			ctx = jumpway.WithClientAddr(ctx, client)
 			var base bridge.Dialer = bridge.DialFunc(func(callCtx context.Context, network, address string) (net.Conn, error) {
 				if callCtx.Done() != ctx.Done() || network != "tcp" || address != "example.com:443" {
 					t.Fatal("outer dialer did not preserve context and arguments")
@@ -188,7 +192,9 @@ func TestRuleDialerTargets(t *testing.T) {
 				base = wrap(0, test.url, base)
 			}
 			wrapped := rule.WrapDialer(base)
+			before := time.Now()
 			connected, err := wrapped.DialContext(ctx, "tcp", "example.com:443")
+			after := time.Now()
 			if !errors.Is(err, test.err) {
 				t.Fatalf("DialContext = %v, want %v", err, test.err)
 			}
@@ -222,15 +228,32 @@ func TestRuleDialerTargets(t *testing.T) {
 				if snapshot.Stats.DialFailures != 1 || target.DialFailures != 1 || target.Total != 0 || target.LatencyMs != 0 {
 					t.Fatalf("failed target = %+v", target)
 				}
+				if snapshot.Connections == nil || len(snapshot.Connections) != 0 {
+					t.Fatalf("failed dial connections = %+v, want empty list", snapshot.Connections)
+				}
 			} else {
 				if target.Total != 1 || target.Active != 1 || target.Up != 3 || target.LatencyMs <= 0 || target.AvgLatencyMs != target.LatencyMs {
 					t.Fatalf("successful target = %+v", target)
+				}
+				if len(snapshot.Connections) != 1 {
+					t.Fatalf("connections = %+v, want one live connection", snapshot.Connections)
+				}
+				connection := snapshot.Connections[0]
+				if connection.ID != 1 || connection.Client != client.String() || connection.Target != "example.com:443" || connection.Via != test.via {
+					t.Fatalf("connection = %+v, want client %q and via %q", connection, client.String(), test.via)
+				}
+				started, err := time.Parse(time.RFC3339Nano, connection.Started)
+				if err != nil || started.Before(before) || started.After(after) || connection.Started != started.UTC().Format(time.RFC3339Nano) {
+					t.Fatalf("connection started = %q, want UTC dial time between %v and %v", connection.Started, before, after)
 				}
 				if err := connected.Close(); err != nil {
 					t.Fatal(err)
 				}
 				if registry.Snapshot().Rules[0].Targets[0].Stats.Active != 0 {
 					t.Fatal("target remained active after close")
+				}
+				if connections := registry.Snapshot().Rules[0].Connections; connections == nil || len(connections) != 0 {
+					t.Fatalf("connections after close = %+v, want empty list", connections)
 				}
 			}
 			registry.Sync([]config.Rule{{Name: "rule"}})
@@ -317,4 +340,61 @@ func TestTargetViaSeparatesSameAddress(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestLiveConnectionTraffic(t *testing.T) {
+	registry := NewRegistry()
+	registry.Sync([]config.Rule{{Name: "rule"}})
+	rule := registry.Rule("rule")
+	first, firstPeer := dialRulePipe(t, rule, "example.com:443")
+	second, secondPeer := dialRulePipe(t, rule, "example.com:443")
+	start := time.Now()
+	registry.tick(start)
+	transferBytes(t, first, firstPeer, 3)
+	transferBytes(t, firstPeer, first, 5)
+	transferBytes(t, second, secondPeer, 7)
+	transferBytes(t, secondPeer, second, 11)
+	registry.tick(start.Add(time.Second))
+	snapshot := registry.Snapshot().Rules[0]
+	if len(snapshot.Connections) != 2 {
+		t.Fatalf("connections = %+v, want two connections", snapshot.Connections)
+	}
+	for index, want := range []struct{ up, down int64 }{{3, 5}, {7, 11}} {
+		connection := snapshot.Connections[index]
+		if connection.Up != want.up || connection.Down != want.down || connection.RateUp != want.up || connection.RateDown != want.down {
+			t.Fatalf("connection %d = %+v, want up/rate_up %d and down/rate_down %d", index, connection, want.up, want.down)
+		}
+		if connection.Client != "" {
+			t.Fatalf("client = %q, want absent address", connection.Client)
+		}
+	}
+	if len(snapshot.Targets) != 1 {
+		t.Fatalf("targets = %+v, want one aggregate", snapshot.Targets)
+	}
+	if stats := snapshot.Targets[0].Stats; stats.Up != 10 || stats.Down != 16 || stats.RateUp != 10 || stats.RateDown != 16 || stats.Active != 2 || stats.Total != 2 {
+		t.Fatalf("target stats = %+v, want the sum of both connections", stats)
+	}
+	registry.tick(start.Add(2 * time.Second))
+	for _, connection := range registry.Snapshot().Rules[0].Connections {
+		if connection.RateUp != 0 || connection.RateDown != 0 {
+			t.Fatalf("idle connection rates = %+v, want zero", connection)
+		}
+	}
+}
+
+func dialRulePipe(t *testing.T, rule *Rule, address string) (net.Conn, net.Conn) {
+	t.Helper()
+	inner, peer := net.Pipe()
+	closeOnCleanup(t, inner)
+	closeOnCleanup(t, peer)
+	wrapped := rule.WrapDialer(bridge.DialFunc(func(context.Context, string, string) (net.Conn, error) {
+		return inner, nil
+	}))
+	connected, err := wrapped.DialContext(context.Background(), "tcp", address)
+	if err != nil {
+		t.Fatal(err)
+	}
+	closeOnCleanup(t, connected)
+	setDeadlines(t, connected, peer)
+	return connected, peer
 }

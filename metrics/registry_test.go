@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 
@@ -192,5 +194,215 @@ func TestTargetCap(t *testing.T) {
 	}
 	if _, exists := rule.targets[targetKey{address: "active:443"}]; exists || rule.targetsEvicted != 4 {
 		t.Fatal("oldest target was not evicted when every entry was active")
+	}
+}
+
+func TestRegistryDisconnect(t *testing.T) {
+	registry := NewRegistry()
+	registry.Sync([]config.Rule{{Name: "rule"}})
+	connected, peer := dialRulePipe(t, registry.Rule("rule"), "example.com:443")
+	id := registry.Snapshot().Rules[0].Connections[0].ID
+	done := make(chan error, 1)
+	go func() { done <- registry.Disconnect(id) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Disconnect blocked while closing the connection")
+	}
+	if size, err := peer.Read(make([]byte, 1)); size != 0 || err != io.EOF {
+		t.Fatalf("peer Read = (%d, %v), want EOF", size, err)
+	}
+	if err := connected.Close(); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := registry.Snapshot().Rules[0]
+	if len(snapshot.Connections) != 0 || snapshot.Targets[0].Stats.Active != 0 || snapshot.Targets[0].Stats.Total != 1 {
+		t.Fatalf("after Disconnect = %+v", snapshot)
+	}
+	for _, unknown := range []uint64{0, id, 42} {
+		if err := registry.Disconnect(unknown); err == nil || err.Error() != fmt.Sprintf("connection %d not found", unknown) {
+			t.Fatalf("Disconnect(%d) = %v, want not found", unknown, err)
+		}
+	}
+}
+
+func TestRegistryResetKeepsConnections(t *testing.T) {
+	registry := NewRegistry()
+	registry.Sync([]config.Rule{{Name: "rule"}})
+	rule := registry.Rule("rule")
+	connected, peer := dialRulePipe(t, rule, "example.com:443")
+	start := time.Now()
+	registry.tick(start)
+	transferBytes(t, connected, peer, 3)
+	transferBytes(t, peer, connected, 5)
+	registry.tick(start.Add(time.Second))
+	before := registry.Snapshot().Rules[0].Connections
+	registry.Reset()
+	snapshot := registry.Snapshot().Rules[0]
+	if !reflect.DeepEqual(snapshot.Connections, before) {
+		t.Fatalf("reset connections = %+v, want %+v", snapshot.Connections, before)
+	}
+	if len(snapshot.Targets) != 0 || snapshot.Stats != (Stats{}) {
+		t.Fatalf("reset aggregates = %+v, want empty counters", snapshot)
+	}
+	transferBytes(t, connected, peer, 7)
+	transferBytes(t, peer, connected, 11)
+	registry.tick(start.Add(2 * time.Second))
+	connection := registry.Snapshot().Rules[0].Connections[0]
+	if connection.Up != 10 || connection.Down != 16 || connection.RateUp != 7 || connection.RateDown != 11 {
+		t.Fatalf("post-reset traffic = %+v, want lifetime bytes and latest rates", connection)
+	}
+	dialRulePipe(t, rule, "example.com:443")
+	snapshot = registry.Snapshot().Rules[0]
+	if len(snapshot.Connections) != 2 || snapshot.Connections[1].ID <= before[0].ID {
+		t.Fatalf("post-reset IDs = %+v, want increasing IDs", snapshot.Connections)
+	}
+	if err := registry.Disconnect(before[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	snapshot = registry.Snapshot().Rules[0]
+	if len(snapshot.Connections) != 1 || snapshot.Targets[0].Stats.Active != 1 || snapshot.Targets[0].Stats.Total != 1 {
+		t.Fatalf("old connection close changed new target = %+v", snapshot)
+	}
+}
+
+func TestRegistrySyncDropsConnections(t *testing.T) {
+	registry := NewRegistry()
+	registry.Sync([]config.Rule{{Name: "removed"}, {Name: "kept"}})
+	removed, peer := dialRulePipe(t, registry.Rule("removed"), "example.com:443")
+	dialRulePipe(t, registry.Rule("kept"), "example.com:443")
+	before := registry.Snapshot()
+	id := before.Rules[0].Connections[0].ID
+	registry.Sync([]config.Rule{{Name: "kept"}})
+	snapshot := registry.Snapshot()
+	if len(snapshot.Rules) != 1 || !reflect.DeepEqual(snapshot.Rules[0].Connections, before.Rules[1].Connections) {
+		t.Fatalf("reload connections = %+v, want only retained rule", snapshot.Rules)
+	}
+	if err := registry.Disconnect(id); err == nil || err.Error() != fmt.Sprintf("connection %d not found", id) {
+		t.Fatalf("removed rule Disconnect = %v, want not found", err)
+	}
+	transferBytes(t, removed, peer, 3)
+	transferBytes(t, peer, removed, 5)
+	registry.Sync([]config.Rule{{Name: "removed"}, {Name: "kept"}})
+	dialRulePipe(t, registry.Rule("removed"), "example.com:443")
+	snapshot = registry.Snapshot()
+	if len(snapshot.Rules[0].Connections) != 1 || snapshot.Rules[0].Connections[0].ID <= before.Rules[1].Connections[0].ID {
+		t.Fatalf("re-added rule connections = %+v, want a new ID", snapshot.Rules[0].Connections)
+	}
+	if err := removed.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if len(registry.Snapshot().Rules[0].Connections) != 1 {
+		t.Fatal("closing a removed connection deleted the new rule's connection")
+	}
+}
+
+func TestRegistrySyncDuringDial(t *testing.T) {
+	registry := NewRegistry()
+	registry.Sync([]config.Rule{{Name: "rule"}})
+	rule := registry.Rule("rule")
+	inner, peer := net.Pipe()
+	closeOnCleanup(t, inner)
+	closeOnCleanup(t, peer)
+	started := make(chan struct{})
+	resume := make(chan struct{})
+	var release sync.Once
+	t.Cleanup(func() { release.Do(func() { close(resume) }) })
+	dialer := rule.WrapDialer(bridge.DialFunc(func(context.Context, string, string) (net.Conn, error) {
+		close(started)
+		<-resume
+		return inner, nil
+	}))
+	done := make(chan net.Conn, 1)
+	go func() {
+		connected, err := dialer.DialContext(context.Background(), "tcp", "example.com:443")
+		if err != nil {
+			t.Error(err)
+		}
+		done <- connected
+	}()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("dial did not start")
+	}
+	registry.Sync(nil)
+	registry.Sync([]config.Rule{{Name: "rule"}})
+	release.Do(func() { close(resume) })
+	var connected net.Conn
+	select {
+	case connected = <-done:
+	case <-time.After(time.Second):
+		t.Fatal("dial did not finish")
+	}
+	if connected == nil {
+		t.Fatal("dial returned no connection")
+	}
+	closeOnCleanup(t, connected)
+	setDeadlines(t, connected, peer)
+	transferBytes(t, connected, peer, 3)
+	registry.mu.RLock()
+	count := len(registry.live)
+	registry.mu.RUnlock()
+	if count != 0 || len(registry.Snapshot().Rules[0].Connections) != 0 {
+		t.Fatal("completed dial re-registered a removed rule")
+	}
+}
+
+func TestRegistryConcurrentConnections(t *testing.T) {
+	registry := NewRegistry()
+	registry.Sync([]config.Rule{{Name: "rule"}})
+	dialer := registry.Rule("rule").WrapDialer(bridge.DialFunc(func(context.Context, string, string) (net.Conn, error) {
+		inner, peer := net.Pipe()
+		peer.Close()
+		return inner, nil
+	}))
+	start := make(chan struct{})
+	var workers sync.WaitGroup
+	for range 8 {
+		workers.Go(func() {
+			<-start
+			for range 50 {
+				connected, err := dialer.DialContext(context.Background(), "tcp", "example.com:443")
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				for _, connection := range registry.Snapshot().Rules[0].Connections {
+					if err := registry.Disconnect(connection.ID); err != nil && err.Error() != fmt.Sprintf("connection %d not found", connection.ID) {
+						t.Error(err)
+					}
+				}
+				if err := connected.Close(); err != nil {
+					t.Error(err)
+				}
+			}
+		})
+	}
+	workers.Go(func() {
+		<-start
+		for range 100 {
+			registry.tick(time.Now())
+			registry.Snapshot()
+			registry.Reset()
+			registry.Sync([]config.Rule{{Name: "rule"}})
+		}
+	})
+	close(start)
+	done := make(chan struct{})
+	go func() {
+		workers.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("concurrent connection operations did not finish")
+	}
+	if connections := registry.Snapshot().Rules[0].Connections; len(connections) != 0 {
+		t.Fatalf("connections leaked after concurrent closes: %+v", connections)
 	}
 }

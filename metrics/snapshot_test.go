@@ -54,14 +54,14 @@ func TestSnapshotJSON(t *testing.T) {
 	}
 	rules := snapshot["rules"].([]interface{})
 	plain := rules[0].(map[string]interface{})
-	for _, key := range []string{"listen", "forward", "targets"} {
+	for _, key := range []string{"listen", "forward", "targets", "connections"} {
 		values, ok := plain[key].([]interface{})
 		if !ok || len(values) != 0 {
 			t.Fatalf("empty %s = %#v, want []", key, plain[key])
 		}
 	}
 	full := rules[1].(map[string]interface{})
-	assertKeys(t, full, "name", "stats", "listen", "forward", "targets", "targets_evicted")
+	assertKeys(t, full, "name", "stats", "listen", "forward", "targets", "connections", "targets_evicted")
 	hop := full["forward"].([]interface{})[0].(map[string]interface{})
 	assertKeys(t, hop, "index", "parent_index", "stats", "urls")
 	url := hop["urls"].([]interface{})[0].(map[string]interface{})
@@ -77,7 +77,7 @@ func TestSnapshotJSON(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, value := range []interface{}{Snapshot{}, RuleStats{}, Hop{}, URLStats{}, Target{}, Stats{}} {
+	for _, value := range []interface{}{Snapshot{}, RuleStats{}, Hop{}, URLStats{}, Target{}, Stats{}, Connection{}} {
 		typeInfo := reflect.TypeOf(value)
 		for _, field := range reflect.VisibleFields(typeInfo) {
 			if field.IsExported() && (field.Type == reflect.TypeFor[time.Time]() || field.Type == reflect.TypeFor[time.Duration]()) {
@@ -180,5 +180,61 @@ func TestSnapshotTargetOrder(t *testing.T) {
 	expected := []targetKey{{address: "z:443"}, {address: "b:443"}, {address: "a:443"}, {address: "same:443", via: "a"}, {address: "same:443", via: "b"}, {address: "idle:443"}}
 	if !reflect.DeepEqual(keys, expected) {
 		t.Fatalf("target order = %v, want %v", keys, expected)
+	}
+}
+
+func TestSnapshotConnections(t *testing.T) {
+	registry := NewRegistry()
+	registry.Sync([]config.Rule{{Name: "first"}, {Name: "idle"}, {Name: "second"}})
+	for index := range 8 {
+		dialRulePipe(t, registry.Rule("first"), "example.com:443")
+		dialRulePipe(t, registry.Rule("second"), "other:443")
+		if index == 0 {
+			if got := registry.Snapshot().Rules[0].Connections[0].ID; got != 1 {
+				t.Fatalf("first ID = %d, want 1", got)
+			}
+		}
+	}
+	for range 10 {
+		snapshot := registry.Snapshot()
+		seen := make(map[uint64]bool)
+		for _, rule := range snapshot.Rules {
+			var previous uint64
+			if rule.Connections == nil {
+				t.Fatalf("rule %q has null connections", rule.Name)
+			}
+			for _, connection := range rule.Connections {
+				if connection.ID <= previous || seen[connection.ID] {
+					t.Fatalf("connections not sorted with registry-wide IDs: %+v", snapshot.Rules)
+				}
+				seen[connection.ID] = true
+				previous = connection.ID
+			}
+		}
+		if len(seen) != 16 || len(snapshot.Rules[1].Connections) != 0 {
+			t.Fatalf("connections assigned to wrong rules: %+v", snapshot.Rules)
+		}
+	}
+	snapshot := registry.Snapshot()
+	snapshot.Rules[0].Connections[0].Target = "changed"
+	if registry.Snapshot().Rules[0].Connections[0].Target != "example.com:443" {
+		t.Fatal("snapshot shares live connection storage")
+	}
+	connection := registry.Snapshot().Rules[0].Connections[0]
+	for _, client := range []string{"", "127.0.0.1:12345"} {
+		connection.Client = client
+		data, err := json.Marshal(connection)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var object map[string]interface{}
+		if err := json.Unmarshal(data, &object); err != nil {
+			t.Fatal(err)
+		}
+		keys := []string{"id", "target", "via", "started", "up", "down", "rate_up", "rate_down"}
+		if client != "" {
+			keys = append(keys, "client")
+		}
+		assertKeys(t, object, keys...)
 	}
 }

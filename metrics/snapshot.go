@@ -25,12 +25,13 @@ type Stats struct {
 }
 
 type RuleStats struct {
-	Name           string   `json:"name"`
-	Stats          Stats    `json:"stats"`
-	Listen         []Hop    `json:"listen"`
-	Forward        []Hop    `json:"forward"`
-	Targets        []Target `json:"targets"`
-	TargetsEvicted int64    `json:"targets_evicted"`
+	Name           string       `json:"name"`
+	Stats          Stats        `json:"stats"`
+	Listen         []Hop        `json:"listen"`
+	Forward        []Hop        `json:"forward"`
+	Targets        []Target     `json:"targets"`
+	Connections    []Connection `json:"connections"`
+	TargetsEvicted int64        `json:"targets_evicted"`
 }
 
 type Hop struct {
@@ -51,6 +52,18 @@ type Target struct {
 	Stats   Stats  `json:"stats"`
 }
 
+type Connection struct {
+	ID       uint64 `json:"id"`
+	Client   string `json:"client,omitempty"`
+	Target   string `json:"target"`
+	Via      string `json:"via"`
+	Started  string `json:"started"`
+	Up       int64  `json:"up"`
+	Down     int64  `json:"down"`
+	RateUp   int64  `json:"rate_up"`
+	RateDown int64  `json:"rate_down"`
+}
+
 type counterSnapshot struct {
 	stats      Stats
 	lastDial   int64
@@ -62,14 +75,34 @@ func (r *Registry) Snapshot() Snapshot {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	snapshot := Snapshot{Since: r.since.Format(time.RFC3339), Rules: make([]RuleStats, 0, len(r.order))}
+	connections := make(map[*Rule][]Connection)
+	for _, entry := range r.live {
+		connections[entry.rule] = append(connections[entry.rule], Connection{
+			ID:       entry.id,
+			Client:   entry.client,
+			Target:   entry.target,
+			Via:      entry.via,
+			Started:  entry.started.UTC().Format(time.RFC3339Nano),
+			Up:       entry.count.up.Load(),
+			Down:     entry.count.down.Load(),
+			RateUp:   entry.count.rateUp.Load(),
+			RateDown: entry.count.rateDown.Load(),
+		})
+	}
 	for _, name := range r.order {
 		rule := r.rules[name]
+		current := connections[rule]
+		if current == nil {
+			current = []Connection{}
+		}
+		sort.Slice(current, func(left, right int) bool { return current[left].ID < current[right].ID })
 		snapshot.Rules = append(snapshot.Rules, RuleStats{
 			Name:           name,
 			Stats:          rule.count.snapshot().stats,
 			Listen:         snapshotWay(rule.ways[Listen]),
 			Forward:        snapshotWay(rule.ways[Forward]),
 			Targets:        snapshotTargets(rule.targets),
+			Connections:    current,
 			TargetsEvicted: rule.targetsEvicted,
 		})
 	}

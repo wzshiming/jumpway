@@ -2,9 +2,11 @@ package metrics
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/wzshiming/bridge"
@@ -22,10 +24,12 @@ const (
 const MaxTargets = 1000
 
 type Registry struct {
-	mu    sync.RWMutex
-	since time.Time
-	rules map[string]*Rule
-	order []string
+	mu     sync.RWMutex
+	nextID atomic.Uint64
+	since  time.Time
+	rules  map[string]*Rule
+	order  []string
+	live   map[uint64]*live
 }
 
 type Rule struct {
@@ -58,8 +62,19 @@ type targetKey struct {
 	via     string
 }
 
+type live struct {
+	id      uint64
+	rule    *Rule
+	client  string
+	target  string
+	via     string
+	started time.Time
+	count   *counter
+	conn    *conn
+}
+
 func NewRegistry() *Registry {
-	return &Registry{since: time.Now(), rules: make(map[string]*Rule)}
+	return &Registry{since: time.Now(), rules: make(map[string]*Rule), live: make(map[uint64]*live)}
 }
 
 func (r *Registry) Sync(rules []config.Rule) {
@@ -81,6 +96,11 @@ func (r *Registry) Sync(rules []config.Rule) {
 	}
 	r.rules = updated
 	r.order = order
+	for id, entry := range r.live {
+		if updated[entry.rule.name] != entry.rule {
+			delete(r.live, id)
+		}
+	}
 }
 
 func (r *Rule) syncWay(role Role, nodes []bridgeconfig.Node, counters map[hopKey]*counter) []hop {
@@ -107,6 +127,16 @@ func (r *Registry) Rule(name string) *Rule {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.rules[name]
+}
+
+func (r *Registry) Disconnect(id uint64) error {
+	r.mu.RLock()
+	entry := r.live[id]
+	r.mu.RUnlock()
+	if entry == nil {
+		return fmt.Errorf("connection %d not found", id)
+	}
+	return entry.conn.Close()
 }
 
 func (r *Rule) WrapListener(inner net.Listener) net.Listener {
@@ -184,6 +214,9 @@ func (r *Registry) tick(now time.Time) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.eachCounter(func(count *counter) { count.tick(now) })
+	for _, entry := range r.live {
+		entry.count.tick(now)
+	}
 }
 
 func (r *Registry) eachCounter(visit func(*counter)) {

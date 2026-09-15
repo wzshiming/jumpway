@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/wzshiming/bridge"
+	"github.com/wzshiming/jumpway"
 )
 
 type dialer struct {
@@ -70,13 +71,35 @@ func (d *ruleDialer) DialContext(ctx context.Context, network, address string) (
 	if via := trace.via.Load(); via != nil {
 		key.via = *via
 	}
-	d.rule.registry.mu.Lock()
-	defer d.rule.registry.mu.Unlock()
+	registry := d.rule.registry
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
 	d.rule.count.dial(now.Sub(started), now, err)
 	count := d.rule.target(key)
 	count.dial(now.Sub(started), now, err)
 	if err != nil {
 		return nil, err
 	}
-	return newConn(connected, count, false), nil
+	wrapped := newConn(connected, count, false)
+	if registry.rules[d.rule.name] != d.rule {
+		return wrapped, nil
+	}
+	entry := &live{
+		id:      registry.nextID.Add(1),
+		rule:    d.rule,
+		client:  jumpway.ClientAddr(ctx),
+		target:  address,
+		via:     key.via,
+		started: now,
+		count:   newCounter(now),
+		conn:    wrapped,
+	}
+	wrapped.extra = entry.count
+	registry.live[entry.id] = entry
+	wrapped.onClose = func() {
+		registry.mu.Lock()
+		delete(registry.live, entry.id)
+		registry.mu.Unlock()
+	}
+	return wrapped, nil
 }

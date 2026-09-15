@@ -1,6 +1,7 @@
 package tray
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -260,6 +262,113 @@ func TestReloadCountsForwardTraffic(test *testing.T) {
 		rule := snapshot.Rules[0]
 		return rule.Stats.Active == 0 && rule.Targets[0].Stats.Active == 0
 	})
+}
+
+func TestReloadDisconnectConnection(test *testing.T) {
+	for _, scenario := range []struct {
+		name  string
+		proxy bool
+		http  bool
+	}{
+		{name: "forward"},
+		{name: "proxy", proxy: true},
+		{name: "http", http: true},
+	} {
+		test.Run(scenario.name, func(test *testing.T) {
+			target := startEchoServer(test)
+			rule := config.Rule{Name: "rule", Listen: config.Listen{Host: "127.0.0.1"}}
+			if !scenario.proxy {
+				rule.Forward = config.Forward{Host: "127.0.0.1", Port: uint32(target.Addr().(*net.TCPAddr).Port)}
+			}
+			app := newTestApp(test, &config.Config{WebUI: config.Address{Host: "127.0.0.1"}, Rules: []config.Rule{rule}})
+			if err := app.Reload(); err != nil {
+				test.Fatal(err)
+			}
+			connection, err := net.DialTimeout("tcp", app.Status().Rules[0].Address, time.Second)
+			if err != nil {
+				test.Fatal(err)
+			}
+			defer connection.Close()
+			if err := connection.SetDeadline(time.Now().Add(2 * time.Second)); err != nil {
+				test.Fatal(err)
+			}
+			reader := bufio.NewReader(connection)
+			client := connection.LocalAddr().String()
+			if scenario.proxy {
+				client = ""
+				request, err := http.NewRequest(http.MethodConnect, "http://"+target.Addr().String(), nil)
+				if err != nil {
+					test.Fatal(err)
+				}
+				if err := request.Write(connection); err != nil {
+					test.Fatal(err)
+				}
+				response, err := http.ReadResponse(reader, request)
+				if err != nil {
+					test.Fatal(err)
+				}
+				defer response.Body.Close()
+				if response.StatusCode != http.StatusOK {
+					test.Fatalf("CONNECT response = %s, want 200", response.Status)
+				}
+			}
+			payload := "live connection payload"
+			if _, err := io.WriteString(connection, payload); err != nil {
+				test.Fatal(err)
+			}
+			reply := make([]byte, len(payload))
+			if _, err := io.ReadFull(reader, reply); err != nil {
+				test.Fatal(err)
+			}
+			if string(reply) != payload {
+				test.Fatalf("echo = %q, want %q", reply, payload)
+			}
+			snapshot := waitForSnapshot(test, app, func(snapshot metrics.Snapshot) bool {
+				if len(snapshot.Rules) != 1 || len(snapshot.Rules[0].Connections) != 1 {
+					return false
+				}
+				live := snapshot.Rules[0].Connections[0]
+				return live.Up == int64(len(payload)) && live.Down == int64(len(payload))
+			})
+			live := snapshot.Rules[0].Connections[0]
+			if live.ID == 0 || live.Client != client || live.Target != target.Addr().String() || live.Via != "" {
+				test.Fatalf("connection = %+v, want client %q and target %q", live, client, target.Addr().String())
+			}
+			if scenario.http {
+				transport := &http.Transport{}
+				test.Cleanup(transport.CloseIdleConnections)
+				client := &http.Client{Transport: transport, Timeout: time.Second}
+				request, err := http.NewRequest(http.MethodDelete, app.webURL()+"/apis/stats/connections/"+strconv.FormatUint(live.ID, 10), nil)
+				if err != nil {
+					test.Fatal(err)
+				}
+				response, err := client.Do(request)
+				if err != nil {
+					test.Fatal(err)
+				}
+				body, err := io.ReadAll(response.Body)
+				response.Body.Close()
+				if err != nil {
+					test.Fatal(err)
+				}
+				if response.StatusCode != http.StatusOK {
+					test.Fatalf("DELETE response = %s: %s", response.Status, body)
+				}
+			} else if err := app.metrics.Disconnect(live.ID); err != nil {
+				test.Fatal(err)
+			}
+			if size, err := reader.Read(make([]byte, 1)); size != 0 || err == nil {
+				test.Fatalf("Read after Disconnect = (%d, %v), want EOF or error", size, err)
+			} else if timeout, ok := err.(net.Error); ok && timeout.Timeout() {
+				test.Fatalf("Disconnect did not close the client: %v", err)
+			}
+			waitForSnapshot(test, app, func(snapshot metrics.Snapshot) bool {
+				rule := snapshot.Rules[0]
+				return rule.Connections != nil && len(rule.Connections) == 0 && rule.Stats.Active == 0 &&
+					len(rule.Targets) == 1 && rule.Targets[0].Stats.Active == 0
+			})
+		})
+	}
 }
 
 func TestReloadCountsNoProxyAsDirect(test *testing.T) {
