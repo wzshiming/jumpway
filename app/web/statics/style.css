@@ -180,6 +180,9 @@ input[type="checkbox"] { flex: 0 0 16px; width: 16px; min-height: 16px; height: 
 .stats-table .address { min-width: 120px; max-width: 250px; overflow-wrap: anywhere; }
 .stats-table .stats-rule { display: inline-block; min-width: 44px; max-width: 180px; font-weight: 600; }
 .stats-table .rule-chip { flex-wrap: nowrap; white-space: nowrap; min-height: 26px; padding: 3px 6px; font-size: 11px; }
+.stats-table .connection-duration { min-width: 100px; }
+.stats-table .connection-action { width: 1%; text-align: right; white-space: nowrap; }
+.disconnect-connection { min-width: 90px; min-height: 30px; padding: 5px 9px; font-size: 12px; white-space: nowrap; }
 .table-sub { display: block; color: var(--muted); font-size: 10px; font-weight: 400; }
 .yaml-label { margin-bottom: 10px; }
 .yaml { min-height: 60vh; padding: 16px; font: 13px/1.7 var(--mono); tab-size: 2; white-space: pre; overflow: auto; }

@@ -75,11 +75,15 @@
       via: "Via",
       viaHop: "via {parent}",
       saveStats: "Save to see live stats",
-      targets: "Targets",
+      currentConnections: "Connections",
+      client: "Client",
       target: "Target",
-      noTargets: "No connections yet",
-      showingTargets: "Showing {shown} of {total}",
-      targetsEvicted: "{count} targets evicted",
+      duration: "Duration",
+      totalShort: "total",
+      disconnect: "Disconnect",
+      disconnected: "Connection closed.",
+      noConnections: "No current connections",
+      showingConnections: "Showing {shown} of {total}",
       state: "State",
       address: "Address",
       statsSince: "Since {time}",
@@ -199,8 +203,8 @@
       statsLifetime: "自上次重置以来",
       connections: "连接数",
       activeConns: "当前连接",
-      totalConns: "总连接",
-      connectionsOrder: "当前 / 总连接",
+      totalConns: "累计连接",
+      connectionsOrder: "当前 / 累计连接",
       latency: "延迟",
       avgLatency: "平均",
       latencyOrder: "最近 / 平均",
@@ -214,11 +218,15 @@
       via: "上一级",
       viaHop: "上一级：{parent}",
       saveStats: "保存后查看实时统计",
-      targets: "目标",
+      currentConnections: "当前连接",
+      client: "客户端",
       target: "目标",
-      noTargets: "尚无连接",
-      showingTargets: "显示 {total} 个目标中的 {shown} 个",
-      targetsEvicted: "已移除 {count} 个历史目标",
+      duration: "持续时间",
+      totalShort: "累计",
+      disconnect: "断开",
+      disconnected: "已断开连接。",
+      noConnections: "当前没有连接",
+      showingConnections: "显示 {total} 个连接中的 {shown} 个",
       state: "状态",
       address: "地址",
       statsSince: "统计起始：{time}",
@@ -355,6 +363,15 @@
     const [key, unit] = seconds < 60 ? ["secondsAgo", 1] : seconds < 3600 ? ["minutesAgo", 60]
       : seconds < 86400 ? ["hoursAgo", 3600] : ["daysAgo", 86400];
     return t(key, { count: formatCount(Math.floor(seconds / unit)) });
+  }
+
+  function formatDuration(value) {
+    const timestamp = Date.parse(value);
+    if (!Number.isFinite(timestamp)) return "\u2014";
+    const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+    if (seconds < 60) return seconds + " s";
+    if (seconds < 3600) return Math.floor(seconds / 60) + " min " + seconds % 60 + " s";
+    return Math.floor(seconds / 3600) + " h " + Math.floor(seconds % 3600 / 60) + " min";
   }
 
   function normalizeWay(way) {
@@ -555,14 +572,14 @@
     if (originalName !== null) {
       const strip = clone("rule-stats");
       find("#rule-panel").before(strip);
-      find("#targets-slot").append(clone("targets"));
+      find("#connections-slot").append(clone("connections"));
       page.updateStats = () => Object.values(editors).forEach(editor => editor.applyStats());
       page.renderStats = snapshot => {
         const current = list(snapshot.rules).find(entry => entry.name === originalName);
         renderStatFields(strip, current?.stats);
         editors.listen.applyStats(list(current?.listen));
         editors.forward.applyStats(list(current?.forward));
-        renderTargets(current);
+        renderConnections(current);
       };
       page.renderStats({ rules: [] });
     }
@@ -647,9 +664,7 @@
       });
       const rules = new Map(list(snapshot.rules).map(rule => [rule.name, rule]));
       rows.forEach((row, name) => {
-        const rule = rules.get(name);
-        renderStatFields(row, rule?.stats);
-        find(".stats-targets", row).textContent = formatCount(list(rule?.targets).length);
+        renderStatFields(row, rules.get(name)?.stats);
       });
     };
     page.renderStatus = status => {
@@ -930,22 +945,51 @@
     });
   }
 
-  function renderTargets(rule) {
-    const targets = list(rule?.targets);
-    find("#target-rows").replaceChildren(...targets.slice(0, 100).map(target => {
-      const row = clone("target-row");
-      find(".target-address", row).textContent = target.address;
-      find(".target-via", row).textContent = target.via || t("direct");
-      renderStatFields(row, target.stats);
-      return row;
-    }));
-    find("#targets-table").hidden = !targets.length;
-    find("#no-targets").hidden = Boolean(targets.length);
-    const notes = [];
-    if (targets.length > 100) notes.push(t("showingTargets", { shown: formatCount(100), total: formatCount(targets.length) }));
-    if (rule?.targets_evicted) notes.push(t("targetsEvicted", { count: formatCount(rule.targets_evicted) }));
-    find("#targets-note").textContent = notes.join(" \u00b7 ");
-    find("#targets-note").hidden = !notes.length;
+  function renderConnections(rule) {
+    const connections = list(rule?.connections);
+    const body = find("#connection-rows");
+    const rows = new Map(all("tr[data-id]", body).map(row => [row.dataset.id, row]));
+    connections.slice(0, 200).forEach(connection => {
+      const id = text(connection.id);
+      let row = rows.get(id);
+      if (row) rows.delete(id);
+      else {
+        row = clone("connection-row");
+        row.dataset.id = id;
+        const button = find(".disconnect-connection", row);
+        button.addEventListener("click", () => disconnectConnection(id, button));
+        body.append(row);
+      }
+      find(".connection-client", row).textContent = connection.client || "\u2014";
+      find(".connection-target", row).textContent = connection.target;
+      find(".connection-via", row).textContent = connection.via || t("direct");
+      find(".connection-duration", row).textContent = formatDuration(connection.started);
+      renderStatFields(row, connection);
+    });
+    rows.forEach(row => row.remove());
+    find("#connections-table").hidden = !connections.length;
+    find("#no-connections").hidden = Boolean(connections.length);
+    const note = find("#connections-note");
+    note.textContent = connections.length > 200
+      ? t("showingConnections", { shown: formatCount(200), total: formatCount(connections.length) }) : "";
+    note.hidden = !note.textContent;
+  }
+
+  async function disconnectConnection(id, button) {
+    if (busy || button.disabled) return;
+    button.disabled = true;
+    clearErrors();
+    activity("");
+    try {
+      await api("/connections/" + id, { method: "DELETE", base: "/apis/stats" });
+      activity("disconnected", true);
+    } catch (error) {
+      button.disabled = false;
+      showError(error);
+    } finally {
+      if (statsRequest) await statsRequest;
+      await refreshStats();
+    }
   }
 
   function hasStatsView() {

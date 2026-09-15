@@ -171,7 +171,7 @@
 								<button class="add-hop add-button" type="button" data-i18n="addHop"></button>
 							</div>
 						</section>
-						<div id="targets-slot"></div>
+						<div id="connections-slot"></div>
 						<div class="page-actions">
 							<button id="save" class="primary" type="submit" data-i18n="saveApply"></button>
 							<button id="delete-rule" class="danger" type="button" data-i18n="deleteRule"></button>
@@ -219,36 +219,37 @@
 		</div>
 	</template>
 
-	<template id="targets-template">
-		<section class="rule-section" aria-labelledby="targets-heading">
-			<h3 id="targets-heading" data-i18n="targets"></h3>
-			<div id="targets-table" class="stats-scroll" role="region" tabindex="0" aria-labelledby="targets-heading" hidden>
+	<template id="connections-template">
+		<section class="rule-section" aria-labelledby="connections-heading">
+			<h3 id="connections-heading" data-i18n="currentConnections"></h3>
+			<div id="connections-table" class="stats-scroll" role="region" tabindex="0" aria-labelledby="connections-heading" hidden>
 				<table class="stats-table">
 					<thead><tr>
+						<th scope="col" data-i18n="client"></th>
 						<th scope="col" data-i18n="target"></th><th scope="col" data-i18n="via"></th>
 						<th scope="col" class="number" data-i18n-title="rateUp" data-i18n-aria="rateUp">&#8593; /s</th>
 						<th scope="col" class="number" data-i18n-title="rateDown" data-i18n-aria="rateDown">&#8595; /s</th>
-						<th scope="col" class="number" data-i18n-title="totalUp" data-i18n-aria="totalUp">&#8593;</th>
-						<th scope="col" class="number" data-i18n-title="totalDown" data-i18n-aria="totalDown">&#8595;</th>
-						<th scope="col" class="number"><span data-i18n="connections"></span><span class="table-sub" data-i18n="connectionsOrder"></span></th>
-						<th scope="col" class="number"><span data-i18n="latency"></span><span class="table-sub" data-i18n="latencyOrder"></span></th>
-						<th scope="col" class="number" data-i18n="dialFailures"></th>
+						<th scope="col" class="number" data-i18n-title="totalUp" data-i18n-aria="totalUp">&#8593; <span data-i18n="totalShort"></span></th>
+						<th scope="col" class="number" data-i18n-title="totalDown" data-i18n-aria="totalDown">&#8595; <span data-i18n="totalShort"></span></th>
+						<th scope="col" class="number" data-i18n="duration"></th>
+						<th scope="col"><span class="sr-only" data-i18n="disconnect"></span></th>
 					</tr></thead>
-					<tbody id="target-rows"></tbody>
+					<tbody id="connection-rows"></tbody>
 				</table>
 			</div>
-			<p id="no-targets" class="hint" data-i18n="noTargets"></p>
-			<p id="targets-note" class="hint" hidden></p>
+			<p id="no-connections" class="hint" data-i18n="noConnections"></p>
+			<p id="connections-note" class="hint" hidden></p>
 		</section>
 	</template>
 
-	<template id="target-row-template">
+	<template id="connection-row-template">
 		<tr>
-			<th scope="row" class="target-address address"></th><td class="target-via address"></td>
+			<td class="connection-client address"></td>
+			<th scope="row" class="connection-target address"></th><td class="connection-via address"></td>
 			<td class="number" data-stat="rate_up"></td><td class="number" data-stat="rate_down"></td>
 			<td class="number" data-stat="up"></td><td class="number" data-stat="down"></td>
-			<td class="number" data-stat="connections"></td><td class="number" data-stat="latency"></td>
-			<td class="number" data-stat="dial_failures"></td>
+			<td class="number connection-duration"></td>
+			<td class="connection-action"><button class="disconnect-connection danger" type="button" data-i18n="disconnect"></button></td>
 		</tr>
 	</template>
 
@@ -277,7 +278,7 @@
 						<th scope="col" class="number" data-i18n-title="totalDown" data-i18n-aria="totalDown">&#8595;</th>
 						<th scope="col" class="number"><span data-i18n="connections"></span><span class="table-sub" data-i18n="connectionsOrder"></span></th>
 						<th scope="col" class="number"><span data-i18n="latency"></span><span class="table-sub" data-i18n="latencyOrder"></span></th>
-						<th scope="col" class="number" data-i18n="dialFailures"></th><th scope="col" class="number" data-i18n="targets"></th>
+						<th scope="col" class="number" data-i18n="dialFailures"></th>
 					</tr></thead>
 					<tbody id="stats-rows"></tbody>
 				</table>
@@ -294,7 +295,7 @@
 			<td class="number" data-stat="rate_up"></td><td class="number" data-stat="rate_down"></td>
 			<td class="number" data-stat="up"></td><td class="number" data-stat="down"></td>
 			<td class="number" data-stat="connections"></td><td class="number" data-stat="latency"></td>
-			<td class="number" data-stat="dial_failures"></td><td class="number stats-targets"></td>
+			<td class="number" data-stat="dial_failures"></td>
 		</tr>
 	</template>
 
