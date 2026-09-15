@@ -30,8 +30,9 @@ type App struct {
 	web     http.Handler
 	metrics *metrics.Registry
 
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
+	cancel        context.CancelFunc
+	metricsCancel context.CancelFunc
+	wg            sync.WaitGroup
 
 	webListener net.Listener
 	webServer   *http.Server
@@ -90,13 +91,19 @@ func (a *App) Run() {
 		return
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	a.mu.Lock()
+	a.metricsCancel = cancel
+	a.mu.Unlock()
+	go a.metrics.Run(ctx)
+
 	go func() {
 		for fn := range a.actions {
 			fn()
 		}
 	}()
 
-	a.web = web.NewHandler(configs.NewConfigsService(a.store, a), stats.NewStatsService(a.metrics), http.NotFoundHandler())
+	a.web = web.NewHandler(configs.NewConfigsService(a.store, a), stats.NewStatsService(a.metrics), metrics.NewHandler(a.metrics))
 	a.tray = systray.New()
 	a.onReady()
 	err = a.tray.Run()
@@ -184,9 +191,13 @@ func (a *App) webURL() string {
 func (a *App) stop() {
 	a.mu.Lock()
 	cancel, server := a.cancel, a.webServer
+	metricsCancel := a.metricsCancel
 	a.mu.Unlock()
 	if cancel != nil {
 		cancel()
+	}
+	if metricsCancel != nil {
+		metricsCancel()
 	}
 	if server != nil {
 		server.Close()

@@ -17,6 +17,7 @@ import (
 	"github.com/wzshiming/jumpway/config"
 	"github.com/wzshiming/jumpway/i18n"
 	"github.com/wzshiming/jumpway/log"
+	"github.com/wzshiming/jumpway/metrics"
 	"github.com/wzshiming/jumpway/utils"
 )
 
@@ -72,6 +73,7 @@ func (a *App) reload() error {
 			remote:        rule.Listen.Remote(),
 		})
 	}
+	a.metrics.Sync(enabled)
 	a.mu.Lock()
 	a.rules = rules
 	a.mu.Unlock()
@@ -80,6 +82,7 @@ func (a *App) reload() error {
 	defer timer.Stop()
 	firsts := make([]chan error, len(enabled))
 	for index, rule := range enabled {
+		rs := a.metrics.Rule(rule.Name)
 		target := rule.Forward.Target()
 		state := rules[index]
 		first := make(chan error, 1)
@@ -113,7 +116,7 @@ func (a *App) reload() error {
 			a.updateStatus()
 			once.Do(func() { first <- event.Err })
 		}
-		listenConfig, err := jumpway.NewListenConfig(ctx, rule.Listen.Way, nil)
+		listenConfig, err := jumpway.NewListenConfig(ctx, rule.Listen.Way, rs.HopWrapper(metrics.Listen))
 		if err != nil {
 			report(jumpway.Event{Err: err})
 			continue
@@ -121,14 +124,13 @@ func (a *App) reload() error {
 		dialer := jumpway.NewLogDialer(local.LOCAL, func(ctx context.Context, network, address string) {
 			log.Info(i18n.UseProxy(), "address", address, "rule", rule.Name)
 		})
-		forwardChain := *chain.Default
-		if target != "" {
-			forwardChain.DialerFunc = nil
-		}
-		dialer, err = forwardChain.BridgeChainWithConfig(ctx, dialer, rule.Forward.Way...)
+		dialer, err = jumpway.NewChainDialer(ctx, dialer, rule.Forward.Way, rs.HopWrapper(metrics.Forward))
 		if err != nil {
 			report(jumpway.Event{Err: err})
 			continue
+		}
+		if target == "" && len(rule.Forward.Way) > 0 {
+			dialer = chain.NewEnvDialer(dialer)
 		}
 		dialer = jumpway.NewRetryDialer(dialer, jumpway.DefaultDialRetries, jumpway.DefaultDialBackoff, func(ctx context.Context, network, address string, attempt int, err error) {
 			log.Info(i18n.Connect(), "proxy", true, "address", address, "rule", rule.Name, "attempt", attempt, "err", err)
@@ -144,6 +146,7 @@ func (a *App) reload() error {
 			})
 			dialer = chain.NewShuntDialer(dialer, subDialer, matcher)
 		}
+		dialer = rs.WrapDialer(dialer)
 
 		a.wg.Add(1)
 		go func() {
@@ -151,6 +154,7 @@ func (a *App) reload() error {
 			jumpway.Serve(ctx, func(ctx context.Context) (net.Listener, error) {
 				return listenConfig.Listen(ctx, "tcp", rule.Listen.Address())
 			}, func(ctx context.Context, listener net.Listener) error {
+				listener = rs.WrapListener(listener)
 				if target == "" {
 					return jumpway.RunProxy(ctx, listener, dialer, rule.Listen.User())
 				}

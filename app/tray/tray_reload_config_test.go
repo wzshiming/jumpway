@@ -122,6 +122,57 @@ func TestReloadAllRulesAndAuth(test *testing.T) {
 	}
 }
 
+func TestReloadCountsProxyTraffic(test *testing.T) {
+	app := newTestApp(test, &config.Config{Rules: []config.Rule{{Name: "direct"}}})
+	if err := app.Reload(); err != nil {
+		test.Fatal(err)
+	}
+	target := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		io.WriteString(writer, "target")
+	}))
+	test.Cleanup(target.Close)
+	proxyURL := &url.URL{Scheme: "http", Host: app.Status().Rules[0].Address}
+	transport := &http.Transport{Proxy: http.ProxyURL(proxyURL), DisableKeepAlives: true}
+	test.Cleanup(transport.CloseIdleConnections)
+	client := &http.Client{Transport: transport, Timeout: time.Second}
+	response, err := client.Get(target.URL)
+	if err != nil {
+		test.Fatal(err)
+	}
+	body, err := io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil {
+		test.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK || string(body) != "target" {
+		test.Fatalf("proxy response = %s, %q", response.Status, body)
+	}
+	snapshot := waitForSnapshot(test, app, func(snapshot metrics.Snapshot) bool {
+		if len(snapshot.Rules) != 1 {
+			return false
+		}
+		rule := snapshot.Rules[0]
+		return rule.Stats.Total == 1 && rule.Stats.Up > 0 && rule.Stats.Down > 0 && rule.Stats.Active == 0 &&
+			len(rule.Targets) == 1 && rule.Targets[0].Stats.Active == 0
+	})
+	rule := snapshot.Rules[0]
+	if rule.Name != "direct" || rule.Stats.Dials != 1 || rule.Stats.DialFailures != 0 || rule.Stats.LatencyMs <= 0 {
+		test.Fatalf("unexpected proxy statistics: %+v", rule)
+	}
+	entry := rule.Targets[0]
+	if entry.Address != target.Listener.Addr().String() || entry.Via != "" || entry.Stats.Total != 1 {
+		test.Fatalf("unexpected target statistics: %+v", entry)
+	}
+	if rule.Listen == nil || len(rule.Listen) != 0 || rule.Forward == nil || len(rule.Forward) != 0 {
+		test.Fatalf("direct rule has nonempty or null ways: %+v", rule)
+	}
+	waitForSnapshot(test, app, func(snapshot metrics.Snapshot) bool {
+		rule := snapshot.Rules[0]
+		return rule.Stats.RateUp > 0 && rule.Stats.RateDown > 0 &&
+			rule.Targets[0].Stats.RateUp > 0 && rule.Targets[0].Stats.RateDown > 0
+	})
+}
+
 func TestReloadForwardRule(test *testing.T) {
 	target := startEchoServer(test)
 	app := newTestApp(test, &config.Config{Rules: []config.Rule{{
@@ -157,6 +208,282 @@ func TestReloadForwardRule(test *testing.T) {
 	}
 	if status.Rules[0].Target != target.Addr().String() {
 		test.Fatalf("forward target = %q, want %q", status.Rules[0].Target, target.Addr().String())
+	}
+}
+
+func TestReloadCountsForwardTraffic(test *testing.T) {
+	target := startEchoServer(test)
+	app := newTestApp(test, &config.Config{Rules: []config.Rule{{
+		Name:    "fwd",
+		Listen:  config.Listen{Host: "127.0.0.1"},
+		Forward: config.Forward{Host: "127.0.0.1", Port: uint32(target.Addr().(*net.TCPAddr).Port)},
+	}}})
+	if err := app.Reload(); err != nil {
+		test.Fatal(err)
+	}
+	connection, err := net.DialTimeout("tcp", app.Status().Rules[0].Address, time.Second)
+	if err != nil {
+		test.Fatal(err)
+	}
+	defer connection.Close()
+	if err := connection.SetDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		test.Fatal(err)
+	}
+	payload := "counted forward payload\n"
+	if _, err := io.WriteString(connection, payload); err != nil {
+		test.Fatal(err)
+	}
+	reply := make([]byte, len(payload))
+	if _, err := io.ReadFull(connection, reply); err != nil {
+		test.Fatal(err)
+	}
+	if string(reply) != payload {
+		test.Fatalf("forwarded payload = %q, want %q", reply, payload)
+	}
+	snapshot := waitForSnapshot(test, app, func(snapshot metrics.Snapshot) bool {
+		if len(snapshot.Rules) != 1 || len(snapshot.Rules[0].Targets) != 1 {
+			return false
+		}
+		entry := snapshot.Rules[0].Targets[0]
+		return entry.Stats.Up == int64(len(payload)) && entry.Stats.Down == int64(len(payload))
+	})
+	rule := snapshot.Rules[0]
+	entry := rule.Targets[0]
+	if rule.Stats.Total != 1 || rule.Stats.Active != 1 || entry.Address != target.Addr().String() ||
+		entry.Via != "" || entry.Stats.Total != 1 || entry.Stats.Active != 1 {
+		test.Fatalf("unexpected forward statistics: %+v", rule)
+	}
+	if err := connection.Close(); err != nil {
+		test.Fatal(err)
+	}
+	waitForSnapshot(test, app, func(snapshot metrics.Snapshot) bool {
+		rule := snapshot.Rules[0]
+		return rule.Stats.Active == 0 && rule.Targets[0].Stats.Active == 0
+	})
+}
+
+func TestReloadCountsNoProxyAsDirect(test *testing.T) {
+	previousNoProxy := chain.NoProxy
+	chain.NoProxy = hostmatcher.NewMatcher([]string{"example.invalid"})
+	test.Cleanup(func() { chain.NoProxy = previousNoProxy })
+	app := newTestApp(test, &config.Config{
+		NoProxy: config.NoProxy{List: []string{"127.0.0.1"}},
+		Rules: []config.Rule{{
+			Name:    "direct",
+			Forward: config.Forward{Way: []bridgeconfig.Node{{LB: []string{"socks5://127.0.0.1:1"}}}},
+		}},
+	})
+	if err := app.Reload(); err != nil {
+		test.Fatal(err)
+	}
+	target := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		io.WriteString(writer, "target")
+	}))
+	test.Cleanup(target.Close)
+	proxyURL := &url.URL{Scheme: "http", Host: app.Status().Rules[0].Address}
+	transport := &http.Transport{Proxy: http.ProxyURL(proxyURL), DisableKeepAlives: true}
+	test.Cleanup(transport.CloseIdleConnections)
+	client := &http.Client{Transport: transport, Timeout: time.Second}
+	response, err := client.Get(target.URL)
+	if err != nil {
+		test.Fatal(err)
+	}
+	body, err := io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil {
+		test.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK || string(body) != "target" {
+		test.Fatalf("no_proxy response = %s, %q", response.Status, body)
+	}
+	snapshot := waitForSnapshot(test, app, func(snapshot metrics.Snapshot) bool {
+		if len(snapshot.Rules) != 1 || len(snapshot.Rules[0].Targets) != 1 {
+			return false
+		}
+		rule := snapshot.Rules[0]
+		return rule.Stats.Total == 1 && rule.Stats.Active == 0 && rule.Targets[0].Stats.Active == 0
+	})
+	rule := snapshot.Rules[0]
+	entry := rule.Targets[0]
+	if rule.Stats.Dials != 1 || rule.Stats.DialFailures != 0 || entry.Address != target.Listener.Addr().String() ||
+		entry.Via != "" || entry.Stats.Total != 1 {
+		test.Fatalf("unexpected no_proxy statistics: %+v", rule)
+	}
+	if len(rule.Forward) != 1 || rule.Forward[0].Index != 0 || rule.Forward[0].ParentIndex != -1 || len(rule.Forward[0].URLs) != 1 {
+		test.Fatalf("unexpected forward hops: %+v", rule.Forward)
+	}
+	hop := rule.Forward[0].URLs[0]
+	if hop.URL != "socks5://127.0.0.1:1" || hop.Stats.Dials != 0 {
+		test.Fatalf("no_proxy did not bypass the forward chain: %+v", hop)
+	}
+}
+
+func TestReloadForwardHalfClose(test *testing.T) {
+	target := occupyPort(test)
+	done := make(chan error, 1)
+	go func() {
+		connection, err := target.Accept()
+		if err != nil {
+			done <- err
+			return
+		}
+		defer connection.Close()
+		if err := connection.SetDeadline(time.Now().Add(2 * time.Second)); err != nil {
+			done <- err
+			return
+		}
+		request, err := io.ReadAll(connection)
+		if err != nil {
+			done <- err
+			return
+		}
+		_, err = io.WriteString(connection, "reply: "+string(request))
+		done <- err
+	}()
+	app := newTestApp(test, &config.Config{Rules: []config.Rule{{
+		Name:    "fwd",
+		Listen:  config.Listen{Host: "127.0.0.1"},
+		Forward: config.Forward{Host: "127.0.0.1", Port: uint32(target.Addr().(*net.TCPAddr).Port)},
+	}}})
+	if err := app.Reload(); err != nil {
+		test.Fatal(err)
+	}
+	connection, err := net.DialTimeout("tcp", app.Status().Rules[0].Address, time.Second)
+	if err != nil {
+		test.Fatal(err)
+	}
+	defer connection.Close()
+	if err := connection.SetDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		test.Fatal(err)
+	}
+	payload := strings.Repeat("half-close", 32*1024)
+	if _, err := io.WriteString(connection, payload); err != nil {
+		test.Fatal(err)
+	}
+	if err := connection.(*net.TCPConn).CloseWrite(); err != nil {
+		test.Fatal(err)
+	}
+	reply, err := io.ReadAll(connection)
+	if err != nil {
+		test.Fatal(err)
+	}
+	if string(reply) != "reply: "+payload {
+		test.Fatalf("half-close response = %d bytes, want %d bytes", len(reply), len("reply: ")+len(payload))
+	}
+	if err := <-done; err != nil {
+		test.Fatal(err)
+	}
+	waitForSnapshot(test, app, func(snapshot metrics.Snapshot) bool {
+		if len(snapshot.Rules) != 1 || len(snapshot.Rules[0].Targets) != 1 {
+			return false
+		}
+		rule := snapshot.Rules[0]
+		return rule.Stats.Total == 1 && rule.Stats.Up == int64(len(payload)) && rule.Stats.Down == int64(len(reply)) &&
+			rule.Stats.Active == 0 && rule.Targets[0].Stats.Active == 0
+	})
+}
+
+func TestReloadRetainsStatsAcrossReload(test *testing.T) {
+	conf := &config.Config{Rules: []config.Rule{{Name: "a"}, {Name: "b"}}}
+	app := newTestApp(test, conf)
+	if err := app.Reload(); err != nil {
+		test.Fatal(err)
+	}
+	target := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		io.WriteString(writer, "target")
+	}))
+	test.Cleanup(target.Close)
+	for _, rule := range app.Status().Rules {
+		proxyURL := &url.URL{Scheme: "http", Host: rule.Address}
+		transport := &http.Transport{Proxy: http.ProxyURL(proxyURL), DisableKeepAlives: true}
+		test.Cleanup(transport.CloseIdleConnections)
+		client := &http.Client{Transport: transport, Timeout: time.Second}
+		response, err := client.Get(target.URL)
+		if err != nil {
+			test.Fatal(err)
+		}
+		_, err = io.Copy(io.Discard, response.Body)
+		response.Body.Close()
+		if err != nil {
+			test.Fatal(err)
+		}
+		if response.StatusCode != http.StatusOK {
+			test.Fatalf("rule %q response = %s", rule.Name, response.Status)
+		}
+	}
+	before := waitForSnapshot(test, app, func(snapshot metrics.Snapshot) bool {
+		if len(snapshot.Rules) != 2 {
+			return false
+		}
+		for _, rule := range snapshot.Rules {
+			if rule.Stats.Total != 1 || rule.Stats.Active != 0 || len(rule.Targets) != 1 || rule.Targets[0].Stats.Active != 0 {
+				return false
+			}
+		}
+		return true
+	})
+	conf.Rules[0].Name = "c"
+	if err := app.store.Save(conf); err != nil {
+		test.Fatal(err)
+	}
+	for _, name := range []string{"renamed", "unchanged"} {
+		test.Run(name, func(test *testing.T) {
+			if err := app.Reload(); err != nil {
+				test.Fatal(err)
+			}
+			snapshot := app.metrics.Snapshot()
+			if len(snapshot.Rules) != 2 || snapshot.Rules[0].Name != "c" || snapshot.Rules[1].Name != "b" {
+				test.Fatalf("unexpected rules after reload: %+v", snapshot.Rules)
+			}
+			renamed := snapshot.Rules[0]
+			if renamed.Stats.Total != 0 || renamed.Stats.Up != 0 || renamed.Stats.Down != 0 || renamed.Stats.Dials != 0 || len(renamed.Targets) != 0 {
+				test.Fatalf("renamed rule retained statistics: %+v", renamed)
+			}
+			retained, previous := snapshot.Rules[1], before.Rules[1]
+			if retained.Stats.Total != previous.Stats.Total || retained.Stats.Up != previous.Stats.Up ||
+				retained.Stats.Down != previous.Stats.Down || retained.Stats.Dials != previous.Stats.Dials ||
+				len(retained.Targets) != 1 || retained.Targets[0].Stats.Total != previous.Targets[0].Stats.Total {
+				test.Fatalf("unchanged rule lost statistics: before=%+v, after=%+v", previous, retained)
+			}
+		})
+	}
+}
+
+func TestMetricsEndpoint(test *testing.T) {
+	app := newTestApp(test, &config.Config{Rules: []config.Rule{{Name: "direct"}}})
+	if err := app.Reload(); err != nil {
+		test.Fatal(err)
+	}
+	transport := &http.Transport{DisableKeepAlives: true}
+	test.Cleanup(transport.CloseIdleConnections)
+	client := &http.Client{Transport: transport, Timeout: time.Second}
+	response, err := client.Get("http://" + app.Status().Address + "/metrics")
+	if err != nil {
+		test.Fatal(err)
+	}
+	body, err := io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil {
+		test.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK || !strings.Contains(string(body), `jumpway_rule_connections_total{rule="direct"}`) ||
+		!strings.Contains(string(body), "go_goroutines") {
+		test.Fatalf("metrics response = %s, %s", response.Status, body)
+	}
+	response, err = client.Get("http://" + app.Status().Address + "/apis/stats")
+	if err != nil {
+		test.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		test.Fatalf("statistics response = %s", response.Status)
+	}
+	var snapshot metrics.Snapshot
+	if err := json.NewDecoder(response.Body).Decode(&snapshot); err != nil {
+		test.Fatal(err)
+	}
+	if len(snapshot.Rules) != 1 || snapshot.Rules[0].Name != "direct" {
+		test.Fatalf("unexpected HTTP statistics: %+v", snapshot)
 	}
 }
 
@@ -417,6 +744,23 @@ func TestReloadWebUIMovePreservesResponse(test *testing.T) {
 	}
 }
 
+func TestStopCancelsMetrics(test *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	app := &App{metrics: metrics.NewRegistry(), metricsCancel: cancel}
+	done := make(chan struct{})
+	go func() {
+		app.metrics.Run(ctx)
+		close(done)
+	}()
+	app.stop()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		test.Fatal("metrics ticker did not stop")
+	}
+}
+
 func TestPrimaryAddressFallback(test *testing.T) {
 	app := &App{rules: []*ruleState{
 		{name: "remote", listenAddress: "0.0.0.0:10000", address: "0.0.0.0:10000", remote: true, running: true},
@@ -447,8 +791,10 @@ func newTestApp(test *testing.T, conf *config.Config) *App {
 	if err := store.Save(conf); err != nil {
 		test.Fatal(err)
 	}
-	app := &App{store: store, actions: make(chan func()), metrics: metrics.NewRegistry()}
-	app.web = web.NewHandler(configs.NewConfigsService(store, app), stats.NewStatsService(app.metrics), http.NotFoundHandler())
+	ctx, cancel := context.WithCancel(context.Background())
+	app := &App{store: store, actions: make(chan func()), metrics: metrics.NewRegistry(), metricsCancel: cancel}
+	go app.metrics.Run(ctx)
+	app.web = web.NewHandler(configs.NewConfigsService(store, app), stats.NewStatsService(app.metrics), metrics.NewHandler(app.metrics))
 	go func() {
 		for action := range app.actions {
 			action()
@@ -509,6 +855,25 @@ func waitForStatus(test *testing.T, app *App, ready func(configs.Status) bool) c
 		select {
 		case <-deadline.C:
 			test.Fatalf("status did not converge: %+v", status)
+		case <-ticker.C:
+		}
+	}
+}
+
+func waitForSnapshot(test *testing.T, app *App, ready func(metrics.Snapshot) bool) metrics.Snapshot {
+	test.Helper()
+	deadline := time.NewTimer(2 * time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		snapshot := app.metrics.Snapshot()
+		if ready(snapshot) {
+			return snapshot
+		}
+		select {
+		case <-deadline.C:
+			test.Fatalf("statistics did not converge: %+v", snapshot)
 		case <-ticker.C:
 		}
 	}
