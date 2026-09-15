@@ -13,10 +13,14 @@ require (
 	github.com/takama/daemon v1.0.0
 	github.com/wzshiming/anyproxy v0.8.0
 	github.com/wzshiming/bridge v0.14.0
+	github.com/wzshiming/cmux v0.4.2
 	github.com/wzshiming/hostmatcher v0.0.3
 	github.com/wzshiming/httpcache v0.4.0
+	github.com/wzshiming/httpproxy v0.5.7
 	github.com/wzshiming/notify v0.1.1
 	github.com/wzshiming/openapiui/v2 v2.0.0
+	github.com/wzshiming/socks4 v0.4.0
+	github.com/wzshiming/socks5 v0.7.0
 	github.com/wzshiming/sshd v0.2.5
 	github.com/wzshiming/sshproxy v0.6.0
 	github.com/wzshiming/sysnotify v0.0.2
@@ -41,12 +45,8 @@ require (
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.70.1 // indirect
 	github.com/prometheus/procfs v0.21.1 // indirect
-	github.com/wzshiming/cmux v0.4.2 // indirect
 	github.com/wzshiming/commandproxy v0.2.1 // indirect
-	github.com/wzshiming/httpproxy v0.5.7 // indirect
 	github.com/wzshiming/shadowsocks v0.4.2 // indirect
-	github.com/wzshiming/socks4 v0.4.0 // indirect
-	github.com/wzshiming/socks5 v0.7.0 // indirect
 	github.com/wzshiming/trie v0.3.1 // indirect
 	golang.org/x/crypto v0.55.0 // indirect
 	golang.org/x/net v0.57.0 // indirect

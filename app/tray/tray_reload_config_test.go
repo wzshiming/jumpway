@@ -16,10 +16,6 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/wzshiming/anyproxy/proxies/httpproxy"
-	_ "github.com/wzshiming/anyproxy/proxies/socks4"
-	_ "github.com/wzshiming/anyproxy/proxies/socks5"
-	_ "github.com/wzshiming/anyproxy/proxies/sshproxy"
 	"github.com/wzshiming/bridge"
 	"github.com/wzshiming/bridge/chain"
 	bridgeconfig "github.com/wzshiming/bridge/config"
@@ -295,7 +291,6 @@ func TestReloadDisconnectConnection(test *testing.T) {
 			reader := bufio.NewReader(connection)
 			client := connection.LocalAddr().String()
 			if scenario.proxy {
-				client = ""
 				request, err := http.NewRequest(http.MethodConnect, "http://"+target.Addr().String(), nil)
 				if err != nil {
 					test.Fatal(err)
