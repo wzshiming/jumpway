@@ -84,10 +84,15 @@ func snapshotWay(way []hop) []Hop {
 			hop.ParentIndex = -1
 		}
 		var aggregate counterSnapshot
+		// URLs that redact to the same string share one counter; list both, sum once.
+		seen := make(map[*counter]bool, len(entry.urls))
 		for _, entry := range entry.urls {
 			count := entry.count.snapshot()
 			hop.URLs = append(hop.URLs, URLStats{URL: entry.url, Stats: count.stats})
-			aggregate.add(count)
+			if !seen[entry.count] {
+				seen[entry.count] = true
+				aggregate.add(count)
+			}
 		}
 		hop.Stats = aggregate.stats
 		hops[index] = hop

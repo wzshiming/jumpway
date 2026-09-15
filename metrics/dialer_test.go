@@ -241,6 +241,54 @@ func TestRuleDialerTargets(t *testing.T) {
 	}
 }
 
+func TestTargetViaUnderFailover(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		goodErr error
+	}{
+		{name: "second URL connects"},
+		{name: "every URL fails", goodErr: errors.New("offline")},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			registry := NewRegistry()
+			registry.Sync([]config.Rule{{Name: "rule"}})
+			rule := registry.Rule("rule")
+			wrap := rule.HopWrapper(Forward)
+			entry := wrap(1, "socks5://entry:1080", bridge.DialFunc(func(context.Context, string, string) (net.Conn, error) {
+				if test.goodErr != nil {
+					return nil, test.goodErr
+				}
+				inner, peer := net.Pipe()
+				closeOnCleanup(t, inner)
+				closeOnCleanup(t, peer)
+				return inner, nil
+			}))
+			bad := wrap(0, "ssh://user:secret@bad:22", bridge.DialFunc(func(context.Context, string, string) (net.Conn, error) {
+				return nil, errors.New("bad exit")
+			}))
+			good := wrap(0, "ssh://user:secret@good:22", entry)
+			// Mimics bridge's backoffManager: the exit node tries its next LB URL inside one dial.
+			node := bridge.DialFunc(func(ctx context.Context, network, address string) (net.Conn, error) {
+				if connected, err := bad.DialContext(ctx, network, address); err == nil {
+					return connected, nil
+				}
+				return good.DialContext(ctx, network, address)
+			})
+			connected, err := rule.WrapDialer(node).DialContext(context.Background(), "tcp", "example.com:443")
+			if !errors.Is(err, test.goodErr) {
+				t.Fatalf("DialContext = %v, want %v", err, test.goodErr)
+			}
+			if connected != nil {
+				closeOnCleanup(t, connected)
+			}
+			targets := registry.Snapshot().Rules[0].Targets
+			if len(targets) != 1 || targets[0].Via != "ssh://user:xxxxx@good:22" {
+				t.Fatalf("targets = %+v, want via the URL that was tried last", targets)
+			}
+		})
+	}
+}
+
 func TestTargetViaSeparatesSameAddress(t *testing.T) {
 	registry := NewRegistry()
 	registry.Sync([]config.Rule{{Name: "rule"}})

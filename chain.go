@@ -23,15 +23,15 @@ func NewChainDialer(ctx context.Context, base bridge.Dialer, way []config.Node, 
 	for index := len(way) - 1; index >= 0; index-- {
 		node := chain.NewBridgeChain()
 		node.DialerFunc = nil
-		node.RegisterDefault(bridge.BridgeFunc(func(ctx context.Context, dialer bridge.Dialer, address string) (bridge.Dialer, error) {
-			dialer, err := plain.BridgeChainWithConfig(ctx, dialer, config.Node{LB: []string{address}})
+		node.RegisterDefault(bridge.BridgeFunc(func(ctx context.Context, previous bridge.Dialer, address string) (bridge.Dialer, error) {
+			hop, err := plain.BridgeChainWithConfig(ctx, previous, config.Node{LB: []string{address}})
 			if err != nil {
 				return nil, err
 			}
 			if wrap != nil {
-				dialer = wrap(index, address, dialer)
+				hop = wrap(index, address, hop)
 			}
-			return dialer, nil
+			return hop, nil
 		}))
 		var err error
 		dialer, err = node.BridgeChainWithConfig(ctx, dialer, way[index])

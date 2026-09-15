@@ -15,16 +15,18 @@ type dialer struct {
 	inner bridge.Dialer
 	count *counter
 	url   string
+	exit  bool
 }
 
 func (d *dialer) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
-	if trace, ok := ctx.Value(traceKey{}).(*pathTrace); ok && d.url != "" {
-		trace.via.CompareAndSwap(nil, &d.url)
-	}
 	started := time.Now()
 	connected, err := d.inner.DialContext(ctx, network, address)
 	now := time.Now()
 	d.count.dial(now.Sub(started), now, err)
+	// Bridge retries other LB URLs of the exit node inside one dial; the last attempt is the one that connected.
+	if trace, ok := ctx.Value(traceKey{}).(*pathTrace); ok && d.exit {
+		trace.via.Store(&d.url)
+	}
 	if err != nil {
 		return nil, err
 	}

@@ -127,7 +127,7 @@ func (r *Rule) HopWrapper(role Role) func(index int, url string, d bridge.Dialer
 			}
 			r.ways[role][index].urls = append(r.ways[role][index].urls, urlCounter{url: key.url, count: count})
 		}
-		return &dialer{inner: inner, count: count, url: key.url}
+		return &dialer{inner: inner, count: count, url: key.url, exit: index == 0}
 	}
 }
 

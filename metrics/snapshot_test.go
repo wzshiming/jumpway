@@ -134,6 +134,22 @@ func TestSnapshotHopAggregation(t *testing.T) {
 	}
 }
 
+func TestSnapshotDuplicateRedactedURLs(t *testing.T) {
+	registry := NewRegistry()
+	registry.Sync([]config.Rule{{Name: "rule", Forward: config.Forward{Way: []bridgeconfig.Node{{LB: []string{"ssh://u:a@h:22", "ssh://u:b@h:22"}}}}}})
+	rule := registry.Rule("rule")
+	count := rule.HopWrapper(Forward)(0, "ssh://u:a@h:22", &net.Dialer{}).(*dialer).count
+	count.dial(time.Millisecond, time.Now(), nil)
+	count.total.Store(1)
+	hop := registry.Snapshot().Rules[0].Forward[0]
+	if len(hop.URLs) != 2 || hop.URLs[0].URL != "ssh://u:xxxxx@h:22" || hop.URLs[1].URL != hop.URLs[0].URL {
+		t.Fatalf("urls = %+v, want both positions with the redacted URL", hop.URLs)
+	}
+	if hop.Stats.Dials != 1 || hop.Stats.Total != 1 {
+		t.Fatalf("shared counter summed twice: %+v", hop.Stats)
+	}
+}
+
 func TestSnapshotTargetOrder(t *testing.T) {
 	registry := NewRegistry()
 	registry.Sync([]config.Rule{{Name: "rule"}})
