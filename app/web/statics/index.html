@@ -25,12 +25,11 @@
 				<span id="dirty-badge" class="badge" data-i18n="unsaved" hidden></span>
 			</div>
 		</header>
-		<div id="rule-status" class="status-rules" aria-live="polite" data-i18n-aria="rules"></div>
+		<div id="rule-status" class="status-rules" aria-live="polite" data-i18n-aria="ruleTabs"></div>
 
-		<nav id="page-nav" class="page-nav" role="navigation" data-i18n-aria="navigation">
-			<a href="#/rules" data-page="rules" data-i18n="rules"></a>
-			<a href="#/settings" data-page="settings" data-i18n="settings"></a>
-			<a href="#/yaml" data-page="yaml" data-i18n="yaml"></a>
+		<nav id="page-nav" class="page-nav" role="tablist" data-i18n-aria="ruleTabs">
+			<a href="#/settings" data-page="settings" data-i18n="settings" role="tab" aria-selected="false" aria-controls="page-panel" tabindex="-1"></a>
+			<a href="#/yaml" data-page="yaml" data-i18n="yaml" role="tab" aria-selected="false" aria-controls="page-panel" tabindex="-1"></a>
 		</nav>
 
 		<div class="feedback">
@@ -90,7 +89,7 @@
 	</template>
 
 	<template id="page-template">
-		<section class="section" aria-labelledby="page-heading">
+		<section id="page-panel" class="section" role="tabpanel" aria-labelledby="page-heading">
 			<div class="section-heading"><h2 id="page-heading" tabindex="-1"></h2></div>
 			<div id="request-error" class="message error" role="alert" hidden>
 				<strong data-i18n="requestFailed"></strong>
@@ -103,12 +102,10 @@
 
 	<template id="rules-template">
 		<div class="rules-page">
-			<div id="rule-tabs" class="tabs" role="tablist" data-i18n-aria="ruleTabs"></div>
-			<section id="rule-panel" role="tabpanel" tabindex="0" aria-labelledby="page-heading">
+			<section id="rule-panel" aria-labelledby="page-heading">
 				<form id="rule-form" autocomplete="off" novalidate>
 					<fieldset id="page-fields">
 						<p id="no-rules" class="hint" data-i18n="noRules" hidden></p>
-						<h3 id="new-rule-heading" data-i18n="newRule" hidden></h3>
 						<div class="rule-fields">
 							<div class="field">
 								<label for="rule-name" data-i18n="rule"></label>
@@ -183,13 +180,13 @@
 	</template>
 
 	<template id="rule-tab-template">
-		<button type="button" role="tab" aria-selected="false" aria-controls="rule-panel" tabindex="-1">
+		<a role="tab" aria-selected="false" aria-controls="page-panel" tabindex="-1">
 			<span class="tab-name"></span>
-		</button>
+		</a>
 	</template>
 
 	<template id="new-tab-template">
-		<button id="new-rule-tab" type="button" role="tab" aria-selected="false" aria-controls="rule-panel" tabindex="-1" data-i18n-aria="newRule" data-i18n-title="newRule">+</button>
+		<a id="new-rule-tab" href="#/rules" role="tab" aria-selected="false" aria-controls="page-panel" tabindex="-1" data-i18n-aria="newRule" data-i18n-title="newRule">+</a>
 	</template>
 
 	<template id="rule-status-template">

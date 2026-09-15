@@ -16,8 +16,7 @@
       saveApply: "Save & Apply",
       unsaved: "Unsaved changes",
       discardChanges: "Discard unsaved changes?",
-      navigation: "Configuration pages",
-      ruleTabs: "Rule editors",
+      ruleTabs: "Rules",
       yaml: "Advanced YAML",
       settings: "Settings",
       webUI: "Web UI",
@@ -26,7 +25,6 @@
       port: "Port",
       invalidPort: "Port must be a whole number between 0 and 65535.",
       invalidForwardPort: "Port must be a whole number between 1 and 65535.",
-      rules: "Rules",
       rule: "Rule name",
       enabled: "Enabled",
       entry: "Entry",
@@ -118,8 +116,7 @@
       saveApply: "保存并应用",
       unsaved: "未保存的修改",
       discardChanges: "放弃未保存的修改吗？",
-      navigation: "配置页面",
-      ruleTabs: "规则编辑器",
+      ruleTabs: "规则",
       yaml: "高级 YAML",
       settings: "设置",
       webUI: "网页配置",
@@ -128,7 +125,6 @@
       port: "端口",
       invalidPort: "端口必须是 0 到 65535 之间的整数。",
       invalidForwardPort: "端口必须是 1 到 65535 之间的整数。",
-      rules: "规则",
       rule: "规则名称",
       enabled: "启用",
       entry: "入口",
@@ -291,7 +287,7 @@
     if (fields) fields.disabled = value || !page.loaded;
     const panel = find("#rule-panel");
     if (panel) panel.setAttribute("aria-busy", String(value));
-    all("#rule-tabs button, #retry").forEach(button => { button.disabled = value; });
+    all("#retry").forEach(button => { button.disabled = value; });
     all("a[href^='#/']").forEach(link => {
       if (value) link.setAttribute("aria-disabled", "true");
       else link.removeAttribute("aria-disabled");
@@ -347,21 +343,27 @@
     if (ui.builder.open) ui.builder.close();
     ui.main.replaceChildren(clone("page"));
     ui.main.dataset.page = route.kind;
-    const title = { rules: "rules", settings: "settings", yaml: "yaml" };
-    find("#page-heading").textContent = t(title[route.kind]);
-    document.title = t(title[route.kind]) + " | " + t("appName");
-    all("[data-page]", ui.nav).forEach(link => {
-      if (link.dataset.page === route.kind) link.setAttribute("aria-current", "page");
-      else link.removeAttribute("aria-current");
-    });
     find("#retry").addEventListener("click", () => navigate(activeHash, { replace: true, create: newRule }));
     clearErrors();
     setBusy(true);
     activity("loading");
     try {
+      let listError;
+      const entries = await api("/rules").then(list).catch(error => { listError = error; return []; });
+      if (route.kind === "rules") {
+        route = { ...route, name: route.name ?? (newRule ? null : entries[0]?.name ?? null) };
+        if (!listError) newRule = route.name === null;
+      }
+      renderNav(entries, route);
+      const title = route.kind === "rules" ? route.name ?? t("newRule") : t(route.kind);
+      find("#page-heading").textContent = title;
+      document.title = title + " | " + t("appName");
+      setBusy(true);
+      if (listError && route.kind === "rules") throw listError;
       const loaders = { rules: loadRules, settings: loadSettings, yaml: loadYAML };
-      await loaders[route.kind](route);
+      await loaders[route.kind](route, entries);
       page.loaded = true;
+      if (listError) throw listError;
       if (pendingWarning) {
         showError(pendingWarning, true);
         activity("savedWithErrors");
@@ -374,37 +376,38 @@
     } finally {
       setBusy(false);
       if (focusPage) {
-        const target = route.kind === "rules" ? find("#rule-tabs [aria-selected=true]") : null;
+        const target = find("[aria-selected=true]", ui.nav);
         (target || find("#page-heading")).focus();
       }
     }
   }
 
-  async function loadRules(route) {
-    const entries = list(await api("/rules"));
-    const originalName = route.name !== null ? route.name : newRule ? null : entries[0]?.name ?? null;
-    newRule = originalName === null;
-    const view = clone("rules");
-    find("#page-content").append(view);
-    const tabs = find("#rule-tabs");
-    entries.forEach((rule, index) => {
+  function renderNav(entries, route) {
+    all("[data-rule], #new-rule-tab", ui.nav).forEach(tab => tab.remove());
+    const tabs = entries.map((rule, index) => {
       const tab = clone("rule-tab");
       tab.id = "rule-tab-" + index;
+      tab.dataset.rule = rule.name;
+      tab.href = ruleRoute(rule.name);
       find(".tab-name", tab).textContent = rule.name;
-      selectRuleTab(tab, rule.name === originalName);
-      tab.addEventListener("click", () => {
-        if (rule.name !== originalName) navigate(ruleRoute(rule.name));
-      });
-      tabs.append(tab);
+      return tab;
     });
-    const add = clone("new-tab");
-    selectRuleTab(add, newRule);
-    add.addEventListener("click", () => {
-      if (!newRule) navigate("#/rules", { create: true, replace: activeHash === "#/rules" });
+    ui.nav.prepend(...tabs, clone("new-tab"));
+    all("[role=tab]", ui.nav).forEach(tab => {
+      const selected = route.kind === "rules"
+        ? tab.id === "new-rule-tab" ? route.name === null : tab.dataset.rule === route.name
+        : tab.dataset.page === route.kind;
+      tab.setAttribute("aria-selected", String(selected));
+      tab.tabIndex = selected ? 0 : -1;
+      if (selected) tab.setAttribute("aria-current", "page");
+      else tab.removeAttribute("aria-current");
     });
-    tabs.append(add);
-    bindRuleTabs(tabs);
-    if (!find("[aria-selected=true]", tabs)) add.tabIndex = 0;
+    if (!find("[aria-selected=true]", ui.nav)) find("[role=tab]", ui.nav).tabIndex = 0;
+  }
+
+  async function loadRules(route, entries) {
+    const originalName = route.name;
+    find("#page-content").append(clone("rules"));
     setBusy(true);
     const rule = originalName === null ? { name: "", listen: { host: "127.0.0.1", port: 0 }, forward: { way: [] } }
       : await api(rulePath(originalName));
@@ -416,7 +419,6 @@
     const forward = rule.forward || {};
     find("#mode-" + (forward.port ? "forward" : "proxy")).checked = true;
     for (const field of ["host", "port"]) find("#target-" + field).value = text(forward[field]);
-    find("#new-rule-heading").hidden = !newRule;
     find("#no-rules").hidden = entries.length !== 0;
     find("#delete-rule").hidden = newRule;
     const editors = {
@@ -720,12 +722,6 @@
     return [t("chainLocal"), ...hops.reverse(), target || t("chainTarget")].join(" \u2192 ");
   }
 
-  function selectRuleTab(tab, selected) {
-    tab.setAttribute("aria-selected", String(selected));
-    tab.tabIndex = selected ? 0 : -1;
-    if (selected) find("#rule-panel").setAttribute("aria-labelledby", tab.id);
-  }
-
   function bindRuleTabs(strip) {
     strip.addEventListener("keydown", event => {
       if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key) || busy) return;
@@ -937,8 +933,12 @@
       if (!link || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       event.preventDefault();
       const hash = link.getAttribute("href");
-      if (hash !== activeHash) navigate(hash);
+      const create = link.id === "new-rule-tab";
+      if (link.getAttribute("aria-current") !== "page" && (hash !== activeHash || create !== newRule)) {
+        navigate(hash, { create, replace: create && activeHash === "#/rules" });
+      }
     });
+    bindRuleTabs(ui.nav);
     window.addEventListener("hashchange", hashChanged);
     ["input", "change"].forEach(event => {
       ui.builderFields.addEventListener(event, updateBuilderPreview);

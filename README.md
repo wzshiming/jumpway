@@ -59,7 +59,7 @@ The configuration lives in `~/.jumpway/config.yaml`. Open the tray menu
 `Config` → `Web UI` (or browse to `http://127.0.0.1:1088/`) to manage it in the
 browser:
 
-- `Rules`: one tab per rule; `+` adds one. A rule is an **entry** (`listen`) and
+- Each rule is a tab at the top of the page; `+` adds one. A rule is an **entry** (`listen`) and
   an **exit** (`forward`):
     - `listen`: the host and port clients connect to, with optional proxy
       credentials. Leave `Listen through` empty to open the port on this
