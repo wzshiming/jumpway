@@ -474,7 +474,7 @@
       let listError;
       const entries = await api("/rules").then(list).catch(error => { listError = error; return []; });
       if (route.kind === "rules") {
-        route = { ...route, name: route.name ?? (newRule || route.hash === "#/rules" ? null : entries[0]?.name ?? null) };
+        route = { ...route, name: route.name ?? (newRule ? null : entries[0]?.name ?? null) };
         if (!listError) newRule = route.name === null;
       }
       renderNav(entries, route);
@@ -970,7 +970,7 @@
     const view = page;
     if (statsRequest) statsRequest.then(() => { if (page === view) refreshStats(); });
     else refreshStats();
-    statsTimer = setInterval(refreshStats, 2000);
+    statsTimer = setInterval(refreshStats, 1000);
   }
 
   function chainSummary(way, target = "") {

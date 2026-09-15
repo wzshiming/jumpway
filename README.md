@@ -129,7 +129,8 @@ failures), for every hop URL of both chains (with the hop it is reached
 through) and for the targets clients connected to (with the exit URL that was
 used); the `Statistics` tab lists all rules and can reset the counters. The
 counters live in memory since the process started, survive reloads for
-unchanged rule names and URLs, and keep at most 1000 targets per rule. Hops
+unchanged rule names and for URLs that keep their position in a chain, and
+keep at most 1000 targets per rule. Hops
 behind a connection-multiplexing hop (SSH) count transports rather than client
 connections. The same data is served as JSON at `/apis/stats` (`DELETE`
 resets it) and in Prometheus text format at `/metrics`.

@@ -177,7 +177,7 @@ input[type="checkbox"] { flex: 0 0 16px; width: 16px; min-height: 16px; height: 
 .stats-table tbody tr:hover { background: var(--subtle); }
 .stats-table .number { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .stats-table td.number, .stats-table .address { font-family: var(--mono); }
-.stats-table .address { min-width: 160px; max-width: 250px; overflow-wrap: anywhere; }
+.stats-table .address { min-width: 120px; max-width: 250px; overflow-wrap: anywhere; }
 .stats-table .stats-rule { display: inline-block; min-width: 44px; max-width: 180px; font-weight: 600; }
 .stats-table .rule-chip { flex-wrap: nowrap; white-space: nowrap; min-height: 26px; padding: 3px 6px; font-size: 11px; }
 .table-sub { display: block; color: var(--muted); font-size: 10px; font-weight: 400; }
