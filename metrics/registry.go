@@ -24,12 +24,13 @@ const (
 const MaxTargets = 1000
 
 type Registry struct {
-	mu     sync.RWMutex
-	nextID atomic.Uint64
-	since  time.Time
-	rules  map[string]*Rule
-	order  []string
-	live   map[uint64]*live
+	mu       sync.RWMutex
+	nextID   atomic.Uint64
+	since    time.Time
+	lastTick time.Time
+	rules    map[string]*Rule
+	order    []string
+	live     map[uint64]*live
 }
 
 type Rule struct {
@@ -89,7 +90,8 @@ type live struct {
 }
 
 func NewRegistry() *Registry {
-	return &Registry{since: time.Now(), rules: make(map[string]*Rule), live: make(map[uint64]*live)}
+	now := time.Now()
+	return &Registry{since: now, lastTick: now, rules: make(map[string]*Rule), live: make(map[uint64]*live)}
 }
 
 func (r *Registry) Sync(rules []config.Rule) {
@@ -100,7 +102,7 @@ func (r *Registry) Sync(rules []config.Rule) {
 	for _, rule := range rules {
 		entry := r.rules[rule.Name]
 		if entry == nil {
-			entry = &Rule{registry: r, name: rule.Name, count: newCounter(time.Now()), targets: make(map[targetKey]*counter)}
+			entry = &Rule{registry: r, name: rule.Name, count: newCounter(r.lastTick), targets: make(map[targetKey]*counter)}
 		}
 		counters := make(map[hopKey]*counter)
 		entry.ways[Listen] = entry.syncWay(Listen, rule.Listen.Way, counters)
@@ -132,7 +134,7 @@ func (r *Rule) syncWay(role Role, nodes []bridgeconfig.Node, counters map[hopKey
 			if count == nil {
 				count = r.counters[key]
 				if count == nil {
-					count = newCounter(time.Now())
+					count = newCounter(r.registry.lastTick)
 				}
 				counters[key] = count
 			}
@@ -169,7 +171,7 @@ func (r *Rule) HopWrapper(role Role) func(index int, url string, d bridge.Dialer
 		defer r.registry.mu.Unlock()
 		count := r.counters[key]
 		if count == nil {
-			count = newCounter(time.Now())
+			count = newCounter(r.registry.lastTick)
 			r.counters[key] = count
 			for len(r.ways[role]) <= index {
 				r.ways[role] = append(r.ways[role], hop{})
@@ -200,7 +202,7 @@ func (r *Rule) target(key targetKey) *counter {
 		delete(r.targets, oldest)
 		r.targetsEvicted++
 	}
-	count := newCounter(time.Now())
+	count := newCounter(r.registry.lastTick)
 	r.targets[key] = count
 	return count
 }
@@ -209,7 +211,7 @@ func (r *Registry) Reset() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.since = time.Now()
-	r.eachCounter(func(count *counter) { count.reset(r.since) })
+	r.eachCounter(func(count *counter) { count.reset(r.lastTick) })
 	for _, rule := range r.rules {
 		rule.targets = make(map[targetKey]*counter)
 		rule.targetsEvicted = 0
@@ -237,6 +239,7 @@ func (r *Registry) Run(ctx context.Context) {
 func (r *Registry) tick(now time.Time) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.lastTick = now
 	r.eachCounter(func(count *counter) { count.tick(now) })
 	for _, entry := range r.live {
 		entry.count.tick(now)

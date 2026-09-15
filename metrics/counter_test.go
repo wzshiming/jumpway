@@ -154,7 +154,7 @@ func TestReset(t *testing.T) {
 	}
 	rule.count.up.Add(100)
 	hopCount.down.Add(80)
-	registry.tick(registry.since.Add(time.Second))
+	registry.tick(registry.lastTick.Add(time.Second))
 	snapshot = registry.Snapshot().Rules[0]
 	if snapshot.Stats.RateUp != 100 || snapshot.Forward[0].Stats.RateDown != 80 {
 		t.Fatal("reset retained previous rate samples")

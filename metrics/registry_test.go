@@ -92,6 +92,48 @@ func TestRegistrySync(t *testing.T) {
 	}
 }
 
+// Counters created or reset late in a window must not extrapolate their first rate (and peak) from a partial window.
+func TestRegistryCountersMeasureFromLastTick(t *testing.T) {
+	const url = "ssh://u:secret@first:22"
+	registry := NewRegistry()
+	start := time.Unix(100, 0)
+	registry.tick(start)
+	registry.Sync([]config.Rule{{Name: "rule", Forward: config.Forward{Way: []bridgeconfig.Node{{LB: []string{url}}}}}})
+	rule := registry.Rule("rule")
+	registry.mu.Lock()
+	target := rule.target(targetKey{address: "example.com:443"})
+	registry.mu.Unlock()
+	hop := rule.HopWrapper(Forward)(0, url, &net.Dialer{}).(*dialer).count
+	counters := map[string]*counter{"rule": rule.count, "target": target, "hop": hop}
+	stats := func() map[string]Stats {
+		snapshot := registry.Snapshot().Rules[0]
+		return map[string]Stats{"rule": snapshot.Stats, "target": snapshot.Targets[0].Stats, "hop": snapshot.Forward[0].Stats}
+	}
+	for _, count := range counters {
+		count.addBytes(true, 100, start.Add(900*time.Millisecond).UnixNano())
+	}
+	registry.tick(start.Add(time.Second))
+	for name, current := range stats() {
+		if current.RateUp != 100 || current.PeakRateUp != 100 {
+			t.Fatalf("%s after creation: rate/peak = (%d, %d), want (100, 100)", name, current.RateUp, current.PeakRateUp)
+		}
+	}
+	registry.Reset()
+	registry.mu.Lock()
+	target = rule.target(targetKey{address: "example.com:443"})
+	registry.mu.Unlock()
+	counters["target"] = target
+	for _, count := range counters {
+		count.addBytes(false, 50, start.Add(1900*time.Millisecond).UnixNano())
+	}
+	registry.tick(start.Add(2 * time.Second))
+	for name, current := range stats() {
+		if current.RateDown != 50 || current.PeakRateDown != 50 || current.PeakRateUp != 0 {
+			t.Fatalf("%s after reset: rate/peak down = (%d, %d), peak up = %d, want (50, 50, 0)", name, current.RateDown, current.PeakRateDown, current.PeakRateUp)
+		}
+	}
+}
+
 func TestRegistryHopPeak(t *testing.T) {
 	for role, wayName := range []string{"listen", "forward"} {
 		for _, test := range []struct {

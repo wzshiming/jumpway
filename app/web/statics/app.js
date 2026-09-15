@@ -854,6 +854,7 @@
     const keys = new Set(items.map(item => text(key(item))));
     rows.forEach((row, value) => {
       if (!keys.has(value)) {
+        if (tooltipTarget && row.contains(tooltipTarget)) hideTooltip();
         if (details) row.nextElementSibling.remove();
         row.remove();
       }
@@ -988,7 +989,7 @@
         const address = runtime?.address || (config?.listen ? submittedAddress(config.listen) : "") || "\u2014";
         find(".stats-address", row).textContent = address;
         const destination = find(".stats-target", row);
-        destination.textContent = target ? "\u2192 " + target : "";
+        destination.textContent = target ? "\u2192\u00a0" + target : "";
         destination.hidden = !target;
         renderStatFields(row, rule.stats);
         const count = list(rule.connections).length;
@@ -1681,7 +1682,10 @@
   function bindTooltips() {
     const show = event => {
       const target = event.target.closest("[data-tip]");
-      if (!target?.dataset.tip) return;
+      if (!target?.dataset.tip) {
+        if (tooltipTarget) hideTooltip();
+        return;
+      }
       hideTooltip();
       tooltipTarget = target;
       const tooltip = ui.tooltip;

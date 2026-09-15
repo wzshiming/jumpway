@@ -108,7 +108,7 @@ func (d *ruleDialer) DialContext(ctx context.Context, network, address string) (
 		via:     key.via,
 		path:    path,
 		started: now,
-		count:   newCounter(now),
+		count:   newCounter(registry.lastTick),
 		conn:    wrapped,
 	}
 	wrapped.extra = entry.count
