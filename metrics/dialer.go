@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"sync/atomic"
+	"sync"
 	"time"
 
 	"github.com/wzshiming/bridge"
@@ -16,7 +16,8 @@ type dialer struct {
 	inner bridge.Dialer
 	count *counter
 	url   string
-	exit  bool
+	index int
+	role  Role
 }
 
 func (d *dialer) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
@@ -24,9 +25,10 @@ func (d *dialer) DialContext(ctx context.Context, network, address string) (net.
 	connected, err := d.inner.DialContext(ctx, network, address)
 	now := time.Now()
 	d.count.dial(now.Sub(started), now, err)
-	// Bridge retries other LB URLs of the exit node inside one dial; the last attempt is the one that connected.
-	if trace, ok := ctx.Value(traceKey{}).(*pathTrace); ok && d.exit {
-		trace.via.Store(&d.url)
+	if trace, ok := ctx.Value(traceKey{}).(*pathTrace); ok && d.role == Forward {
+		trace.mu.Lock()
+		trace.urls[d.index] = d.url
+		trace.mu.Unlock()
 	}
 	if err != nil {
 		return nil, err
@@ -49,7 +51,8 @@ func (d *dialer) Listen(ctx context.Context, network, address string) (net.Liste
 type traceKey struct{}
 
 type pathTrace struct {
-	via atomic.Pointer[string]
+	mu   sync.Mutex
+	urls map[int]string
 }
 
 type ruleDialer struct {
@@ -62,15 +65,14 @@ func (r *Rule) WrapDialer(inner bridge.Dialer) bridge.Dialer {
 }
 
 func (d *ruleDialer) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
-	trace := &pathTrace{}
+	trace := &pathTrace{urls: make(map[int]string)}
 	ctx = context.WithValue(ctx, traceKey{}, trace)
 	started := time.Now()
 	connected, err := d.inner.DialContext(ctx, network, address)
 	now := time.Now()
-	key := targetKey{address: address}
-	if via := trace.via.Load(); via != nil {
-		key.via = *via
-	}
+	trace.mu.Lock()
+	defer trace.mu.Unlock()
+	key := targetKey{address: address, via: trace.urls[0]}
 	registry := d.rule.registry
 	registry.mu.Lock()
 	defer registry.mu.Unlock()
@@ -84,12 +86,27 @@ func (d *ruleDialer) DialContext(ctx context.Context, network, address string) (
 	if registry.rules[d.rule.name] != d.rule {
 		return wrapped, nil
 	}
+	path := make([]PathHop, len(d.rule.ways[Forward]))
+	for index := range path {
+		url, dialed := trace.urls[index]
+		if urls := d.rule.ways[Forward][index].urls; !dialed && len(urls) > 0 {
+			url = urls[0].url
+			for _, candidate := range urls[1:] {
+				if candidate.url != url {
+					url = ""
+					break
+				}
+			}
+		}
+		path[index] = PathHop{Index: index, URL: url, Dialed: dialed}
+	}
 	entry := &live{
 		id:      registry.nextID.Add(1),
 		rule:    d.rule,
 		client:  jumpway.ClientAddr(ctx),
 		target:  address,
 		via:     key.via,
+		path:    path,
 		started: now,
 		count:   newCounter(now),
 		conn:    wrapped,

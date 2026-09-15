@@ -77,7 +77,7 @@ func TestSnapshotJSON(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, value := range []interface{}{Snapshot{}, RuleStats{}, Hop{}, URLStats{}, Target{}, Stats{}, Connection{}} {
+	for _, value := range []interface{}{Snapshot{}, RuleStats{}, Hop{}, URLStats{}, Target{}, Stats{}, Connection{}, PathHop{}} {
 		typeInfo := reflect.TypeOf(value)
 		for _, field := range reflect.VisibleFields(typeInfo) {
 			if field.IsExported() && (field.Type == reflect.TypeFor[time.Time]() || field.Type == reflect.TypeFor[time.Duration]()) {
@@ -231,10 +231,13 @@ func TestSnapshotConnections(t *testing.T) {
 		if err := json.Unmarshal(data, &object); err != nil {
 			t.Fatal(err)
 		}
-		keys := []string{"id", "target", "via", "started", "up", "down", "rate_up", "rate_down"}
+		keys := []string{"id", "target", "via", "path", "started", "up", "down", "rate_up", "rate_down"}
 		if client != "" {
 			keys = append(keys, "client")
 		}
 		assertKeys(t, object, keys...)
+		if path, ok := object["path"].([]interface{}); !ok || len(path) != 0 {
+			t.Fatalf("direct path = %#v, want []", object["path"])
+		}
 	}
 }

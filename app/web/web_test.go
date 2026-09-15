@@ -146,6 +146,7 @@ func TestStatsGet(t *testing.T) {
 			Targets: []metrics.Target{{Address: "example.com:443", Via: "ssh://u:xxxxx@h:22"}},
 			Connections: []metrics.Connection{{
 				ID: 42, Client: "127.0.0.1:12345", Target: "example.com:443", Via: "ssh://u:xxxxx@h:22",
+				Path:    []metrics.PathHop{{Index: 0, URL: "ssh://u:xxxxx@h:22", Dialed: true}},
 				Started: "2026-09-15T12:00:01.123Z", Up: 3, Down: 5, RateUp: 1, RateDown: 2,
 			}},
 		}},
@@ -212,6 +213,7 @@ func TestStatsGet(t *testing.T) {
 	}
 	want := map[string]any{
 		"id": float64(42), "client": "127.0.0.1:12345", "target": "example.com:443", "via": "ssh://u:xxxxx@h:22",
+		"path":    []any{map[string]any{"index": float64(0), "url": "ssh://u:xxxxx@h:22", "dialed": true}},
 		"started": "2026-09-15T12:00:01.123Z", "up": float64(3), "down": float64(5), "rate_up": float64(1), "rate_down": float64(2),
 	}
 	if !reflect.DeepEqual(connections[0], want) {

@@ -53,15 +53,23 @@ type Target struct {
 }
 
 type Connection struct {
-	ID       uint64 `json:"id"`
-	Client   string `json:"client,omitempty"`
-	Target   string `json:"target"`
-	Via      string `json:"via"`
-	Started  string `json:"started"`
-	Up       int64  `json:"up"`
-	Down     int64  `json:"down"`
-	RateUp   int64  `json:"rate_up"`
-	RateDown int64  `json:"rate_down"`
+	ID       uint64    `json:"id"`
+	Client   string    `json:"client,omitempty"`
+	Target   string    `json:"target"`
+	Via      string    `json:"via"`
+	Path     []PathHop `json:"path"`
+	Started  string    `json:"started"`
+	Up       int64     `json:"up"`
+	Down     int64     `json:"down"`
+	RateUp   int64     `json:"rate_up"`
+	RateDown int64     `json:"rate_down"`
+}
+
+// PathHop is one hop of a connection's actual route; Dialed is false when a cached transport was reused and URL was inferred (or unknown).
+type PathHop struct {
+	Index  int    `json:"index"`
+	URL    string `json:"url"`
+	Dialed bool   `json:"dialed"`
 }
 
 type counterSnapshot struct {
@@ -82,6 +90,7 @@ func (r *Registry) Snapshot() Snapshot {
 			Client:   entry.client,
 			Target:   entry.target,
 			Via:      entry.via,
+			Path:     append([]PathHop{}, entry.path...),
 			Started:  entry.started.UTC().Format(time.RFC3339Nano),
 			Up:       entry.count.up.Load(),
 			Down:     entry.count.down.Load(),

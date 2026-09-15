@@ -2,13 +2,16 @@ package metrics
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net"
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/wzshiming/bridge"
+	bridgeconfig "github.com/wzshiming/bridge/config"
 	"github.com/wzshiming/jumpway"
 	"github.com/wzshiming/jumpway/config"
 )
@@ -160,7 +163,7 @@ func TestRuleDialerTargets(t *testing.T) {
 		err  error
 	}{
 		{name: "forward chain", role: Forward, url: "ssh://user:secret@exit:22", via: "ssh://user:xxxxx@exit:22"},
-		{name: "listen chain", role: Listen, url: "ssh://user:secret@exit:22", via: "ssh://user:xxxxx@exit:22"},
+		{name: "listen chain", role: Listen, url: "ssh://user:secret@exit:22"},
 		{name: "direct"},
 		{name: "failed direct", err: failure},
 		{name: "failed chain", role: Forward, url: "ssh://user:secret@exit:22", via: "ssh://user:xxxxx@exit:22", err: failure},
@@ -242,6 +245,26 @@ func TestRuleDialerTargets(t *testing.T) {
 				if connection.ID != 1 || connection.Client != client.String() || connection.Target != "example.com:443" || connection.Via != test.via {
 					t.Fatalf("connection = %+v, want client %q and via %q", connection, client.String(), test.via)
 				}
+				data, err := json.Marshal(connection)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var body struct {
+					Path []map[string]any `json:"path"`
+				}
+				if err := json.Unmarshal(data, &body); err != nil {
+					t.Fatal(err)
+				}
+				path := []map[string]any{}
+				if test.role == Forward && test.url != "" {
+					path = append(path,
+						map[string]any{"index": float64(0), "url": test.via, "dialed": true},
+						map[string]any{"index": float64(1), "url": "socks5://entry:1080", "dialed": true},
+					)
+				}
+				if !reflect.DeepEqual(body.Path, path) {
+					t.Fatalf("connection path = %+v, want %+v; JSON: %s", body.Path, path, data)
+				}
 				started, err := time.Parse(time.RFC3339Nano, connection.Started)
 				if err != nil || started.Before(before) || started.After(after) || connection.Started != started.UTC().Format(time.RFC3339Nano) {
 					t.Fatalf("connection started = %q, want UTC dial time between %v and %v", connection.Started, before, after)
@@ -304,9 +327,103 @@ func TestTargetViaUnderFailover(t *testing.T) {
 			if connected != nil {
 				closeOnCleanup(t, connected)
 			}
-			targets := registry.Snapshot().Rules[0].Targets
+			snapshot := registry.Snapshot().Rules[0]
+			targets := snapshot.Targets
 			if len(targets) != 1 || targets[0].Via != "ssh://user:xxxxx@good:22" {
 				t.Fatalf("targets = %+v, want via the URL that was tried last", targets)
+			}
+			if test.goodErr == nil {
+				path := []PathHop{
+					{Index: 0, URL: "ssh://user:xxxxx@good:22", Dialed: true},
+					{Index: 1, URL: "socks5://entry:1080", Dialed: true},
+				}
+				if len(snapshot.Connections) != 1 || !reflect.DeepEqual(snapshot.Connections[0].Path, path) {
+					t.Fatalf("connections = %+v, want path %+v", snapshot.Connections, path)
+				}
+			}
+		})
+	}
+}
+
+func TestConnectionPathCachedTransport(t *testing.T) {
+	const exit = "socks5://exit:1080"
+	const entry = "ssh://user:secret@entry:22"
+	const redacted = "ssh://user:xxxxx@entry:22"
+	for _, test := range []struct {
+		name string
+		urls []string
+		url  string
+	}{
+		{name: "single URL", urls: []string{entry}, url: redacted},
+		{name: "multiple URLs", urls: []string{entry, "ssh://other:22"}},
+		{name: "duplicate URLs", urls: []string{entry, entry}, url: redacted},
+		{name: "duplicate redacted URLs", urls: []string{entry, "ssh://user:other-password@entry:22"}, url: redacted},
+		{name: "changed URL", urls: []string{"ssh://other:22"}, url: "ssh://other:22"},
+		{name: "no URLs"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			registry := NewRegistry()
+			configured := config.Rule{Name: "rule", Forward: config.Forward{Way: []bridgeconfig.Node{
+				{LB: []string{exit}},
+				{LB: []string{entry}},
+			}}}
+			registry.Sync([]config.Rule{configured})
+			rule := registry.Rule("rule")
+			wrap := rule.HopWrapper(Forward)
+			calls := 0
+			inner := wrap(1, entry, bridge.DialFunc(func(context.Context, string, string) (net.Conn, error) {
+				calls++
+				connected, peer := net.Pipe()
+				closeOnCleanup(t, connected)
+				closeOnCleanup(t, peer)
+				return connected, nil
+			}))
+			var cached net.Conn
+			outer := wrap(0, exit, bridge.DialFunc(func(ctx context.Context, network, address string) (net.Conn, error) {
+				if cached == nil {
+					connected, err := inner.DialContext(ctx, network, address)
+					if err != nil {
+						return nil, err
+					}
+					cached = connected
+				}
+				return cached, nil
+			}))
+			wrapped := rule.WrapDialer(outer)
+			first, err := wrapped.DialContext(context.Background(), "tcp", "example.com:443")
+			if err != nil {
+				t.Fatal(err)
+			}
+			closeOnCleanup(t, first)
+			path := []PathHop{
+				{Index: 0, URL: exit, Dialed: true},
+				{Index: 1, URL: redacted, Dialed: true},
+			}
+			before := registry.Snapshot().Rules[0].Connections
+			if len(before) != 1 || !reflect.DeepEqual(before[0].Path, path) {
+				t.Fatalf("first connections = %+v, want path %+v", before, path)
+			}
+			configured.Forward.Way[1].LB = test.urls
+			registry.Sync([]config.Rule{configured})
+			second, err := wrapped.DialContext(context.Background(), "tcp", "other.example:443")
+			if err != nil {
+				t.Fatal(err)
+			}
+			closeOnCleanup(t, second)
+			if calls != 1 {
+				t.Fatalf("entry dial calls = %d, want one reused transport", calls)
+			}
+			connections := registry.Snapshot().Rules[0].Connections
+			if len(connections) != 2 || !reflect.DeepEqual(connections[0].Path, path) {
+				t.Fatalf("connections = %+v, want first path retained as %+v", connections, path)
+			}
+			path[1] = PathHop{Index: 1, URL: test.url, Dialed: false}
+			if connections[1].Via != exit || !reflect.DeepEqual(connections[1].Path, path) {
+				t.Fatalf("second connection = %+v, want via %q and path %+v", connections[1], exit, path)
+			}
+			connections[1].Path[1].URL = "changed"
+			if !reflect.DeepEqual(registry.Snapshot().Rules[0].Connections[1].Path, path) {
+				t.Fatal("snapshot shares live path storage")
 			}
 		})
 	}

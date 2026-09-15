@@ -597,6 +597,7 @@
      "id",
      "target",
      "via",
+     "path",
      "started",
      "up",
      "down",
@@ -615,6 +616,12 @@
      "id": {
       "type": "integer",
       "format": "uint64"
+     },
+     "path": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/PathHop"
+      }
      },
      "rate_down": {
       "type": "integer",
@@ -788,6 +795,27 @@
       }
      }
     }
+   },
+   "PathHop": {
+    "required": [
+     "index",
+     "url",
+     "dialed"
+    ],
+    "type": "object",
+    "properties": {
+     "dialed": {
+      "type": "boolean"
+     },
+     "index": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "url": {
+      "type": "string"
+     }
+    },
+    "description": "PathHop is one hop of a connection's actual route; Dialed is false when a cached transport was reused and URL was inferred (or unknown).\n"
    },
    "RawConfig": {
     "required": [
