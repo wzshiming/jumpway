@@ -27,6 +27,9 @@ A cross-platform proxy GUI client
     - [x] Remote entry: bind the port on another machine over SSH (bridge bind)
     - [x] Port forwarding to a fixed target
     - [x] Proxy authentication (username/password)
+- [x] Traffic statistics per rule, hop, proxy URL and target
+    - [x] Live bandwidth, totals, connections, latency and parent hop in the Web UI
+    - [x] Prometheus exposition at `/metrics`
 - [x] Support multiple proxy protocols on a port [Any Proxy](https://github.com/wzshiming/anyproxy)
 - [x] Proxy protocol
     - [x] [SSH Proxy](https://github.com/wzshiming/sshproxy)
@@ -117,6 +120,19 @@ show its state. The same operations are available as a REST API under
 `/apis/configs/` (see `/swaggerui/`). Configurations written for earlier
 releases (`contexts`, `proxy`) are not migrated: recreate the rules in the
 Web UI.
+
+## Statistics
+
+Every rule page shows live statistics for the rule itself (bandwidth over the
+last second, total bytes, active and total connections, dial latency and
+failures), for every hop URL of both chains (with the hop it is reached
+through) and for the targets clients connected to (with the exit URL that was
+used); the `Statistics` tab lists all rules and can reset the counters. The
+counters live in memory since the process started, survive reloads for
+unchanged rule names and URLs, and keep at most 1000 targets per rule. Hops
+behind a connection-multiplexing hop (SSH) count transports rather than client
+connections. The same data is served as JSON at `/apis/stats` (`DELETE`
+resets it) and in Prometheus text format at `/metrics`.
 
 ## Build
 

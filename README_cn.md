@@ -27,6 +27,9 @@
     - [x] 远端入口：通过 SSH 把端口绑定在其他机器上（bridge bind）
     - [x] 端口转发到固定目标
     - [x] 代理认证（用户名/密码）
+- [x] 按规则、跳板、代理 URL 和访问目标统计流量
+    - [x] 网页配置实时显示带宽、累计流量、连接数、延迟与上一级
+    - [x] Prometheus 指标 `/metrics`
 - [x] 单端口支持多代理协议 [Any Proxy](https://github.com/wzshiming/anyproxy)
 - [x] 代理协议
     - [x] [SSH Proxy](https://github.com/wzshiming/sshproxy)
@@ -110,6 +113,15 @@ no_proxy:
 托盘都会显示其状态。同样的操作也提供 REST API（`/apis/configs/`，文档见
 `/swaggerui/`）。旧版本的配置（`contexts`、`proxy`）不会自动迁移：请在网页配置中
 重新创建规则。
+
+## 统计
+
+每条规则页面会实时显示该规则本身（最近 1 秒带宽、累计流量、当前与总连接数、拨号延迟、
+失败次数）、两条链路中每个跳板 URL（含其上一级）以及客户端访问过的目标（含所经出口
+URL）的统计；`统计` 标签页汇总所有规则并可重置计数。计数保存在内存中，自进程启动起
+累计，重载后同名规则与相同 URL 的计数保留，每条规则最多记录 1000 个目标。位于多路复用
+跳板（SSH）之后的跳板统计的是传输连接而非客户端连接。同样的数据以 JSON 提供于
+`/apis/stats`（`DELETE` 重置），并以 Prometheus 文本格式提供于 `/metrics`。
 
 ## 构建
 
