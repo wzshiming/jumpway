@@ -444,6 +444,58 @@
      }
     }
    }
+  },
+  "/stats": {
+   "get": {
+    "tags": [
+     "StatsService"
+    ],
+    "summary": "Get the traffic statistics of every enabled rule",
+    "description": "Get the traffic statistics of every enabled rule\n\n\n#route:\"GET /\"#",
+    "responses": {
+     "200": {
+      "description": "Response code is 200",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Snapshot"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Response code is 400",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string",
+         "format": "error"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "StatsService"
+    ],
+    "summary": "Reset all traffic statistics",
+    "description": "Reset all traffic statistics\n\n\n#route:\"DELETE /\"#",
+    "responses": {
+     "400": {
+      "description": "Response code is 400",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string",
+         "format": "error"
+        }
+       }
+      }
+     }
+    }
+   }
   }
  },
  "components": {
@@ -531,6 +583,38 @@
      }
     },
     "description": "Forward is the exit: connections are dialed through Way (empty = from this machine) to Host:Port, or to the proxy client's own target when Port is 0.\n"
+   },
+   "Hop": {
+    "required": [
+     "index",
+     "parent_index",
+     "stats",
+     "urls"
+    ],
+    "type": "object",
+    "properties": {
+     "index": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "parent_index": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "stats": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/Stats"
+       }
+      ]
+     },
+     "urls": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/URLStats"
+      }
+     }
+    }
    },
    "Listen": {
     "required": [
@@ -709,6 +793,51 @@
     },
     "description": "Rule is one entry: where connections come in and where they go out.\n"
    },
+   "RuleStats": {
+    "required": [
+     "name",
+     "stats",
+     "listen",
+     "forward",
+     "targets",
+     "targets_evicted"
+    ],
+    "type": "object",
+    "properties": {
+     "forward": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Hop"
+      }
+     },
+     "listen": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Hop"
+      }
+     },
+     "name": {
+      "type": "string"
+     },
+     "stats": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/Stats"
+       }
+      ]
+     },
+     "targets": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Target"
+      }
+     },
+     "targets_evicted": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   },
    "RuleStatus": {
     "required": [
      "name",
@@ -744,6 +873,84 @@
     },
     "description": "RuleStatus is one rule's listener state; Attempt counts consecutive failed listen attempts.\n"
    },
+   "Snapshot": {
+    "required": [
+     "since",
+     "rules"
+    ],
+    "type": "object",
+    "properties": {
+     "rules": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/RuleStats"
+      }
+     },
+     "since": {
+      "type": "string"
+     }
+    }
+   },
+   "Stats": {
+    "required": [
+     "up",
+     "down",
+     "rate_up",
+     "rate_down",
+     "active",
+     "total",
+     "dials",
+     "dial_failures",
+     "latency_ms",
+     "avg_latency_ms"
+    ],
+    "type": "object",
+    "properties": {
+     "active": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "avg_latency_ms": {
+      "type": "number",
+      "format": "double"
+     },
+     "dial_failures": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "dials": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "down": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "last_active": {
+      "type": "string"
+     },
+     "latency_ms": {
+      "type": "number",
+      "format": "double"
+     },
+     "rate_down": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "rate_up": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "total": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "up": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   },
    "Status": {
     "required": [
      "address",
@@ -769,6 +976,48 @@
      }
     },
     "description": "Status is what the web UI shows about the running app: the web UI listener and every enabled rule.\n"
+   },
+   "Target": {
+    "required": [
+     "address",
+     "via",
+     "stats"
+    ],
+    "type": "object",
+    "properties": {
+     "address": {
+      "type": "string"
+     },
+     "stats": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/Stats"
+       }
+      ]
+     },
+     "via": {
+      "type": "string"
+     }
+    }
+   },
+   "URLStats": {
+    "required": [
+     "url",
+     "stats"
+    ],
+    "type": "object",
+    "properties": {
+     "stats": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/Stats"
+       }
+      ]
+     },
+     "url": {
+      "type": "string"
+     }
+    }
    }
   },
   "responses": {
@@ -793,6 +1042,17 @@
     }
    },
    "err_body": {
+    "description": "Response code is 400",
+    "content": {
+     "text/plain": {
+      "schema": {
+       "type": "string",
+       "format": "error"
+      }
+     }
+    }
+   },
+   "err_body.1": {
     "description": "Response code is 400",
     "content": {
      "text/plain": {
@@ -842,6 +1102,16 @@
        "items": {
         "$ref": "#/components/schemas/Rule"
        }
+      }
+     }
+    }
+   },
+   "snapshot_body": {
+    "description": "Response code is 200",
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/Snapshot"
       }
      }
     }
@@ -921,6 +1191,10 @@
   {
    "name": "ConfigsService",
    "description": "ConfigsService\n\n\n#path:\"/configs/\"#"
+  },
+  {
+   "name": "StatsService",
+   "description": "StatsService exposes traffic statistics of the running rules\n\n\n#path:\"/stats/\"#"
   }
  ]
 }

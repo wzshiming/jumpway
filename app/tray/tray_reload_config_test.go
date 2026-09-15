@@ -26,7 +26,9 @@ import (
 	"github.com/wzshiming/hostmatcher"
 	"github.com/wzshiming/jumpway/app/web"
 	"github.com/wzshiming/jumpway/app/web/services/configs"
+	"github.com/wzshiming/jumpway/app/web/services/stats"
 	"github.com/wzshiming/jumpway/config"
+	"github.com/wzshiming/jumpway/metrics"
 )
 
 func TestReloadWebUIWithoutRules(test *testing.T) {
@@ -445,8 +447,8 @@ func newTestApp(test *testing.T, conf *config.Config) *App {
 	if err := store.Save(conf); err != nil {
 		test.Fatal(err)
 	}
-	app := &App{store: store, actions: make(chan func())}
-	app.web = web.NewHandler(configs.NewConfigsService(store, app))
+	app := &App{store: store, actions: make(chan func()), metrics: metrics.NewRegistry()}
+	app.web = web.NewHandler(configs.NewConfigsService(store, app), stats.NewStatsService(app.metrics), http.NotFoundHandler())
 	go func() {
 		for action := range app.actions {
 			action()

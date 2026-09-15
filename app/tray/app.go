@@ -12,9 +12,11 @@ import (
 	"github.com/gogpu/systray"
 	"github.com/wzshiming/jumpway/app/web"
 	"github.com/wzshiming/jumpway/app/web/services/configs"
+	"github.com/wzshiming/jumpway/app/web/services/stats"
 	"github.com/wzshiming/jumpway/config"
 	"github.com/wzshiming/jumpway/i18n"
 	"github.com/wzshiming/jumpway/log"
+	"github.com/wzshiming/jumpway/metrics"
 	"github.com/wzshiming/notify"
 )
 
@@ -26,6 +28,7 @@ type App struct {
 	actions chan func()
 	store   *config.Store
 	web     http.Handler
+	metrics *metrics.Registry
 
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
@@ -61,6 +64,7 @@ func NewApp(store *config.Store) *App {
 	a := &App{
 		actions: make(chan func()),
 		store:   store,
+		metrics: metrics.NewRegistry(),
 	}
 	notify.On(os.Interrupt, a.Quit)
 	return a
@@ -92,7 +96,7 @@ func (a *App) Run() {
 		}
 	}()
 
-	a.web = web.NewHandler(configs.NewConfigsService(a.store, a))
+	a.web = web.NewHandler(configs.NewConfigsService(a.store, a), stats.NewStatsService(a.metrics), http.NotFoundHandler())
 	a.tray = systray.New()
 	a.onReady()
 	err = a.tray.Run()
