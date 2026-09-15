@@ -29,8 +29,7 @@
 
 		<nav id="page-nav" class="page-nav" role="navigation" data-i18n-aria="navigation">
 			<a href="#/rules" data-page="rules" data-i18n="rules"></a>
-			<a href="#/web-ui" data-page="web-ui" data-i18n="webUI"></a>
-			<a href="#/no-proxy" data-page="no-proxy" data-i18n="noProxy"></a>
+			<a href="#/settings" data-page="settings" data-i18n="settings"></a>
 			<a href="#/yaml" data-page="yaml" data-i18n="yaml"></a>
 		</nav>
 
@@ -202,45 +201,43 @@
 		</a>
 	</template>
 
-	<template id="web-ui-template">
-		<form id="web-ui-form" novalidate>
+	<template id="settings-template">
+		<form id="settings-form" novalidate>
 			<fieldset id="page-fields">
-				<div class="address-fields">
-					<div class="field">
-						<label for="web-ui-host" data-i18n="host"></label>
-						<input id="web-ui-host" type="text" placeholder="127.0.0.1" spellcheck="false" autocomplete="off" aria-describedby="web-ui-hint">
+				<section class="settings-section" aria-labelledby="web-ui-heading">
+					<h3 id="web-ui-heading" data-i18n="webUI"></h3>
+					<div class="address-fields">
+						<div class="field">
+							<label for="web-ui-host" data-i18n="host"></label>
+							<input id="web-ui-host" type="text" placeholder="127.0.0.1" spellcheck="false" autocomplete="off" aria-describedby="web-ui-hint">
+						</div>
+						<div class="field port-field">
+							<label for="web-ui-port" data-i18n="port"></label>
+							<input id="web-ui-port" type="number" min="0" max="65535" step="1" inputmode="numeric" aria-describedby="web-ui-hint" required>
+						</div>
 					</div>
-					<div class="field port-field">
-						<label for="web-ui-port" data-i18n="port"></label>
-						<input id="web-ui-port" type="number" min="0" max="65535" step="1" inputmode="numeric" aria-describedby="web-ui-hint" required>
+					<p id="web-ui-hint" class="hint" data-i18n="webUIHint"></p>
+				</section>
+				<section class="settings-section" aria-labelledby="no-proxy-heading">
+					<h3 id="no-proxy-heading" data-i18n="noProxy"></h3>
+					<div class="no-proxy-fields">
+						<div class="field">
+							<label for="no-proxy-list" data-i18n="hostsCIDRs"></label>
+							<textarea id="no-proxy-list" rows="8" spellcheck="false" aria-describedby="list-hint"></textarea>
+							<p id="list-hint" class="hint" data-i18n="listHint"></p>
+						</div>
+						<div class="field">
+							<label for="no-proxy-env" data-i18n="fromEnv"></label>
+							<textarea id="no-proxy-env" rows="8" spellcheck="false" aria-describedby="env-hint"></textarea>
+							<p id="env-hint" class="hint" data-i18n="envHint"></p>
+						</div>
+						<div class="field">
+							<label for="no-proxy-files" data-i18n="fromFiles"></label>
+							<textarea id="no-proxy-files" rows="8" spellcheck="false" aria-describedby="files-hint"></textarea>
+							<p id="files-hint" class="hint" data-i18n="filesHint"></p>
+						</div>
 					</div>
-				</div>
-				<p id="web-ui-hint" class="hint" data-i18n="webUIHint"></p>
-				<div class="page-actions"><button id="save" class="primary" type="submit" data-i18n="saveApply"></button></div>
-			</fieldset>
-		</form>
-	</template>
-
-	<template id="no-proxy-template">
-		<form id="no-proxy-form" novalidate>
-			<fieldset id="page-fields">
-				<div class="no-proxy-fields">
-					<div class="field">
-						<label for="no-proxy-list" data-i18n="hostsCIDRs"></label>
-						<textarea id="no-proxy-list" rows="8" spellcheck="false" aria-describedby="list-hint"></textarea>
-						<p id="list-hint" class="hint" data-i18n="listHint"></p>
-					</div>
-					<div class="field">
-						<label for="no-proxy-env" data-i18n="fromEnv"></label>
-						<textarea id="no-proxy-env" rows="8" spellcheck="false" aria-describedby="env-hint"></textarea>
-						<p id="env-hint" class="hint" data-i18n="envHint"></p>
-					</div>
-					<div class="field">
-						<label for="no-proxy-files" data-i18n="fromFiles"></label>
-						<textarea id="no-proxy-files" rows="8" spellcheck="false" aria-describedby="files-hint"></textarea>
-						<p id="files-hint" class="hint" data-i18n="filesHint"></p>
-					</div>
-				</div>
+				</section>
 				<div class="page-actions"><button id="save" class="primary" type="submit" data-i18n="saveApply"></button></div>
 			</fieldset>
 		</form>

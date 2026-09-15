@@ -73,8 +73,7 @@ browser:
       the exit node (an empty host means `127.0.0.1` on the exit node). The
       `Exit chain` is dialed from this machine: hop 1 is the exit node, the last
       hop is the first one dialed; leave it empty to connect directly.
-- `Web UI`: the host and port of this page and the REST API
-- `No proxy`: hosts, environment variables and files that bypass proxy rules
+- `Settings`: the Web UI address (this page and the REST API) and the hosts, environment variables and files that bypass proxy rules
 - `Advanced YAML`: edit the file directly
 
 ```yaml

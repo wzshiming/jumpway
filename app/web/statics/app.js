@@ -19,6 +19,7 @@
       navigation: "Configuration pages",
       ruleTabs: "Rule editors",
       yaml: "Advanced YAML",
+      settings: "Settings",
       webUI: "Web UI",
       webUIHint: "Address of this page and the REST API. Only local addresses make sense here.",
       host: "Host",
@@ -120,6 +121,7 @@
       navigation: "配置页面",
       ruleTabs: "规则编辑器",
       yaml: "高级 YAML",
+      settings: "设置",
       webUI: "网页配置",
       webUIHint: "本页面和 REST API 的地址。此处应使用本机地址。",
       host: "主机",
@@ -297,7 +299,8 @@
   }
 
   function routeFor(hash) {
-    const pages = { "#/": "rules", "#/rules": "rules", "#/web-ui": "web-ui", "#/no-proxy": "no-proxy", "#/yaml": "yaml" };
+    if (["#/web-ui", "#/no-proxy"].includes(hash)) hash = "#/settings";
+    const pages = { "#/": "rules", "#/rules": "rules", "#/settings": "settings", "#/yaml": "yaml" };
     if (Object.prototype.hasOwnProperty.call(pages, hash)) return { hash, kind: pages[hash], name: null };
     const match = /^#\/rules\/([^/]+)$/.exec(hash);
     if (match) {
@@ -344,7 +347,7 @@
     if (ui.builder.open) ui.builder.close();
     ui.main.replaceChildren(clone("page"));
     ui.main.dataset.page = route.kind;
-    const title = { rules: "rules", "web-ui": "webUI", "no-proxy": "noProxy", yaml: "yaml" };
+    const title = { rules: "rules", settings: "settings", yaml: "yaml" };
     find("#page-heading").textContent = t(title[route.kind]);
     document.title = t(title[route.kind]) + " | " + t("appName");
     all("[data-page]", ui.nav).forEach(link => {
@@ -356,7 +359,7 @@
     setBusy(true);
     activity("loading");
     try {
-      const loaders = { rules: loadRules, "web-ui": loadWebUI, "no-proxy": loadNoProxy, yaml: loadYAML };
+      const loaders = { rules: loadRules, settings: loadSettings, yaml: loadYAML };
       await loaders[route.kind](route);
       page.loaded = true;
       if (pendingWarning) {
@@ -484,27 +487,32 @@
     return host + ":" + port;
   }
 
-  async function loadWebUI() {
-    const address = await api("/web-ui");
-    const form = clone("web-ui");
+  async function loadSettings() {
+    const [address, bypass] = await Promise.all([api("/web-ui"), api("/no-proxy")]);
+    const form = clone("settings"), fields = { list: "#no-proxy-list", from_env: "#no-proxy-env", from_file: "#no-proxy-files" };
     find("#page-content").append(form);
     find("#web-ui-host").value = text(address.host);
     find("#web-ui-port").value = address.port ?? 0;
-    bindEditor(form, () => {
-      const body = { host: find("#web-ui-host").value.trim(), port: readPort(find("#web-ui-port")) };
-      return write("/web-ui", { method: "PUT", body }, { mayMove: true, address: submittedAddress(body) });
-    });
-  }
-
-  async function loadNoProxy() {
-    const bypass = await api("/no-proxy");
-    const form = clone("no-proxy");
-    find("#page-content").append(form);
-    const fields = { list: "#no-proxy-list", from_env: "#no-proxy-env", from_file: "#no-proxy-files" };
     Object.entries(fields).forEach(([key, selector]) => { find(selector).value = list(bypass[key]).join("\n"); });
-    bindEditor(form, () => {
-      const body = Object.fromEntries(Object.entries(fields).map(([key, selector]) => [key, cleanLines(find(selector).value.split(/\r?\n/))]));
-      return write("/no-proxy", { method: "PUT", body });
+    const readBypass = () => Object.fromEntries(Object.entries(fields).map(([key, selector]) => [key, cleanLines(find(selector).value.split(/\r?\n/))]));
+    let savedBypass = JSON.stringify(readBypass()), savedAddress = JSON.stringify({ host: text(address.host).trim(), port: address.port ?? 0 });
+    bindEditor(form, async () => {
+      const body = { host: find("#web-ui-host").value.trim(), port: readPort(find("#web-ui-port")) };
+      const bypassBody = readBypass(), nextAddress = JSON.stringify(body);
+      const nextBypass = JSON.stringify(bypassBody), addressChanged = nextAddress !== savedAddress;
+      let result = true;
+      if (nextBypass !== savedBypass) {
+        result = await write("/no-proxy", { method: "PUT", body: bypassBody }, { keepDirty: addressChanged });
+        if (!result) return;
+        savedBypass = nextBypass;
+      }
+      if (addressChanged) {
+        result = await write("/web-ui", { method: "PUT", body }, { mayMove: true, address: submittedAddress(body), warning: result === true ? null : result });
+        if (!result) return;
+        savedAddress = nextAddress;
+      }
+      setDirty(false);
+      if (result === true) activity("saved", true);
     });
   }
 
@@ -550,25 +558,24 @@
     }
   }
 
-  async function write(resource, request, { toast = "saved", after, mayMove = false, address = "" } = {}) {
+  async function write(resource, request, { toast = "saved", after, mayMove = false, address = "", keepDirty = false, warning = null } = {}) {
     setBusy(true);
     clearErrors();
     activity("saving");
-    let warning = null;
     try {
       if (statusRequest) await statusRequest.catch(() => {});
       await api(resource, request);
     } catch (error) {
       // The service prefixes reload failures: the config is on disk, only applying it failed.
       if (!(error.message || "").startsWith(SAVED_PREFIX)) {
-        activity("");
-        showError(error, true);
+        activity(warning ? "savedWithErrors" : "");
+        showError(warning ? new Error(warning.message + "\n" + error.message) : error, true);
         setBusy(false);
-        return;
+        return false;
       }
-      warning = error;
+      warning = warning ? new Error(warning.message + "\n" + error.message) : error;
     }
-    setDirty(false);
+    setDirty(keepDirty);
     if (mayMove) movedAddress = address;
     if (warning) {
       pendingWarning = warning;
@@ -599,6 +606,7 @@
       pendingWarning = null;
       setBusy(false);
     }
+    return warning || true;
   }
 
   function activity(key, success = false) {
