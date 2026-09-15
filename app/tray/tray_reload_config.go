@@ -113,7 +113,7 @@ func (a *App) reload() error {
 			a.updateStatus()
 			once.Do(func() { first <- event.Err })
 		}
-		listenConfig, err := jumpway.NewListenConfig(ctx, rule.Listen.Way)
+		listenConfig, err := jumpway.NewListenConfig(ctx, rule.Listen.Way, nil)
 		if err != nil {
 			report(jumpway.Event{Err: err})
 			continue
