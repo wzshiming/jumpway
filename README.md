@@ -123,21 +123,24 @@ Web UI.
 
 ## Statistics
 
-The `Statistics` tab has two views. `By rule` shows one card per rule: its
-live numbers (bandwidth over the last second, total bytes, current and
-cumulative connections, dial latency and failures) followed by the whole chain
-in traffic order — clients, the entry (or the hops that bind a remote entry),
-this machine, every exit hop with its URLs and the hop it is reached through,
-and the targets — each stage with the same numbers. `By connection` lists every
-current connection with its client (port-forward rules), the hops it actually
-went through, its target, bytes, rates and duration, and a `Disconnect` button
-that closes it. The counters live in memory since the process started, survive
-reloads for unchanged rule names and for URLs that keep their position in a
-chain, and keep at most 1000 targets per rule. Hops behind a
-connection-multiplexing hop (SSH) count transports rather than client
-connections. The same data is served as JSON at `/apis/stats` (`DELETE` resets
-it, `DELETE /apis/stats/connections/{id}` closes one connection) and in
-Prometheus text format at `/metrics`.
+Three tabs show the live numbers (bandwidth over the last second, total bytes,
+current and cumulative connections, dial latency and failures). `Statistics`
+lists one row per rule and expands into the whole chain in traffic order —
+clients, the entry (or the hops that bind a remote entry), this machine, every
+exit hop with its URLs and the hop it is reached through, and the targets — each
+stage with the same numbers; the connection count links to the connections of
+that rule. `Hosts` aggregates every hop URL of every rule by host, so a jump
+server shared by several rules is one row, expandable into its endpoints and
+the rules that use them. `Connections` lists every current connection with its
+client IP, rule (the hops it actually went through are shown on hover), target,
+bytes, rates and duration, sortable and filterable, with a `Disconnect` button
+that closes it. Proxy URLs are shown as `scheme://host:port`. The counters live
+in memory since the process started, survive reloads for unchanged rule names
+and for URLs that keep their position in a chain, and keep at most 1000 targets
+per rule. Hops behind a connection-multiplexing hop (SSH) count transports
+rather than client connections. The same data is served as JSON at `/apis/stats`
+(`DELETE` resets it, `DELETE /apis/stats/connections/{id}` closes one
+connection) and in Prometheus text format at `/metrics`.
 
 ## Build
 
