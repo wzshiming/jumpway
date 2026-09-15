@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -16,17 +17,19 @@ import (
 	"github.com/wzshiming/jumpway/config"
 )
 
-const testConfigYAML = `current_context: a
-contexts:
-  - name: a
-    way:
-      - lb:
-          - socks5://127.0.0.1:1080
-proxy:
-  host: 127.0.0.1
-  port: 1087
-# keep me
-`
+const testConfigYAML = "web_ui:\n" +
+	"  host: 127.0.0.1\n" +
+	"  port: 1088\n" +
+	"rules:\n" +
+	"  - name: a\n" +
+	"    listen:\n" +
+	"      host: 127.0.0.1\n" +
+	"      port: 1087\n" +
+	"    forward:\n" +
+	"      way:\n" +
+	"        - lb:\n" +
+	"            - socks5://127.0.0.1:1080\n" +
+	"# keep me\n"
 
 type fakeRuntime struct {
 	reloads int
@@ -78,17 +81,17 @@ func assertConfigYAML(t *testing.T, store *config.Store, want string) {
 	}
 }
 
-func listContextsAPI(t *testing.T, handler http.Handler) []config.Context {
+func listRulesAPI(t *testing.T, handler http.Handler) []config.Rule {
 	t.Helper()
-	response := requestAPI(t, handler, http.MethodGet, "/apis/configs/contexts", "", http.StatusOK)
-	var contexts []config.Context
-	if err := json.Unmarshal(response.Body.Bytes(), &contexts); err != nil {
+	response := requestAPI(t, handler, http.MethodGet, "/apis/configs/rules", "", http.StatusOK)
+	var rules []config.Rule
+	if err := json.Unmarshal(response.Body.Bytes(), &rules); err != nil {
 		t.Fatal(err)
 	}
-	if contexts == nil {
-		t.Fatal("contexts = null, want a JSON array")
+	if rules == nil {
+		t.Fatal("rules = null, want a JSON array")
 	}
-	return contexts
+	return rules
 }
 
 func TestGetConfig(t *testing.T) {
@@ -98,85 +101,66 @@ func TestGetConfig(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &conf); err != nil {
 		t.Fatal(err)
 	}
-	if conf["current_context"] != "a" {
-		t.Fatalf("current_context = %v, want a", conf["current_context"])
+	address, ok := conf["web_ui"].(map[string]any)
+	if !ok || address["host"] != "127.0.0.1" || address["port"] != float64(1088) {
+		t.Fatalf("web_ui = %#v, want the default web UI address", conf["web_ui"])
 	}
-	contexts, ok := conf["contexts"].([]any)
-	if !ok || len(contexts) != 1 {
-		t.Fatalf("contexts = %#v, want one context", conf["contexts"])
+	rules, ok := conf["rules"].([]any)
+	if !ok || len(rules) != 1 {
+		t.Fatalf("rules = %#v, want one rule", conf["rules"])
 	}
-	context, ok := contexts[0].(map[string]any)
+	rule, ok := rules[0].(map[string]any)
+	if !ok || rule["name"] != "a" {
+		t.Fatalf("rule = %#v, want rule a", rules[0])
+	}
+	listen, ok := rule["listen"].(map[string]any)
+	if !ok || listen["host"] != "127.0.0.1" || listen["port"] != float64(1087) {
+		t.Fatalf("listen = %#v, want the seeded rule address", rule["listen"])
+	}
+	forward, ok := rule["forward"].(map[string]any)
 	if !ok {
-		t.Fatalf("context = %#v, want an object", contexts[0])
+		t.Fatalf("forward = %#v, want an object", rule["forward"])
 	}
-	way, ok := context["way"].([]any)
+	way, ok := forward["way"].([]any)
 	if !ok || len(way) != 1 || way[0] != "socks5://127.0.0.1:1080" {
-		t.Fatalf("way = %#v, want a single string node", context["way"])
+		t.Fatalf("forward.way = %#v, want a single string node", forward["way"])
+	}
+	if _, ok := rule["way"]; ok {
+		t.Fatalf("rule contains removed way key: %#v", rule)
+	}
+	for _, key := range []string{"host", "port"} {
+		if _, ok := forward[key]; ok {
+			t.Errorf("proxy forward contains %q: %#v", key, forward)
+		}
+	}
+	if _, ok := conf["no_proxy"].(map[string]any); !ok {
+		t.Fatalf("no_proxy = %#v, want an object", conf["no_proxy"])
+	}
+	for _, key := range []string{"current_context", "contexts", "proxy"} {
+		if _, ok := conf[key]; ok {
+			t.Errorf("config contains removed key %q", key)
+		}
 	}
 }
 
-func TestCurrentContext(t *testing.T) {
-	handler, fake, store := setupConfigAPI(t)
-	response := requestAPI(t, handler, http.MethodGet, "/apis/configs/current-context", "", http.StatusOK)
-	var current struct {
-		Name string `json:"name"`
-	}
-	if err := json.Unmarshal(response.Body.Bytes(), &current); err != nil {
-		t.Fatal(err)
-	}
-	if current.Name != "a" {
-		t.Fatalf("current context = %q, want a", current.Name)
-	}
-	response = requestAPI(t, handler, http.MethodPut, "/apis/configs/current-context", `{"name":"missing"}`, http.StatusBadRequest)
-	if !strings.Contains(response.Body.String(), `current_context "missing" does not match any context`) {
-		t.Fatalf("body = %q, want unknown current context error", response.Body.String())
-	}
-	if fake.reloads != 0 {
-		t.Fatalf("reloads = %d, want 0", fake.reloads)
-	}
-	assertConfigYAML(t, store, testConfigYAML)
-	conf, err := store.Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	conf.Contexts = append(conf.Contexts, config.Context{Name: "b"})
-	if err := store.Save(conf); err != nil {
-		t.Fatal(err)
-	}
-	requestAPI(t, handler, http.MethodPut, "/apis/configs/current-context", `{"name":"b"}`, http.StatusOK)
-	if fake.reloads != 1 {
-		t.Fatalf("reloads = %d, want 1", fake.reloads)
-	}
-	conf, err = store.Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if conf.CurrentContext != "b" || len(conf.Contexts) != 2 || conf.Proxy.Port != 1087 {
-		t.Fatalf("saved config = %#v, want current b with both contexts and unchanged proxy", conf)
-	}
-	response = requestAPI(t, handler, http.MethodGet, "/apis/configs/current-context", "", http.StatusOK)
-	if err := json.Unmarshal(response.Body.Bytes(), &current); err != nil {
-		t.Fatal(err)
-	}
-	if current.Name != "b" {
-		t.Fatalf("current context = %q, want b", current.Name)
-	}
-}
-
-func TestListContexts(t *testing.T) {
+func TestListRules(t *testing.T) {
 	handler, _, _ := setupConfigAPI(t)
-	contexts := listContextsAPI(t, handler)
-	if len(contexts) != 1 || contexts[0].Name != "a" || len(contexts[0].Way) != 1 || !slices.Equal(contexts[0].Way[0].LB, []string{"socks5://127.0.0.1:1080"}) {
-		t.Fatalf("contexts = %#v, want seeded context a", contexts)
+	rules := listRulesAPI(t, handler)
+	if len(rules) != 1 || rules[0].Name != "a" || len(rules[0].Forward.Way) != 1 || !slices.Equal(rules[0].Forward.Way[0].LB, []string{"socks5://127.0.0.1:1080"}) {
+		t.Fatalf("rules = %#v, want seeded rule a", rules)
 	}
 }
 
-func TestCreateContext(t *testing.T) {
+func TestCreateRule(t *testing.T) {
 	handler, fake, store := setupConfigAPI(t)
-	requestAPI(t, handler, http.MethodPost, "/apis/configs/contexts", `{"name":"b","way":[{"lb":["socks5://h:1080"]}]}`, http.StatusOK)
-	contexts := listContextsAPI(t, handler)
-	if len(contexts) != 2 || contexts[0].Name != "a" || contexts[1].Name != "b" || len(contexts[1].Way) != 1 || !slices.Equal(contexts[1].Way[0].LB, []string{"socks5://h:1080"}) {
-		t.Fatalf("contexts = %#v, want a and b with the supplied way", contexts)
+	requestAPI(t, handler, http.MethodPost, "/apis/configs/rules", `{"name":"b","listen":{"host":"::1","port":9000,"way":[{"lb":["ssh://user@host:22"]}],"username":"user","password":"secret"},"forward":{"way":[{"lb":["socks5://h:1080"]}]}}`, http.StatusOK)
+	rules := listRulesAPI(t, handler)
+	if len(rules) != 2 || rules[0].Name != "a" || rules[1].Name != "b" || len(rules[1].Forward.Way) != 1 || !slices.Equal(rules[1].Forward.Way[0].LB, []string{"socks5://h:1080"}) {
+		t.Fatalf("rules = %#v, want a and b with the supplied forward.way", rules)
+	}
+	listen := rules[1].Listen
+	if listen.Address() != "[::1]:9000" || !listen.Remote() || !slices.Equal(listen.Way[0].LB, []string{"ssh://user@host:22"}) || listen.Username != "user" || listen.Password != "secret" {
+		t.Fatalf("listen = %#v, want the remote listener and credentials", listen)
 	}
 	if fake.reloads != 1 {
 		t.Fatalf("reloads = %d, want 1", fake.reloads)
@@ -185,20 +169,25 @@ func TestCreateContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if conf.CurrentContext != "a" || conf.Proxy.Port != 1087 {
-		t.Fatalf("saved config = %#v, want current a and unchanged proxy", conf)
+	if !reflect.DeepEqual(conf.Rules, rules) || conf.WebUI.Port != 1088 || conf.Rules[0].Listen.Port != 1087 {
+		t.Fatalf("saved config = %#v, want saved rules with unchanged web UI and rule a", conf)
 	}
 }
 
-func TestCreateFirstContext(t *testing.T) {
+func TestCreatePortForwardRule(t *testing.T) {
 	handler, fake, store := setupConfigAPI(t)
-	if err := store.SaveRaw([]byte("proxy:\n  host: 127.0.0.1\n  port: 1087\n")); err != nil {
+	requestAPI(t, handler, http.MethodPost, "/apis/configs/rules", `{"name":"db","listen":{"port":15432},"forward":{"host":"10.0.0.5","port":5432,"way":[{"lb":["ssh://u@bastion:22"]}]}}`, http.StatusOK)
+	response := requestAPI(t, handler, http.MethodGet, "/apis/configs/rules/db", "", http.StatusOK)
+	var rule config.Rule
+	if err := json.Unmarshal(response.Body.Bytes(), &rule); err != nil {
 		t.Fatal(err)
 	}
-	if contexts := listContextsAPI(t, handler); len(contexts) != 0 {
-		t.Fatalf("contexts = %#v, want empty array", contexts)
+	if rule.Name != "db" || rule.Listen.Host != "" || rule.Listen.Port != 15432 || rule.Forward.Host != "10.0.0.5" || rule.Forward.Port != 5432 {
+		t.Fatalf("rule = %#v, want db forwarding 15432 to 10.0.0.5:5432", rule)
 	}
-	requestAPI(t, handler, http.MethodPost, "/apis/configs/contexts", `{"name":"b","way":[{"lb":["socks5://h:1080"]}]}`, http.StatusOK)
+	if len(rule.Forward.Way) != 1 || !slices.Equal(rule.Forward.Way[0].LB, []string{"ssh://u@bastion:22"}) {
+		t.Fatalf("forward.way = %#v, want the supplied SSH chain", rule.Forward.Way)
+	}
 	if fake.reloads != 1 {
 		t.Fatalf("reloads = %d, want 1", fake.reloads)
 	}
@@ -206,12 +195,33 @@ func TestCreateFirstContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if conf.CurrentContext != "b" || len(conf.Contexts) != 1 || conf.Contexts[0].Name != "b" {
-		t.Fatalf("saved config = %#v, want current b as the only context", conf)
+	if len(conf.Rules) != 2 || !reflect.DeepEqual(conf.Rules[1], rule) || conf.Rules[0].Name != "a" || conf.WebUI.Port != 1088 {
+		t.Fatalf("saved config = %#v, want db and unchanged rule a and web UI", conf)
 	}
 }
 
-func TestContextMutationInvalid(t *testing.T) {
+func TestCreateFirstRule(t *testing.T) {
+	handler, fake, store := setupConfigAPI(t)
+	if err := store.SaveRaw([]byte("web_ui:\n  host: 127.0.0.1\n  port: 1088\n")); err != nil {
+		t.Fatal(err)
+	}
+	if rules := listRulesAPI(t, handler); len(rules) != 0 {
+		t.Fatalf("rules = %#v, want empty array", rules)
+	}
+	requestAPI(t, handler, http.MethodPost, "/apis/configs/rules", `{"name":"b","forward":{"way":[{"lb":["socks5://h:1080"]}]}}`, http.StatusOK)
+	if fake.reloads != 1 {
+		t.Fatalf("reloads = %d, want 1", fake.reloads)
+	}
+	conf, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(conf.Rules) != 1 || conf.Rules[0].Name != "b" || conf.WebUI.Port != 1088 {
+		t.Fatalf("saved config = %#v, want b as the only rule and unchanged web UI", conf)
+	}
+}
+
+func TestRuleMutationInvalid(t *testing.T) {
 	tests := []struct {
 		name      string
 		method    string
@@ -219,15 +229,27 @@ func TestContextMutationInvalid(t *testing.T) {
 		body      string
 		wantError string
 	}{
-		{name: "duplicate", method: http.MethodPost, target: "/contexts", body: `{"name":"a"}`, wantError: `context "a" already exists`},
-		{name: "empty_name", method: http.MethodPost, target: "/contexts", body: `{}`, wantError: "context name is empty"},
-		{name: "blank_name", method: http.MethodPost, target: "/contexts", body: `{"name":"  "}`, wantError: "context name is empty"},
-		{name: "null_create", method: http.MethodPost, target: "/contexts", body: `null`, wantError: "context name is empty"},
-		{name: "invalid_create_way", method: http.MethodPost, target: "/contexts", body: `{"name":"b","way":[{"lb":[]}]}`, wantError: "has no proxy URL"},
-		{name: "unknown_update", method: http.MethodPut, target: "/contexts/zzz", body: `{"name":"b"}`, wantError: `context "zzz" not found`},
-		{name: "null_update", method: http.MethodPut, target: "/contexts/a", body: `null`, wantError: "context is nil"},
-		{name: "invalid_update_way", method: http.MethodPut, target: "/contexts/a", body: `{"way":[{"lb":["/no-scheme"]}]}`, wantError: "has no scheme"},
-		{name: "unknown_delete", method: http.MethodDelete, target: "/contexts/zzz", wantError: `context "zzz" not found`},
+		{name: "duplicate", method: http.MethodPost, target: "/rules", body: `{"name":"a"}`, wantError: `rule "a" already exists`},
+		{name: "empty_name", method: http.MethodPost, target: "/rules", body: `{}`, wantError: "rule name is empty"},
+		{name: "blank_name", method: http.MethodPost, target: "/rules", body: `{"name":"  "}`, wantError: "rule name is empty"},
+		{name: "null_create", method: http.MethodPost, target: "/rules", body: `null`, wantError: "rule name is empty"},
+		{name: "slash_name", method: http.MethodPost, target: "/rules", body: `{"name":"a/b"}`, wantError: `rules[1].name "a/b" must not contain "/"`},
+		{name: "empty_create_way", method: http.MethodPost, target: "/rules", body: `{"name":"b","forward":{"way":[{"lb":[]}]}}`, wantError: "rules[1].forward.way[0] has no proxy URL"},
+		{name: "invalid_create_way", method: http.MethodPost, target: "/rules", body: `{"name":"b","forward":{"way":[{"lb":["socks5://[::1"]}]}}`, wantError: "rules[1].forward.way[0]: invalid proxy URL"},
+		{name: "forward_way_no_scheme", method: http.MethodPost, target: "/rules", body: `{"name":"b","forward":{"way":[{"lb":["x"]}]}}`, wantError: `rules[1].forward.way[0]: proxy URL "x" has no scheme`},
+		{name: "invalid_listen_way", method: http.MethodPost, target: "/rules", body: `{"name":"b","listen":{"way":[{"lb":["ssh://[::1"]}]}}`, wantError: "rules[1].listen.way[0]: invalid proxy URL"},
+		{name: "listen_port", method: http.MethodPost, target: "/rules", body: `{"name":"b","listen":{"port":70000}}`, wantError: "rules[1].listen.port 70000"},
+		{name: "forward_port", method: http.MethodPost, target: "/rules", body: `{"name":"db","forward":{"port":70000}}`, wantError: "rules[1].forward.port 70000"},
+		{name: "forward_host_without_port", method: http.MethodPost, target: "/rules", body: `{"name":"db","forward":{"host":"10.0.0.5"}}`, wantError: "rules[1].forward.host is set but port is 0"},
+		{name: "port_forward_with_username", method: http.MethodPost, target: "/rules", body: `{"name":"db","listen":{"port":15432,"username":"user"},"forward":{"host":"10.0.0.5","port":5432}}`, wantError: "rules[1].listen.username is only used by proxy rules"},
+		{name: "password_without_username", method: http.MethodPost, target: "/rules", body: `{"name":"b","listen":{"password":"secret"}}`, wantError: "rules[1].listen.password is set but username is empty"},
+		{name: "web_ui_collision", method: http.MethodPost, target: "/rules", body: `{"name":"b","listen":{"port":1088}}`, wantError: "rules[1].listen address 127.0.0.1:1088 is already used by web_ui"},
+		{name: "rule_collision", method: http.MethodPost, target: "/rules", body: `{"name":"b","listen":{"port":1087}}`, wantError: `rules[1].listen address 127.0.0.1:1087 is already used by rule "a"`},
+		{name: "unknown_update", method: http.MethodPut, target: "/rules/zzz", body: `{"name":"b"}`, wantError: `rule "zzz" not found`},
+		{name: "null_update", method: http.MethodPut, target: "/rules/a", body: `null`, wantError: "rule is nil"},
+		{name: "blank_update_name", method: http.MethodPut, target: "/rules/a", body: `{"name":"  "}`, wantError: "rules[0].name is empty"},
+		{name: "invalid_update_way", method: http.MethodPut, target: "/rules/a", body: `{"forward":{"way":[{"lb":["/no-scheme"]}]}}`, wantError: "rules[0].forward.way[0]: proxy URL"},
+		{name: "unknown_delete", method: http.MethodDelete, target: "/rules/zzz", wantError: `rule "zzz" not found`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -244,47 +266,44 @@ func TestContextMutationInvalid(t *testing.T) {
 	}
 }
 
-func TestGetContext(t *testing.T) {
+func TestGetRule(t *testing.T) {
 	handler, _, _ := setupConfigAPI(t)
-	response := requestAPI(t, handler, http.MethodGet, "/apis/configs/contexts/a", "", http.StatusOK)
-	var got config.Context
+	response := requestAPI(t, handler, http.MethodGet, "/apis/configs/rules/a", "", http.StatusOK)
+	var got config.Rule
 	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Name != "a" || len(got.Way) != 1 || !slices.Equal(got.Way[0].LB, []string{"socks5://127.0.0.1:1080"}) {
-		t.Fatalf("context = %#v, want seeded context a", got)
+	if got.Name != "a" || len(got.Forward.Way) != 1 || !slices.Equal(got.Forward.Way[0].LB, []string{"socks5://127.0.0.1:1080"}) {
+		t.Fatalf("rule = %#v, want seeded rule a", got)
 	}
-	response = requestAPI(t, handler, http.MethodGet, "/apis/configs/contexts/zzz", "", http.StatusBadRequest)
-	if !strings.Contains(response.Body.String(), `context "zzz" not found`) {
-		t.Fatalf("body = %q, want context not found error", response.Body.String())
+	if got.Listen.Address() != "127.0.0.1:1087" || got.Disabled {
+		t.Fatalf("rule = %#v, want the enabled local listener", got)
+	}
+	response = requestAPI(t, handler, http.MethodGet, "/apis/configs/rules/zzz", "", http.StatusBadRequest)
+	if !strings.Contains(response.Body.String(), `rule "zzz" not found`) {
+		t.Fatalf("body = %q, want rule not found error", response.Body.String())
 	}
 }
 
-func TestUpdateContext(t *testing.T) {
+func TestUpdateRule(t *testing.T) {
 	for _, test := range []struct {
 		name string
 		body string
 		want string
 	}{
-		{name: "rename_current", body: `{"name":"a2","way":[{"lb":["socks5://h:1080"]}]}`, want: "a2"},
-		{name: "empty_name_keeps_path", body: `{"name":"","way":[{"lb":["socks5://h:1080"]}]}`, want: "a"},
+		{name: "replace", body: `{"name":"a","disabled":true,"listen":{"port":9000},"forward":{"way":[{"lb":["socks5://h:1080"]}]}}`, want: "a"},
+		{name: "rename", body: `{"name":"a2","disabled":true,"listen":{"port":9000},"forward":{"way":[{"lb":["socks5://h:1080"]}]}}`, want: "a2"},
+		{name: "empty_name_keeps_path", body: `{"name":"","disabled":true,"listen":{"port":9000},"forward":{"way":[{"lb":["socks5://h:1080"]}]}}`, want: "a"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			handler, fake, store := setupConfigAPI(t)
-			requestAPI(t, handler, http.MethodPut, "/apis/configs/contexts/a", test.body, http.StatusOK)
-			contexts := listContextsAPI(t, handler)
-			if len(contexts) != 1 || contexts[0].Name != test.want || len(contexts[0].Way) != 1 || !slices.Equal(contexts[0].Way[0].LB, []string{"socks5://h:1080"}) {
-				t.Fatalf("contexts = %#v, want %q with replaced way", contexts, test.want)
+			requestAPI(t, handler, http.MethodPut, "/apis/configs/rules/a", test.body, http.StatusOK)
+			rules := listRulesAPI(t, handler)
+			if len(rules) != 1 || rules[0].Name != test.want || len(rules[0].Forward.Way) != 1 || !slices.Equal(rules[0].Forward.Way[0].LB, []string{"socks5://h:1080"}) {
+				t.Fatalf("rules = %#v, want %q with replaced forward.way", rules, test.want)
 			}
-			response := requestAPI(t, handler, http.MethodGet, "/apis/configs/current-context", "", http.StatusOK)
-			var current struct {
-				Name string `json:"name"`
-			}
-			if err := json.Unmarshal(response.Body.Bytes(), &current); err != nil {
-				t.Fatal(err)
-			}
-			if current.Name != test.want {
-				t.Fatalf("current context = %q, want %q", current.Name, test.want)
+			if !rules[0].Disabled || rules[0].Listen.Address() != "127.0.0.1:9000" {
+				t.Fatalf("rule = %#v, want the disabled replacement listener", rules[0])
 			}
 			if fake.reloads != 1 {
 				t.Fatalf("reloads = %d, want 1", fake.reloads)
@@ -293,20 +312,24 @@ func TestUpdateContext(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if conf.Proxy.Port != 1087 {
-				t.Fatalf("proxy.port = %d, want unchanged 1087", conf.Proxy.Port)
+			if conf.WebUI.Port != 1088 || !reflect.DeepEqual(conf.Rules, rules) {
+				t.Fatalf("saved config = %#v, want replaced rules and unchanged web UI", conf)
+			}
+			requestAPI(t, handler, http.MethodGet, "/apis/configs/rules/"+test.want, "", http.StatusOK)
+			if test.want != "a" {
+				requestAPI(t, handler, http.MethodGet, "/apis/configs/rules/a", "", http.StatusBadRequest)
 			}
 		})
 	}
 }
 
-func TestRenameContextConflict(t *testing.T) {
+func TestRenameRuleConflict(t *testing.T) {
 	handler, fake, store := setupConfigAPI(t)
 	conf, err := store.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	conf.Contexts = append(conf.Contexts, config.Context{Name: "b"})
+	conf.Rules = append(conf.Rules, config.Rule{Name: "b"})
 	if err := store.Save(conf); err != nil {
 		t.Fatal(err)
 	}
@@ -314,9 +337,9 @@ func TestRenameContextConflict(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	response := requestAPI(t, handler, http.MethodPut, "/apis/configs/contexts/a", `{"name":"b"}`, http.StatusBadRequest)
-	if !strings.Contains(response.Body.String(), `context "b" already exists`) {
-		t.Fatalf("body = %q, want duplicate context error", response.Body.String())
+	response := requestAPI(t, handler, http.MethodPut, "/apis/configs/rules/a", `{"name":"b"}`, http.StatusBadRequest)
+	if !strings.Contains(response.Body.String(), `rule "b" already exists`) {
+		t.Fatalf("body = %q, want duplicate rule error", response.Body.String())
 	}
 	if fake.reloads != 0 {
 		t.Fatalf("reloads = %d, want 0", fake.reloads)
@@ -324,68 +347,55 @@ func TestRenameContextConflict(t *testing.T) {
 	assertConfigYAML(t, store, string(before))
 }
 
-func TestDeleteContext(t *testing.T) {
+func TestDeleteRule(t *testing.T) {
 	handler, fake, store := setupConfigAPI(t)
 	conf, err := store.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	conf.Contexts = append(conf.Contexts, config.Context{Name: "b"})
+	conf.Rules = append(conf.Rules, config.Rule{Name: "b"})
 	if err := store.Save(conf); err != nil {
 		t.Fatal(err)
 	}
-	before, err := store.LoadRaw()
-	if err != nil {
-		t.Fatal(err)
-	}
-	response := requestAPI(t, handler, http.MethodDelete, "/apis/configs/contexts/a", "", http.StatusBadRequest)
-	if !strings.Contains(response.Body.String(), `context "a" is the current context; switch to another context first`) {
-		t.Fatalf("body = %q, want current context deletion error", response.Body.String())
-	}
-	if fake.reloads != 0 {
-		t.Fatalf("reloads = %d, want 0", fake.reloads)
-	}
-	assertConfigYAML(t, store, string(before))
-	response = requestAPI(t, handler, http.MethodDelete, "/apis/configs/contexts/b", "", http.StatusOK)
+	response := requestAPI(t, handler, http.MethodDelete, "/apis/configs/rules/a", "", http.StatusOK)
 	if strings.TrimSpace(response.Body.String()) != "null" {
 		t.Fatalf("body = %q, want null", response.Body.String())
 	}
-	if contexts := listContextsAPI(t, handler); len(contexts) != 1 || contexts[0].Name != "a" {
-		t.Fatalf("contexts = %#v, want only a", contexts)
+	if rules := listRulesAPI(t, handler); len(rules) != 1 || rules[0].Name != "b" {
+		t.Fatalf("rules = %#v, want only b", rules)
 	}
 	if fake.reloads != 1 {
 		t.Fatalf("reloads = %d, want 1", fake.reloads)
 	}
-	response = requestAPI(t, handler, http.MethodDelete, "/apis/configs/contexts/a", "", http.StatusOK)
+	response = requestAPI(t, handler, http.MethodDelete, "/apis/configs/rules/b", "", http.StatusOK)
 	if strings.TrimSpace(response.Body.String()) != "null" {
 		t.Fatalf("body = %q, want null", response.Body.String())
 	}
-	if contexts := listContextsAPI(t, handler); len(contexts) != 0 {
-		t.Fatalf("contexts = %#v, want empty array", contexts)
-	}
-	response = requestAPI(t, handler, http.MethodGet, "/apis/configs/current-context", "", http.StatusOK)
-	var current struct {
-		Name string `json:"name"`
-	}
-	if err := json.Unmarshal(response.Body.Bytes(), &current); err != nil {
-		t.Fatal(err)
-	}
-	if current.Name != "" {
-		t.Fatalf("current context = %q, want empty", current.Name)
+	if rules := listRulesAPI(t, handler); len(rules) != 0 {
+		t.Fatalf("rules = %#v, want empty array", rules)
 	}
 	response = requestAPI(t, handler, http.MethodGet, "/apis/configs", "", http.StatusOK)
 	if err := json.Unmarshal(response.Body.Bytes(), &conf); err != nil {
 		t.Fatal(err)
 	}
-	if len(conf.Contexts) != 0 || conf.CurrentContext != "" || conf.Proxy.Port != 1087 {
-		t.Fatalf("config = %#v, want no contexts and unchanged proxy", conf)
+	if len(conf.Rules) != 0 || conf.WebUI.Port != 1088 {
+		t.Fatalf("config = %#v, want no rules and unchanged web UI", conf)
 	}
 	if fake.reloads != 2 {
 		t.Fatalf("reloads = %d, want 2", fake.reloads)
 	}
+	before, err := store.LoadRaw()
+	if err != nil {
+		t.Fatal(err)
+	}
+	response = requestAPI(t, handler, http.MethodDelete, "/apis/configs/rules/b", "", http.StatusBadRequest)
+	if !strings.Contains(response.Body.String(), `rule "b" not found`) || fake.reloads != 2 {
+		t.Fatalf("repeated delete = %q, reloads = %d; want not found without reload", response.Body.String(), fake.reloads)
+	}
+	assertConfigYAML(t, store, string(before))
 }
 
-func TestCreateContextsConcurrent(t *testing.T) {
+func TestCreateRulesConcurrent(t *testing.T) {
 	handler, fake, _ := setupConfigAPI(t)
 	const count = 20
 	responses := make(chan *httptest.ResponseRecorder, count)
@@ -396,8 +406,8 @@ func TestCreateContextsConcurrent(t *testing.T) {
 		go func() {
 			defer workers.Done()
 			<-start
-			body := fmt.Sprintf(`{"name":"context-%d","way":[{"lb":["socks5://h:1080"]}]}`, index)
-			request := httptest.NewRequest(http.MethodPost, "/apis/configs/contexts", strings.NewReader(body))
+			body := fmt.Sprintf(`{"name":"rule-%d","forward":{"way":[{"lb":["socks5://h:1080"]}]}}`, index)
+			request := httptest.NewRequest(http.MethodPost, "/apis/configs/rules", strings.NewReader(body))
 			request.Header.Set("Content-Type", "application/json")
 			response := httptest.NewRecorder()
 			handler.ServeHTTP(response, request)
@@ -412,20 +422,20 @@ func TestCreateContextsConcurrent(t *testing.T) {
 			t.Fatalf("concurrent POST status = %d, want 200; body = %s", response.Code, response.Body.String())
 		}
 	}
-	contexts := listContextsAPI(t, handler)
-	if len(contexts) != count+1 {
-		t.Fatalf("context count = %d, want %d", len(contexts), count+1)
+	rules := listRulesAPI(t, handler)
+	if len(rules) != count+1 {
+		t.Fatalf("rule count = %d, want %d", len(rules), count+1)
 	}
-	names := make(map[string]bool, len(contexts))
-	for _, candidate := range contexts {
+	names := make(map[string]bool, len(rules))
+	for _, candidate := range rules {
 		names[candidate.Name] = true
 	}
 	if !names["a"] {
-		t.Fatal("seeded context a was lost")
+		t.Fatal("seeded rule a was lost")
 	}
 	for index := 0; index < count; index++ {
-		if name := fmt.Sprintf("context-%d", index); !names[name] {
-			t.Errorf("context %q was lost", name)
+		if name := fmt.Sprintf("rule-%d", index); !names[name] {
+			t.Errorf("rule %q was lost", name)
 		}
 	}
 	if fake.reloads != count {
@@ -433,25 +443,25 @@ func TestCreateContextsConcurrent(t *testing.T) {
 	}
 }
 
-func TestProxy(t *testing.T) {
+func TestWebUI(t *testing.T) {
 	handler, fake, store := setupConfigAPI(t)
-	response := requestAPI(t, handler, http.MethodGet, "/apis/configs/proxy", "", http.StatusOK)
-	var proxy config.Proxy
-	if err := json.Unmarshal(response.Body.Bytes(), &proxy); err != nil {
+	response := requestAPI(t, handler, http.MethodGet, "/apis/configs/web-ui", "", http.StatusOK)
+	var address config.Address
+	if err := json.Unmarshal(response.Body.Bytes(), &address); err != nil {
 		t.Fatal(err)
 	}
-	if proxy.Host != "127.0.0.1" || proxy.Port != 1087 {
-		t.Fatalf("proxy = %#v, want seeded listen address", proxy)
+	if address.Host != "127.0.0.1" || address.Port != 1088 {
+		t.Fatalf("web_ui = %#v, want the default web UI address", address)
 	}
-	response = requestAPI(t, handler, http.MethodPut, "/apis/configs/proxy", `{"host":"127.0.0.1","port":70000}`, http.StatusBadRequest)
-	if !strings.Contains(response.Body.String(), "proxy.port") {
-		t.Fatalf("body = %q, want invalid proxy.port error", response.Body.String())
+	response = requestAPI(t, handler, http.MethodPut, "/apis/configs/web-ui", `{"host":"127.0.0.1","port":70000}`, http.StatusBadRequest)
+	if !strings.Contains(response.Body.String(), "web_ui.port") {
+		t.Fatalf("body = %q, want invalid web_ui.port error", response.Body.String())
 	}
 	if fake.reloads != 0 {
 		t.Fatalf("reloads = %d, want 0", fake.reloads)
 	}
 	assertConfigYAML(t, store, testConfigYAML)
-	requestAPI(t, handler, http.MethodPut, "/apis/configs/proxy", `{"host":"localhost","port":1088}`, http.StatusOK)
+	requestAPI(t, handler, http.MethodPut, "/apis/configs/web-ui", `{"host":"localhost","port":1098}`, http.StatusOK)
 	if fake.reloads != 1 {
 		t.Fatalf("reloads = %d, want 1", fake.reloads)
 	}
@@ -459,8 +469,15 @@ func TestProxy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if conf.Proxy.Host != "localhost" || conf.Proxy.Port != 1088 || conf.CurrentContext != "a" || len(conf.Contexts) != 1 {
-		t.Fatalf("saved config = %#v, want updated listen address and unchanged context", conf)
+	if conf.WebUI.Host != "localhost" || conf.WebUI.Port != 1098 || len(conf.Rules) != 1 || conf.Rules[0].Name != "a" || conf.Rules[0].Listen.Port != 1087 {
+		t.Fatalf("saved config = %#v, want updated web UI address and unchanged rule", conf)
+	}
+	response = requestAPI(t, handler, http.MethodGet, "/apis/configs/web-ui", "", http.StatusOK)
+	if err := json.Unmarshal(response.Body.Bytes(), &address); err != nil {
+		t.Fatal(err)
+	}
+	if address != conf.WebUI {
+		t.Fatalf("web_ui = %#v, want saved %#v", address, conf.WebUI)
 	}
 }
 
@@ -493,8 +510,8 @@ func TestNoProxy(t *testing.T) {
 	if !slices.Equal(conf.NoProxy.List, []string{"a", "b"}) || len(conf.NoProxy.FromEnv) != 0 || len(conf.NoProxy.FromFile) != 0 {
 		t.Fatalf("saved no-proxy = %#v, want replaced bypass lists", conf.NoProxy)
 	}
-	if conf.CurrentContext != "a" || len(conf.Contexts) != 1 || conf.Proxy.Port != 1087 {
-		t.Fatalf("saved config = %#v, want unchanged context and proxy", conf)
+	if len(conf.Rules) != 1 || conf.Rules[0].Name != "a" || conf.Rules[0].Listen.Port != 1087 || conf.WebUI.Port != 1088 {
+		t.Fatalf("saved config = %#v, want unchanged rules and web UI", conf)
 	}
 }
 
@@ -504,8 +521,7 @@ func TestConfigResourceNullBody(t *testing.T) {
 		wantError string
 	}{
 		{target: "", wantError: "config is nil"},
-		{target: "/current-context", wantError: "current context is nil"},
-		{target: "/proxy", wantError: "proxy is nil"},
+		{target: "/web-ui", wantError: "web_ui is nil"},
 		{target: "/no-proxy", wantError: "no-proxy is nil"},
 	} {
 		t.Run(test.target, func(t *testing.T) {
@@ -534,24 +550,24 @@ func TestUpdateConfig(t *testing.T) {
 	}{
 		{
 			name:       "invalid_port",
-			body:       `{"proxy":{"port":70000}}`,
+			body:       `{"web_ui":{"port":70000}}`,
 			wantStatus: http.StatusBadRequest,
-			wantError:  "proxy.port",
-			wantPort:   1087,
+			wantError:  "web_ui.port",
+			wantPort:   1088,
 		},
 		{
 			name:        "valid",
 			wantStatus:  http.StatusOK,
 			wantReloads: 1,
-			wantPort:    1088,
+			wantPort:    1098,
 		},
 		{
 			name:        "reload_failure_keeps_saved_config",
 			reloadError: errors.New("listen tcp: address already in use"),
 			wantStatus:  http.StatusBadRequest,
-			wantError:   "listen tcp: address already in use",
+			wantError:   "saved, but listen tcp: address already in use",
 			wantReloads: 1,
-			wantPort:    1088,
+			wantPort:    1098,
 		},
 	}
 	for _, test := range tests {
@@ -565,11 +581,11 @@ func TestUpdateConfig(t *testing.T) {
 				if err := json.Unmarshal(response.Body.Bytes(), &conf); err != nil {
 					t.Fatal(err)
 				}
-				proxy, ok := conf["proxy"].(map[string]any)
+				address, ok := conf["web_ui"].(map[string]any)
 				if !ok {
-					t.Fatalf("proxy = %#v, want an object", conf["proxy"])
+					t.Fatalf("web_ui = %#v, want an object", conf["web_ui"])
 				}
-				proxy["port"] = test.wantPort
+				address["port"] = test.wantPort
 				data, err := json.Marshal(conf)
 				if err != nil {
 					t.Fatal(err)
@@ -587,8 +603,8 @@ func TestUpdateConfig(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if conf.Proxy.Port != test.wantPort {
-				t.Fatalf("saved proxy.port = %d, want %d", conf.Proxy.Port, test.wantPort)
+			if conf.WebUI.Port != test.wantPort || len(conf.Rules) != 1 || conf.Rules[0].Name != "a" || len(conf.Rules[0].Forward.Way) != 1 {
+				t.Fatalf("saved config = %#v, want web_ui.port %d and unchanged rule", conf, test.wantPort)
 			}
 			if test.wantReloads == 0 {
 				assertConfigYAML(t, store, testConfigYAML)
@@ -599,7 +615,7 @@ func TestUpdateConfig(t *testing.T) {
 
 func TestUpdateConfigBodyTooLarge(t *testing.T) {
 	handler, fake, store := setupConfigAPI(t)
-	body := `{"proxy":{"port":1088}}`
+	body := `{"web_ui":{"port":1098}}`
 	body += strings.Repeat(" ", (2<<20)-len(body))
 	request := httptest.NewRequest(http.MethodPut, "/apis/configs", strings.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")
@@ -644,10 +660,10 @@ func TestUpdateRawConfigInvalid(t *testing.T) {
 		body      string
 		wantError string
 	}{
-		{name: "malformed_yaml", body: `{"yaml":"proxy: [oops"}`, wantError: "yaml:"},
+		{name: "malformed_yaml", body: `{"yaml":"rules: [oops"}`, wantError: "yaml:"},
 		{name: "blank_yaml", body: `{"yaml":"   "}`, wantError: "config is empty"},
 		{name: "null", body: `null`, wantError: "config is empty"},
-		{name: "invalid_port", body: `{"yaml":"proxy:\n  port: 70000\n"}`, wantError: "proxy.port"},
+		{name: "invalid_port", body: `{"yaml":"web_ui:\n  port: 70000\n"}`, wantError: "web_ui.port"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -665,10 +681,34 @@ func TestUpdateRawConfigInvalid(t *testing.T) {
 }
 
 func TestConfigStatus(t *testing.T) {
-	for _, errorMessage := range []string{"boom", ""} {
-		t.Run("error="+errorMessage, func(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		err     string
+		target  string
+		attempt int
+		remote  bool
+		running bool
+	}{
+		{name: "running", running: true},
+		{name: "retrying", err: "boom", attempt: 2, remote: true},
+		{name: "port_forward", target: "10.0.0.5:5432", running: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
 			handler, fake, _ := setupConfigAPI(t)
-			fake.status = configs.Status{Address: "127.0.0.1:1088", Running: true, Error: errorMessage}
+			fake.status = configs.Status{
+				Address: "127.0.0.1:1088",
+				Running: true,
+				Error:   test.err,
+				Rules: []configs.RuleStatus{{
+					Name:    "a",
+					Address: "127.0.0.1:1087",
+					Target:  test.target,
+					Remote:  test.remote,
+					Running: test.running,
+					Attempt: test.attempt,
+					Error:   test.err,
+				}},
+			}
 			response := requestAPI(t, handler, http.MethodGet, "/apis/configs/status", "", http.StatusOK)
 			var status map[string]any
 			if err := json.Unmarshal(response.Body.Bytes(), &status); err != nil {
@@ -677,13 +717,39 @@ func TestConfigStatus(t *testing.T) {
 			if status["address"] != fake.status.Address || status["running"] != fake.status.Running {
 				t.Fatalf("status = %#v, want %#v", status, fake.status)
 			}
-			gotError, present := status["error"]
-			if errorMessage == "" {
+			rules, ok := status["rules"].([]any)
+			if !ok || len(rules) != 1 {
+				t.Fatalf("rules = %#v, want one rule status", status["rules"])
+			}
+			rule, ok := rules[0].(map[string]any)
+			if !ok || rule["name"] != "a" || rule["address"] != "127.0.0.1:1087" || rule["remote"] != test.remote || rule["running"] != test.running {
+				t.Fatalf("rule status = %#v, want %#v", rules[0], fake.status.Rules[0])
+			}
+			target, present := rule["target"]
+			if test.target == "" {
 				if present {
-					t.Fatalf("status contains error: %#v", gotError)
+					t.Fatalf("rule status contains empty target: %#v", rule)
 				}
-			} else if gotError != errorMessage {
-				t.Fatalf("error = %#v, want %q", gotError, errorMessage)
+			} else if target != test.target {
+				t.Fatalf("target = %#v, want %q", target, test.target)
+			}
+			for _, fields := range []map[string]any{status, rule} {
+				gotError, present := fields["error"]
+				if test.err == "" {
+					if present {
+						t.Fatalf("status contains error: %#v", fields)
+					}
+				} else if gotError != test.err {
+					t.Fatalf("error = %#v, want %q", gotError, test.err)
+				}
+			}
+			attempt, present := rule["attempt"]
+			if test.attempt == 0 {
+				if present {
+					t.Fatalf("rule status contains zero attempt: %#v", rule)
+				}
+			} else if attempt != float64(test.attempt) {
+				t.Fatalf("attempt = %#v, want %d", attempt, test.attempt)
 			}
 		})
 	}
@@ -691,7 +757,9 @@ func TestConfigStatus(t *testing.T) {
 
 func TestUnknownAPIRoute(t *testing.T) {
 	handler, _, _ := setupConfigAPI(t)
-	requestAPI(t, handler, http.MethodGet, "/apis/nope", "", http.StatusNotFound)
+	for _, target := range []string{"/apis/nope", "/apis/configs/current-context", "/apis/configs/contexts", "/apis/configs/proxy"} {
+		requestAPI(t, handler, http.MethodGet, target, "", http.StatusNotFound)
+	}
 }
 
 func TestConfigAPIIsolation(t *testing.T) {
@@ -699,7 +767,7 @@ func TestConfigAPIIsolation(t *testing.T) {
 	otherHandler, otherFake, otherStore := setupConfigAPI(t)
 	fake.status = configs.Status{Address: "127.0.0.1:1088", Running: true}
 	otherFake.status = configs.Status{Address: "127.0.0.1:1089", Error: "not running"}
-	requestAPI(t, handler, http.MethodPut, "/apis/configs", `{"proxy":{"port":1088}}`, http.StatusOK)
+	requestAPI(t, handler, http.MethodPut, "/apis/configs", `{"web_ui":{"port":1098}}`, http.StatusOK)
 	if fake.reloads != 1 || otherFake.reloads != 0 {
 		t.Fatalf("reloads = %d, %d; want 1, 0", fake.reloads, otherFake.reloads)
 	}
@@ -707,8 +775,8 @@ func TestConfigAPIIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if conf.Proxy.Port != 1088 {
-		t.Fatalf("saved proxy.port = %d, want 1088", conf.Proxy.Port)
+	if conf.WebUI.Port != 1098 {
+		t.Fatalf("saved web_ui.port = %d, want 1098", conf.WebUI.Port)
 	}
 	assertConfigYAML(t, otherStore, testConfigYAML)
 	for candidate, want := range map[http.Handler]configs.Status{handler: fake.status, otherHandler: otherFake.status} {
@@ -717,7 +785,7 @@ func TestConfigAPIIsolation(t *testing.T) {
 		if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
 			t.Fatal(err)
 		}
-		if got != want {
+		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("status = %#v, want %#v", got, want)
 		}
 	}

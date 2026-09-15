@@ -1,15 +1,19 @@
-current_context: default
-contexts:
-  - name: default
-    way:
-      - lb:
-          - http://xxxx:8080
-          - socks5://yyy:1080
-      - lb:
-          - socks4://zzzz:8000
-proxy:
+web_ui:
   host: 127.0.0.1
-  port: 1087
+  port: 1088
+
+rules:
+  - name: default
+    listen:
+      host: 127.0.0.1
+      port: 1087
+    forward:
+      way:
+        - lb:
+            - http://xxxx:8080
+            - socks5://yyy:1080
+        - lb:
+            - socks4://zzzz:8000
 
 no_proxy:
   list:

@@ -39,59 +39,67 @@ func init() {
 }
 
 var messageKeyToIndex = map[string]int{
-	"About":            10,
-	"Alert %s":         21,
-	"Args":             16,
-	"Config":           5,
-	"Connect":          18,
-	"Daemon":           0,
-	"Edit Config":      6,
-	"Export Command":   4,
-	"Init Config":      13,
-	"JumpWay %s On %s": 22,
-	"Listen %s":        20,
-	"Log":              9,
-	"Manual Proxy":     1,
-	"Open File":        17,
-	"Proxy Mode":       3,
-	"Quit":             11,
-	"Redirect Log":     12,
-	"Reload Config":    7,
-	"Run Proxy":        15,
-	"System Proxy":     2,
-	"Use Proxy":        19,
-	"Web UI":           8,
-	"Write Clipboard":  14,
+	"About":                 15,
+	"Alert %s":              26,
+	"Args":                  21,
+	"Config":                10,
+	"Connect":               23,
+	"Daemon":                0,
+	"Edit Config":           11,
+	"Export Command":        4,
+	"Init Config":           18,
+	"Listen %s":             25,
+	"Log":                   14,
+	"Manual Proxy":          1,
+	"No enabled local rule": 5,
+	"Open File":             22,
+	"Proxy Mode":            3,
+	"Quit":                  16,
+	"Redirect Log":          17,
+	"Reload Config":         12,
+	"Remote":                9,
+	"Retrying (%d)":         7,
+	"Run Proxy":             20,
+	"Running":               6,
+	"Stopped":               8,
+	"System Proxy":          2,
+	"Use Proxy":             24,
+	"Web UI":                13,
+	"Write Clipboard":       19,
 }
 
-var enIndex = []uint32{ // 24 elements
+var enIndex = []uint32{ // 28 elements
 	0x00000000, 0x00000007, 0x00000014, 0x00000021,
-	0x0000002c, 0x0000004b, 0x00000052, 0x0000005e,
-	0x0000006c, 0x00000073, 0x00000077, 0x0000007d,
-	0x00000082, 0x0000008f, 0x0000009b, 0x000000ab,
-	0x000000b5, 0x000000ba, 0x000000c4, 0x000000cc,
-	0x000000d6, 0x000000e3, 0x000000ef, 0x00000106,
-} // Size: 120 bytes
+	0x0000002c, 0x0000004b, 0x00000061, 0x00000069,
+	0x0000007a, 0x00000082, 0x00000089, 0x00000090,
+	0x0000009c, 0x000000aa, 0x000000b1, 0x000000b5,
+	0x000000bb, 0x000000c0, 0x000000cd, 0x000000d9,
+	0x000000e9, 0x000000f3, 0x000000f8, 0x00000102,
+	0x0000010a, 0x00000114, 0x00000121, 0x0000012d,
+} // Size: 136 bytes
 
-const enData string = "" + // Size: 262 bytes
+const enData string = "" + // Size: 301 bytes
 	"\x02Daemon\x02Manual Proxy\x02System Proxy\x02Proxy Mode\x02Proxy Export" +
-	" Line To Clipboard\x02Config\x02Edit Config\x02Reload Config\x02Web UI" +
-	"\x02Log\x02About\x02Quit\x02Redirect Log\x02Init Config\x02Write Clipboa" +
-	"rd\x02Run Proxy\x02Args\x02Open File\x02Connect\x02Use Proxy\x02Listen %" +
-	"[1]s\x02Alert %[1]s\x02JumpWay %[1]s On %[2]s"
+	" Line To Clipboard\x02No enabled local rule\x02Running\x02Retrying (%[1]" +
+	"d)\x02Stopped\x02Remote\x02Config\x02Edit Config\x02Reload Config\x02Web" +
+	" UI\x02Log\x02About\x02Quit\x02Redirect Log\x02Init Config\x02Write Clip" +
+	"board\x02Run Proxy\x02Args\x02Open File\x02Connect\x02Use Proxy\x02Liste" +
+	"n %[1]s\x02Alert %[1]s"
 
-var zhIndex = []uint32{ // 24 elements
+var zhIndex = []uint32{ // 28 elements
 	0x00000000, 0x0000000d, 0x0000001a, 0x00000027,
-	0x00000034, 0x00000053, 0x0000005a, 0x00000067,
-	0x00000074, 0x00000081, 0x00000088, 0x0000008f,
-	0x00000096, 0x000000a6, 0x000000bc, 0x000000cf,
-	0x000000e5, 0x000000ec, 0x000000f9, 0x00000100,
-	0x0000010d, 0x0000011a, 0x00000127, 0x0000013f,
-} // Size: 120 bytes
+	0x00000034, 0x00000053, 0x0000006f, 0x00000079,
+	0x0000008b, 0x00000095, 0x0000009c, 0x000000a3,
+	0x000000b0, 0x000000bd, 0x000000ca, 0x000000d1,
+	0x000000d8, 0x000000df, 0x000000ef, 0x00000105,
+	0x00000118, 0x0000012e, 0x00000135, 0x00000142,
+	0x00000149, 0x00000156, 0x00000163, 0x00000170,
+} // Size: 136 bytes
 
-const zhData string = "" + // Size: 319 bytes
-	"\x02开机启动\x02手动代理\x02系统代理\x02代理模式\x02导出代理命令到剪切板\x02配置\x02编辑配置\x02重载配置\x02" +
-	"网页配置\x02日志\x02关于\x02退出\x02重定向日志\x02初始化加载配置\x02导出到剪切板\x02启动代理服务器\x02参数" +
-	"\x02打开文件\x02连接\x02使用代理\x02监听 %[1]s\x02警告 %[1]s\x02JumpWay %[1]s 在 %[2]s"
+const zhData string = "" + // Size: 368 bytes
+	"\x02开机启动\x02手动代理\x02系统代理\x02代理模式\x02导出代理命令到剪切板\x02没有启用的本地规则\x02运行中\x02重试" +
+	"中 (%[1]d)\x02已停止\x02远端\x02配置\x02编辑配置\x02重载配置\x02网页配置\x02日志\x02关于\x02退出" +
+	"\x02重定向日志\x02初始化加载配置\x02导出到剪切板\x02启动代理服务器\x02参数\x02打开文件\x02连接\x02使用代理" +
+	"\x02监听 %[1]s\x02警告 %[1]s"
 
-	// Total table size 821 bytes (0KiB); checksum: 99165BC3
+	// Total table size 941 bytes (0KiB); checksum: E7B6190B

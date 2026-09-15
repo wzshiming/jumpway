@@ -11,10 +11,23 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Status is what the web UI shows about the running proxy.
+// Status is what the web UI shows about the running app: the web UI listener and every enabled rule.
 type Status struct {
+	Address string       `json:"address"`
+	Running bool         `json:"running"`
+	Error   string       `json:"error,omitempty"`
+	Rules   []RuleStatus `json:"rules"`
+}
+
+// RuleStatus is one rule's listener state; Attempt counts consecutive failed listen attempts.
+type RuleStatus struct {
+	Name    string `json:"name"`
 	Address string `json:"address"`
+	// Target is the fixed destination for port-forward rules; empty for proxy rules.
+	Target  string `json:"target,omitempty"`
+	Remote  bool   `json:"remote"`
 	Running bool   `json:"running"`
+	Attempt int    `json:"attempt,omitempty"`
 	Error   string `json:"error,omitempty"`
 }
 
@@ -37,6 +50,17 @@ func NewConfigsService(store *config.Store, runtime Runtime) *ConfigsService {
 	return &ConfigsService{store: store, runtime: runtime}
 }
 
+// SavedPrefix starts every error whose config was written but whose reload failed; the UI keys on it.
+const SavedPrefix = "saved, but "
+
+// reload applies the saved config and marks reload failures as such.
+func (s *ConfigsService) reload() error {
+	if err := s.runtime.Reload(); err != nil {
+		return fmt.Errorf("%s%w", SavedPrefix, err)
+	}
+	return nil
+}
+
 // modify applies fn to the stored config, then validates, saves and reloads.
 func (s *ConfigsService) modify(fn func(conf *config.Config) error) error {
 	s.mu.Lock()
@@ -54,7 +78,7 @@ func (s *ConfigsService) modify(fn func(conf *config.Config) error) error {
 	if err := s.store.Save(conf); err != nil {
 		return err
 	}
-	return s.runtime.Reload()
+	return s.reload()
 }
 
 // Update the Config
@@ -68,7 +92,7 @@ func (s *ConfigsService) Update(conf *config.Config) (err error) {
 	if err := s.store.Save(conf); err != nil {
 		return err
 	}
-	return s.runtime.Reload()
+	return s.reload()
 }
 
 // Get the Config
@@ -77,151 +101,113 @@ func (s *ConfigsService) Get() (conf *config.Config, err error) {
 	return s.store.Load()
 }
 
-type CurrentContext struct {
-	Name string `json:"name"`
-}
-
-// GetCurrentContext returns the name of the active context
-// #route:"GET /current-context"#
-func (s *ConfigsService) GetCurrentContext() (current *CurrentContext, err error) {
+// GetWebUI returns the web UI listen address
+// #route:"GET /web-ui"#
+func (s *ConfigsService) GetWebUI() (address *config.Address, err error) {
 	conf, err := s.store.Load()
 	if err != nil {
 		return nil, err
 	}
-	return &CurrentContext{Name: conf.CurrentContext}, nil
+	return &conf.WebUI, nil
 }
 
-// SetCurrentContext switches the active context
-// #route:"PUT /current-context"#
-func (s *ConfigsService) SetCurrentContext(current *CurrentContext) (err error) {
-	if current == nil {
-		return errors.New("current context is nil")
+// UpdateWebUI changes the web UI listen address
+// #route:"PUT /web-ui"#
+func (s *ConfigsService) UpdateWebUI(address *config.Address) (err error) {
+	if address == nil {
+		return errors.New("web_ui is nil")
 	}
 	return s.modify(func(conf *config.Config) error {
-		conf.CurrentContext = current.Name
+		conf.WebUI = *address
 		return nil
 	})
 }
 
-// ListContexts lists the contexts
-// #route:"GET /contexts"#
-func (s *ConfigsService) ListContexts() (contexts []config.Context, err error) {
+// ListRules lists the rules
+// #route:"GET /rules"#
+func (s *ConfigsService) ListRules() (rules []config.Rule, err error) {
 	conf, err := s.store.Load()
 	if err != nil {
 		return nil, err
 	}
-	if conf.Contexts == nil {
-		return []config.Context{}, nil
+	if conf.Rules == nil {
+		return []config.Rule{}, nil
 	}
-	return conf.Contexts, nil
+	return conf.Rules, nil
 }
 
-// CreateContext adds a context
-// #route:"POST /contexts"#
-func (s *ConfigsService) CreateContext(c *config.Context) (err error) {
-	if c == nil || strings.TrimSpace(c.Name) == "" {
-		return errors.New("context name is empty")
+// CreateRule adds a rule
+// #route:"POST /rules"#
+func (s *ConfigsService) CreateRule(r *config.Rule) (err error) {
+	if r == nil || strings.TrimSpace(r.Name) == "" {
+		return errors.New("rule name is empty")
 	}
 	return s.modify(func(conf *config.Config) error {
-		for _, candidate := range conf.Contexts {
-			if candidate.Name == c.Name {
-				return fmt.Errorf("context %q already exists", c.Name)
+		for _, candidate := range conf.Rules {
+			if candidate.Name == r.Name {
+				return fmt.Errorf("rule %q already exists", r.Name)
 			}
 		}
-		if len(conf.Contexts) == 0 {
-			conf.CurrentContext = c.Name
-		}
-		conf.Contexts = append(conf.Contexts, *c)
+		conf.Rules = append(conf.Rules, *r)
 		return nil
 	})
 }
 
-// GetContext returns one context
-// #route:"GET /contexts/{name}"#
-func (s *ConfigsService) GetContext(name string /* #name:"name"# */) (c *config.Context, err error) {
+// GetRule returns one rule
+// #route:"GET /rules/{name}"#
+func (s *ConfigsService) GetRule(name string /* #name:"name"# */) (rule *config.Rule, err error) {
 	conf, err := s.store.Load()
 	if err != nil {
 		return nil, err
 	}
-	for index := range conf.Contexts {
-		if conf.Contexts[index].Name == name {
-			return &conf.Contexts[index], nil
+	for index := range conf.Rules {
+		if conf.Rules[index].Name == name {
+			return &conf.Rules[index], nil
 		}
 	}
-	return nil, fmt.Errorf("context %q not found", name)
+	return nil, fmt.Errorf("rule %q not found", name)
 }
 
-// UpdateContext replaces one context (renames it when the body name differs)
-// #route:"PUT /contexts/{name}"#
-func (s *ConfigsService) UpdateContext(name string /* #name:"name"# */, c *config.Context) (err error) {
-	if c == nil {
-		return errors.New("context is nil")
+// UpdateRule replaces one rule (renames it when the body name differs)
+// #route:"PUT /rules/{name}"#
+func (s *ConfigsService) UpdateRule(name string /* #name:"name"# */, r *config.Rule) (err error) {
+	if r == nil {
+		return errors.New("rule is nil")
 	}
 	return s.modify(func(conf *config.Config) error {
-		index := slices.IndexFunc(conf.Contexts, func(candidate config.Context) bool {
+		index := slices.IndexFunc(conf.Rules, func(candidate config.Rule) bool {
 			return candidate.Name == name
 		})
 		if index == -1 {
-			return fmt.Errorf("context %q not found", name)
+			return fmt.Errorf("rule %q not found", name)
 		}
-		replacement := *c
+		replacement := *r
 		if replacement.Name == "" {
 			replacement.Name = name
 		}
 		if replacement.Name != name {
-			for _, candidate := range conf.Contexts {
+			for _, candidate := range conf.Rules {
 				if candidate.Name == replacement.Name {
-					return fmt.Errorf("context %q already exists", replacement.Name)
+					return fmt.Errorf("rule %q already exists", replacement.Name)
 				}
 			}
 		}
-		if conf.CurrentContext == name {
-			conf.CurrentContext = replacement.Name
-		}
-		conf.Contexts[index] = replacement
+		conf.Rules[index] = replacement
 		return nil
 	})
 }
 
-// DeleteContext removes one context
-// #route:"DELETE /contexts/{name}"#
-func (s *ConfigsService) DeleteContext(name string /* #name:"name"# */) (err error) {
+// DeleteRule removes one rule
+// #route:"DELETE /rules/{name}"#
+func (s *ConfigsService) DeleteRule(name string /* #name:"name"# */) (err error) {
 	return s.modify(func(conf *config.Config) error {
-		index := slices.IndexFunc(conf.Contexts, func(candidate config.Context) bool {
+		index := slices.IndexFunc(conf.Rules, func(candidate config.Rule) bool {
 			return candidate.Name == name
 		})
 		if index == -1 {
-			return fmt.Errorf("context %q not found", name)
+			return fmt.Errorf("rule %q not found", name)
 		}
-		if conf.CurrentContext == name {
-			if len(conf.Contexts) > 1 {
-				return fmt.Errorf("context %q is the current context; switch to another context first", name)
-			}
-			conf.CurrentContext = ""
-		}
-		conf.Contexts = slices.Delete(conf.Contexts, index, index+1)
-		return nil
-	})
-}
-
-// GetProxy returns the listen address
-// #route:"GET /proxy"#
-func (s *ConfigsService) GetProxy() (proxy *config.Proxy, err error) {
-	conf, err := s.store.Load()
-	if err != nil {
-		return nil, err
-	}
-	return &conf.Proxy, nil
-}
-
-// UpdateProxy changes the listen address
-// #route:"PUT /proxy"#
-func (s *ConfigsService) UpdateProxy(proxy *config.Proxy) (err error) {
-	if proxy == nil {
-		return errors.New("proxy is nil")
-	}
-	return s.modify(func(conf *config.Config) error {
-		conf.Proxy = *proxy
+		conf.Rules = slices.Delete(conf.Rules, index, index+1)
 		return nil
 	})
 }
@@ -282,7 +268,7 @@ func (s *ConfigsService) UpdateRaw(raw *RawConfig) (err error) {
 	if err := s.store.SaveRaw(data); err != nil {
 		return err
 	}
-	return s.runtime.Reload()
+	return s.reload()
 }
 
 // Status of the running proxy

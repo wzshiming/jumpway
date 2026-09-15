@@ -1,69 +1,85 @@
 package tray
 
 import (
-	"github.com/gogpu/systray"
 	"github.com/wzshiming/jumpway/i18n"
 	"github.com/wzshiming/jumpway/log"
 	"github.com/wzshiming/sysproxy"
 )
 
-func (a *App) ItemProxyMode(menu *systray.Menu) {
-	var global, manual *systray.MenuItem
-
-	check := func(checked proxyMode) {
-		if checked == systemMode {
-			global.SetChecked(true)
-			manual.SetChecked(false)
-			a.Mode = i18n.SystemProxy()
-			a.UpdateStatus()
-
-			err := sysproxy.OnHTTPS(a.Address)
-			if err != nil {
-				log.Error(err, "sysproxy.OnHTTPS")
-				return
-			}
-			err = sysproxy.OnHTTP(a.Address)
-			if err != nil {
-				log.Error(err, "sysproxy.OnHTTP")
-				return
-			}
-		} else {
-			manual.SetChecked(true)
-			global.SetChecked(false)
-			a.Mode = i18n.ManualProxy()
-			a.UpdateStatus()
-
-			err := sysproxy.OffHTTPS()
-			if err != nil {
-				log.Error(err, "sysproxy.OffHTTPS")
-			}
-			err = sysproxy.OffHTTP()
-			if err != nil {
-				log.Error(err, "sysproxy.OffHTTP")
-			}
-		}
-	}
-
-	selectMode := func(checked proxyMode) func() {
-		return func() {
-			a.do(func() {
-				check(checked)
-				log.Info(i18n.ProxyMode(), "mode", checked)
-			})
-		}
-	}
-
-	manual = menu.AddCheckbox(i18n.ManualProxy(), true, selectMode(manualMode))
-	global = menu.AddCheckbox(i18n.SystemProxy(), false, selectMode(systemMode))
-
-	a.do(func() {
-		check(manualMode)
-	})
+func (a *App) ruleAddress(name string) string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return localProxyAddress(a.rules, name)
 }
 
-type proxyMode uint
+func localProxyAddress(rules []*ruleState, name string) string {
+	for _, rule := range rules {
+		if rule.name != name || rule.remote || rule.target != "" {
+			continue
+		}
+		address := rule.address
+		if address == "" {
+			address = rule.listenAddress
+		}
+		return formatAddress(address)
+	}
+	return ""
+}
 
-const (
-	manualMode proxyMode = iota
-	systemMode
-)
+func (a *App) syncSystemProxySelection() (address string, changed bool, removed string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	address = localProxyAddress(a.rules, a.systemProxyRule)
+	if a.systemProxyRule != "" && address == "" {
+		removed = a.systemProxyRule
+		a.systemProxyRule = ""
+	}
+	changed = address != a.systemProxyAddress || removed != ""
+	a.systemProxyAddress = address
+	a.Mode = i18n.ManualProxy()
+	if a.systemProxyRule != "" {
+		a.Mode = i18n.SystemProxy()
+	}
+	return
+}
+
+func (a *App) selectSystemProxy(name string) {
+	a.mu.Lock()
+	a.systemProxyRule = name
+	a.mu.Unlock()
+	address, _, removed := a.syncSystemProxySelection()
+	if removed != "" {
+		log.Info("System proxy rule removed", "rule", removed)
+	}
+	setSystemProxy(address)
+	log.Info(i18n.ProxyMode(), "rule", name, "address", address)
+	a.updateStatus()
+}
+
+func (a *App) restoreSystemProxy() {
+	address, changed, removed := a.syncSystemProxySelection()
+	if removed != "" {
+		log.Info("System proxy rule removed", "rule", removed)
+	}
+	if changed {
+		setSystemProxy(address)
+	}
+}
+
+func setSystemProxy(address string) {
+	if address == "" {
+		if err := sysproxy.OffHTTPS(); err != nil {
+			log.Error(err, "sysproxy.OffHTTPS")
+		}
+		if err := sysproxy.OffHTTP(); err != nil {
+			log.Error(err, "sysproxy.OffHTTP")
+		}
+		return
+	}
+	if err := sysproxy.OnHTTPS(address); err != nil {
+		log.Error(err, "sysproxy.OnHTTPS")
+	}
+	if err := sysproxy.OnHTTP(address); err != nil {
+		log.Error(err, "sysproxy.OnHTTP")
+	}
+}

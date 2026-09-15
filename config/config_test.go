@@ -11,7 +11,6 @@ import (
 	"reflect"
 	"runtime"
 	"slices"
-	"strings"
 	"sync"
 	"testing"
 
@@ -20,111 +19,165 @@ import (
 )
 
 func TestValidate(t *testing.T) {
-	var defaultConf Config
-	if err := yaml.Unmarshal([]byte(defaultConfig), &defaultConf); err != nil {
-		t.Fatal(err)
-	}
-	if len(defaultConf.Contexts) == 0 || len(defaultConf.Contexts[0].Way) == 0 {
-		t.Fatal("embedded default must contain a context with at least one node")
-	}
 	withWay := func(nodes ...bridgeconfig.Node) *Config {
-		return &Config{
-			CurrentContext: "a",
-			Contexts:       []Context{{Name: "a", Way: nodes}},
-		}
+		return &Config{Rules: []Rule{{Name: "a", Forward: Forward{Way: nodes}}}}
 	}
 	tests := []struct {
 		name      string
 		conf      *Config
 		wantError string
-		wantHint  string
 	}{
 		{
-			name: "default",
-			conf: &defaultConf,
-		},
-		{
-			name: "empty_config",
+			name: "zero_rules",
 			conf: &Config{},
 		},
 		{
-			name: "maximum_port",
-			conf: &Config{Proxy: Proxy{Port: 65535}},
+			name: "maximum_ports",
+			conf: &Config{WebUI: Address{Port: 65535}, Rules: []Rule{{Name: "a", Listen: Listen{Host: "::1", Port: 65535}, Forward: Forward{Port: 65535}}}},
 		},
 		{
 			name:      "nil_config",
 			wantError: "config is nil",
 		},
 		{
-			name:      "port_out_of_range",
-			conf:      &Config{Proxy: Proxy{Port: 65536}},
-			wantError: "proxy.port 65536 is out of range (0-65535)",
+			name:      "web_ui_port_out_of_range",
+			conf:      &Config{WebUI: Address{Port: 65536}},
+			wantError: "web_ui.port 65536 is out of range (0-65535)",
 		},
 		{
 			name:      "empty_name",
-			conf:      &Config{Contexts: []Context{{}}},
-			wantError: "contexts[0].name is empty",
+			conf:      &Config{Rules: []Rule{{}}},
+			wantError: "rules[0].name is empty",
 		},
 		{
 			name:      "whitespace_name",
-			conf:      &Config{CurrentContext: "a", Contexts: []Context{{Name: "a"}, {Name: " \t\n"}}},
-			wantError: "contexts[1].name is empty",
+			conf:      &Config{Rules: []Rule{{Name: "a"}, {Name: " \t\n"}}},
+			wantError: "rules[1].name is empty",
 		},
 		{
 			name:      "duplicate_name",
-			conf:      &Config{CurrentContext: "a", Contexts: []Context{{Name: "a"}, {Name: "a"}}},
-			wantError: `duplicate context name "a"`,
+			conf:      &Config{Rules: []Rule{{Name: "a"}, {Name: "a"}}},
+			wantError: `duplicate rule name "a"`,
 		},
 		{
 			name:      "slash_in_name",
-			conf:      &Config{CurrentContext: "a/b", Contexts: []Context{{Name: "a/b"}}},
-			wantError: `contexts[0].name "a/b" must not contain "/"`,
+			conf:      &Config{Rules: []Rule{{Name: "a/b"}}},
+			wantError: `rules[0].name "a/b" must not contain "/"`,
 		},
 		{
-			name:      "unknown_current_context",
-			conf:      &Config{CurrentContext: "missing", Contexts: []Context{{Name: "a"}}},
-			wantError: `current_context "missing" does not match any context`,
+			name:      "listen_port_out_of_range",
+			conf:      &Config{Rules: []Rule{{Name: "a"}, {Name: "b", Listen: Listen{Port: 70000}}}},
+			wantError: "rules[1].listen.port 70000 is out of range (0-65535)",
 		},
 		{
-			name:      "current_context_without_contexts",
-			conf:      &Config{CurrentContext: "missing"},
-			wantError: `current_context "missing" does not match any context`,
+			name:      "forward_port_out_of_range",
+			conf:      &Config{Rules: []Rule{{Name: "a", Forward: Forward{Port: 65536}}}},
+			wantError: "rules[0].forward.port 65536 is out of range (0-65535)",
 		},
 		{
-			name:      "empty_current_context",
-			conf:      &Config{Contexts: []Context{{Name: "a"}}},
-			wantError: `current_context "" does not match any context`,
+			name:      "forward_host_without_port",
+			conf:      &Config{Rules: []Rule{{Name: "a", Forward: Forward{Host: "10.0.0.5"}}}},
+			wantError: "rules[0].forward.host is set but port is 0",
+		},
+		{
+			name:      "port_forward_with_username",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Username: "user"}, Forward: Forward{Port: 5432}}}},
+			wantError: "rules[0].listen.username is only used by proxy rules",
+		},
+		{
+			name:      "port_forward_with_credentials",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Username: "user", Password: "secret"}, Forward: Forward{Port: 5432}}}},
+			wantError: "rules[0].listen.username is only used by proxy rules",
+		},
+		{
+			name:      "port_forward_password_without_username",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Password: "secret"}, Forward: Forward{Port: 5432}}}},
+			wantError: "rules[0].listen.password is set but username is empty",
+		},
+		{
+			name: "port_forward_without_credentials",
+			conf: &Config{Rules: []Rule{{Name: "db", Listen: Listen{Port: 15432}, Forward: Forward{Host: "10.0.0.5", Port: 5432}}}},
+		},
+		{
+			name:      "password_without_username",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Password: "secret"}}}},
+			wantError: "rules[0].listen.password is set but username is empty",
+		},
+		{
+			name:      "username_with_colon",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Username: "us:er", Password: "secret"}}}},
+			wantError: "rules[0].listen.username \"us:er\" must not contain \":\"",
+		},
+		{
+			name: "username_and_password",
+			conf: &Config{Rules: []Rule{{Name: "a", Listen: Listen{Username: "user", Password: "secret"}}}},
+		},
+		{
+			name: "username_only",
+			conf: &Config{Rules: []Rule{{Name: "a", Listen: Listen{Username: "user"}}}},
 		},
 		{
 			name:      "no_lb",
 			conf:      withWay(bridgeconfig.Node{}),
-			wantError: "contexts[0].way[0] has no proxy URL",
+			wantError: "rules[0].forward.way[0] has no proxy URL",
 		},
 		{
 			name:      "empty_lb",
 			conf:      withWay(bridgeconfig.Node{LB: []string{""}}),
-			wantError: "contexts[0].way[0] contains an empty proxy URL",
+			wantError: "rules[0].forward.way[0] contains an empty proxy URL",
 		},
 		{
 			name:      "whitespace_lb",
 			conf:      withWay(bridgeconfig.Node{LB: []string{" \t\n"}}),
-			wantError: "contexts[0].way[0] contains an empty proxy URL",
+			wantError: "rules[0].forward.way[0] contains an empty proxy URL",
 		},
 		{
 			name:      "invalid_url",
 			conf:      withWay(bridgeconfig.Node{LB: []string{"socks5://[::1"}}),
-			wantError: `contexts[0].way[0]: invalid proxy URL "socks5://[::1":`,
+			wantError: `rules[0].forward.way[0]: invalid proxy URL "socks5://[::1": parse "socks5://[::1": missing ']' in host (e.g. socks5://host:1080)`,
 		},
 		{
 			name:      "ip_without_scheme",
 			conf:      withWay(bridgeconfig.Node{LB: []string{"127.0.0.1:1080"}}),
-			wantError: "invalid proxy URL",
-			wantHint:  "socks5://host:1080",
+			wantError: `rules[0].forward.way[0]: invalid proxy URL "127.0.0.1:1080": parse "127.0.0.1:1080": first path segment in URL cannot contain colon (e.g. socks5://host:1080)`,
 		},
 		{
 			name:      "no_scheme",
 			conf:      withWay(bridgeconfig.Node{LB: []string{"/just/a/path"}}),
-			wantError: `contexts[0].way[0]: proxy URL "/just/a/path" has no scheme (e.g. socks5://host:1080)`,
+			wantError: `rules[0].forward.way[0]: proxy URL "/just/a/path" has no scheme (e.g. socks5://host:1080)`,
+		},
+		{
+			name:      "forward_way_no_scheme",
+			conf:      withWay(bridgeconfig.Node{LB: []string{"x"}}),
+			wantError: `rules[0].forward.way[0]: proxy URL "x" has no scheme (e.g. socks5://host:1080)`,
+		},
+		{
+			name: "remote_listen_no_lb",
+			conf: &Config{Rules: []Rule{{Name: "a", Listen: Listen{
+				Way: []bridgeconfig.Node{{}},
+			}}}},
+			wantError: "rules[0].listen.way[0] has no proxy URL",
+		},
+		{
+			name: "remote_listen_empty_lb",
+			conf: &Config{Rules: []Rule{{Name: "a", Listen: Listen{
+				Way: []bridgeconfig.Node{{LB: []string{""}}},
+			}}}},
+			wantError: "rules[0].listen.way[0] contains an empty proxy URL",
+		},
+		{
+			name: "remote_listen_invalid_url",
+			conf: &Config{Rules: []Rule{{Name: "a"}, {Name: "b", Listen: Listen{
+				Way: []bridgeconfig.Node{{LB: []string{"ssh://[::1"}}},
+			}}}},
+			wantError: `rules[1].listen.way[0]: invalid proxy URL "ssh://[::1": parse "ssh://[::1": missing ']' in host (e.g. socks5://host:1080)`,
+		},
+		{
+			name: "remote_listen_no_scheme",
+			conf: &Config{Rules: []Rule{{Name: "a", Listen: Listen{
+				Way: []bridgeconfig.Node{{LB: []string{"/just/a/path"}}},
+			}}}},
+			wantError: `rules[0].listen.way[0]: proxy URL "/just/a/path" has no scheme (e.g. socks5://host:1080)`,
 		},
 		{
 			name: "command",
@@ -149,38 +202,104 @@ func TestValidate(t *testing.T) {
 		{
 			name:      "second_node_error",
 			conf:      withWay(bridgeconfig.Node{LB: []string{"socks5://a:1080"}}, bridgeconfig.Node{}),
-			wantError: "contexts[0].way[1] has no proxy URL",
+			wantError: "rules[0].forward.way[1] has no proxy URL",
 		},
 		{
 			name:      "second_lb_error",
 			conf:      withWay(bridgeconfig.Node{LB: []string{"socks5://a:1080", ""}}),
-			wantError: "contexts[0].way[0] contains an empty proxy URL",
+			wantError: "rules[0].forward.way[0] contains an empty proxy URL",
 		},
 		{
-			name: "inactive_context_error",
-			conf: &Config{CurrentContext: "a", Contexts: []Context{
+			name: "disabled_rule_url_error",
+			conf: &Config{Rules: []Rule{
 				{Name: "a"},
-				{Name: "b", Way: []bridgeconfig.Node{{}}},
+				{Name: "b", Disabled: true, Forward: Forward{Way: []bridgeconfig.Node{{}}}},
 			}},
-			wantError: "contexts[1].way[0] has no proxy URL",
+			wantError: "rules[1].forward.way[0] has no proxy URL",
 		},
 		{
-			name:      "port_before_context",
-			conf:      &Config{Proxy: Proxy{Port: 70000}, Contexts: []Context{{}}},
-			wantError: "proxy.port 70000 is out of range (0-65535)",
+			name:      "disabled_rule_name_error",
+			conf:      &Config{Rules: []Rule{{Disabled: true}}},
+			wantError: "rules[0].name is empty",
 		},
 		{
-			name: "names_before_current_context_and_urls",
-			conf: &Config{CurrentContext: "missing", Contexts: []Context{
-				{Name: "a", Way: []bridgeconfig.Node{{}}},
-				{Name: "a"},
+			name:      "disabled_rule_port_error",
+			conf:      &Config{Rules: []Rule{{Name: "a", Disabled: true, Listen: Listen{Port: 70000}}}},
+			wantError: "rules[0].listen.port 70000 is out of range (0-65535)",
+		},
+		{
+			name:      "web_ui_port_before_rules",
+			conf:      &Config{WebUI: Address{Port: 70000}, Rules: []Rule{{}}},
+			wantError: "web_ui.port 70000 is out of range (0-65535)",
+		},
+		{
+			name: "duplicate_local_address",
+			conf: &Config{Rules: []Rule{
+				{Name: "a", Listen: Listen{Host: "127.0.0.1", Port: 9000}},
+				{Name: "b", Listen: Listen{Port: 9000}},
 			}},
-			wantError: `duplicate context name "a"`,
+			wantError: `rules[1].listen address 127.0.0.1:9000 is already used by rule "a"`,
 		},
 		{
-			name:      "current_context_before_urls",
-			conf:      &Config{Contexts: []Context{{Name: "a", Way: []bridgeconfig.Node{{}}}}},
-			wantError: `current_context "" does not match any context`,
+			name: "duplicate_web_ui_address",
+			conf: &Config{WebUI: Address{Host: "127.0.0.1", Port: 1088}, Rules: []Rule{
+				{Name: "a", Listen: Listen{Port: 1088}},
+			}},
+			wantError: "rules[0].listen address 127.0.0.1:1088 is already used by web_ui",
+		},
+		{
+			name: "default_web_ui_host",
+			conf: &Config{WebUI: Address{Port: 1088}, Rules: []Rule{
+				{Name: "a", Listen: Listen{Host: "127.0.0.1", Port: 1088}},
+			}},
+			wantError: "rules[0].listen address 127.0.0.1:1088 is already used by web_ui",
+		},
+		{
+			name: "disabled_duplicate_address",
+			conf: &Config{Rules: []Rule{
+				{Name: "a", Disabled: true, Listen: Listen{Port: 9000}},
+				{Name: "b", Listen: Listen{Port: 9000}},
+				{Name: "c", Disabled: true, Listen: Listen{Port: 9000}},
+			}},
+		},
+		{
+			name: "disabled_web_ui_address",
+			conf: &Config{WebUI: Address{Port: 1088}, Rules: []Rule{
+				{Name: "a", Disabled: true, Listen: Listen{Port: 1088}},
+			}},
+		},
+		{
+			name: "remote_and_local_address",
+			conf: &Config{Rules: []Rule{
+				{Name: "a", Listen: Listen{Port: 9000, Way: []bridgeconfig.Node{{LB: []string{"ssh://user@host:22"}}}}},
+				{Name: "b", Listen: Listen{Port: 9000}},
+				{Name: "c", Listen: Listen{Port: 9000, Way: []bridgeconfig.Node{{LB: []string{"ssh://user@other:22"}}}}},
+			}},
+		},
+		{
+			name: "remote_and_web_ui_address",
+			conf: &Config{WebUI: Address{Port: 1088}, Rules: []Rule{
+				{Name: "a", Listen: Listen{Port: 1088, Way: []bridgeconfig.Node{{LB: []string{"ssh://user@host:22"}}}}},
+			}},
+		},
+		{
+			name: "zero_ports",
+			conf: &Config{Rules: []Rule{{Name: "a"}, {Name: "b"}}},
+		},
+		{
+			name: "different_hosts",
+			conf: &Config{WebUI: Address{Host: "::1", Port: 9000}, Rules: []Rule{
+				{Name: "a", Listen: Listen{Port: 9000}},
+				{Name: "b", Listen: Listen{Host: "localhost", Port: 9000}},
+			}},
+		},
+		{
+			name: "ipv6_collision",
+			conf: &Config{Rules: []Rule{
+				{Name: "a", Listen: Listen{Host: "::1", Port: 9000}},
+				{Name: "b", Listen: Listen{Host: "::1", Port: 9000}},
+			}},
+			wantError: `rules[1].listen address [::1]:9000 is already used by rule "a"`,
 		},
 	}
 	for _, test := range tests {
@@ -190,11 +309,130 @@ func TestValidate(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Validate() = %v, want nil", err)
 				}
-			} else if err == nil || !strings.Contains(err.Error(), test.wantError) {
-				t.Fatalf("Validate() = %v, want error containing %q", err, test.wantError)
+			} else if err == nil || err.Error() != test.wantError {
+				t.Fatalf("Validate() = %v, want %q", err, test.wantError)
 			}
-			if test.wantHint != "" && (err == nil || !strings.Contains(err.Error(), test.wantHint)) {
-				t.Fatalf("Validate() = %v, want hint containing %q", err, test.wantHint)
+		})
+	}
+}
+
+func TestDefaultConfig(t *testing.T) {
+	var conf Config
+	if err := yaml.Unmarshal([]byte(defaultConfig), &conf); err != nil {
+		t.Fatal(err)
+	}
+	if want := (Address{Host: "127.0.0.1", Port: 1088}); conf.WebUI != want {
+		t.Fatalf("embedded web_ui = %#v, want %#v", conf.WebUI, want)
+	}
+	if len(conf.Rules) != 1 || conf.Rules[0].Name != "default" || len(conf.Rules[0].Forward.Way) != 2 {
+		t.Fatalf("embedded default must contain the default rule with two nodes: %#v", conf.Rules)
+	}
+	if conf.Rules[0].Listen.Host != "127.0.0.1" || conf.Rules[0].Listen.Port != 1087 {
+		t.Fatalf("embedded listen = %#v, want 127.0.0.1:1087", conf.Rules[0].Listen)
+	}
+	if err := Validate(&conf); err != nil {
+		t.Fatalf("embedded default is invalid: %v", err)
+	}
+}
+
+func TestForwardTarget(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		forward Forward
+		want    string
+	}{
+		{name: "default_host", forward: Forward{Port: 5432}, want: "127.0.0.1:5432"},
+		{name: "ipv4", forward: Forward{Host: "10.0.0.5", Port: 5432}, want: "10.0.0.5:5432"},
+		{name: "ipv6", forward: Forward{Host: "::1", Port: 5432}, want: "[::1]:5432"},
+		{name: "proxy"},
+		{name: "proxy_ignores_host", forward: Forward{Host: "10.0.0.5"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := test.forward.Target(); got != test.want {
+				t.Fatalf("Target() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestForwardIsProxy(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		forward Forward
+		want    bool
+	}{
+		{name: "direct_proxy", want: true},
+		{name: "chained_proxy", forward: Forward{Way: []bridgeconfig.Node{{LB: []string{"socks5://host:1080"}}}}, want: true},
+		{name: "port_forward", forward: Forward{Port: 5432}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := test.forward.IsProxy(); got != test.want {
+				t.Fatalf("IsProxy() = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestListenAddress(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		host string
+		port uint32
+		want string
+	}{
+		{name: "default_host", port: 1088, want: "127.0.0.1:1088"},
+		{name: "ipv4", host: "0.0.0.0", port: 1087, want: "0.0.0.0:1087"},
+		{name: "ipv6", host: "::1", port: 1087, want: "[::1]:1087"},
+		{name: "hostname", host: "localhost", port: 65535, want: "localhost:65535"},
+		{name: "zero_port", want: "127.0.0.1:0"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			address := Address{Host: test.host, Port: test.port}
+			if got := address.String(); got != test.want {
+				t.Fatalf("String() = %q, want %q", got, test.want)
+			}
+			listen := Listen{Host: test.host, Port: test.port}
+			if got := listen.Address(); got != test.want {
+				t.Fatalf("Address() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestListenRemote(t *testing.T) {
+	for _, way := range [][]bridgeconfig.Node{nil, {}, {{LB: []string{"ssh://user@host:22"}}}} {
+		listen := Listen{Way: way}
+		if got, want := listen.Remote(), len(way) > 0; got != want {
+			t.Fatalf("Remote() with way %v = %v, want %v", way, got, want)
+		}
+	}
+}
+
+func TestListenUser(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		listen   Listen
+		wantNil  bool
+		wantPass bool
+	}{
+		{name: "no_username", wantNil: true},
+		{name: "password_only", listen: Listen{Password: "secret"}, wantNil: true},
+		{name: "username_only", listen: Listen{Username: "user"}},
+		{name: "username_and_password", listen: Listen{Username: "user@host", Password: "p:a/ss"}, wantPass: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			user := test.listen.User()
+			if test.wantNil {
+				if user != nil {
+					t.Fatalf("User() = %v, want nil", user)
+				}
+				return
+			}
+			if user == nil || user.Username() != test.listen.Username {
+				t.Fatalf("User() = %v, want username %q", user, test.listen.Username)
+			}
+			if password, ok := user.Password(); password != test.listen.Password || ok != test.wantPass {
+				t.Fatalf("Password() = %q, %v; want %q, %v", password, ok, test.listen.Password, test.wantPass)
 			}
 		})
 	}
@@ -227,11 +465,11 @@ func TestStoreIsolation(t *testing.T) {
 	if got, want := store.Path(), filepath.Join(dir, "config.yaml"); got != want {
 		t.Fatalf("Path() = %q, want %q", got, want)
 	}
-	const content = "proxy:\n  port: 1088\n"
+	const content = "web_ui:\n  port: 1088\n"
 	if err := store.SaveRaw([]byte(content)); err != nil {
 		t.Fatal(err)
 	}
-	const otherContent = "proxy:\n  port: 1089\n"
+	const otherContent = "web_ui:\n  port: 1089\n"
 	if err := other.SaveRaw([]byte(otherContent)); err != nil {
 		t.Fatal(err)
 	}
@@ -254,7 +492,7 @@ func TestStoreInit(t *testing.T) {
 			if name != "missing" {
 				content := ""
 				if name == "existing" {
-					content = "# keep this\nproxy:\n  port: 1088\n"
+					content = "# keep this\nweb_ui:\n  port: 1088\n"
 					want = content
 				}
 				if err := store.SaveRaw([]byte(content)); err != nil {
@@ -327,7 +565,7 @@ func TestNoProxyHTTPCacheIsolation(t *testing.T) {
 func TestStoreSaveRawAtomic(t *testing.T) {
 	t.Run("replace", func(t *testing.T) {
 		store := NewStore(t.TempDir())
-		for _, content := range []string{"# first\nproxy:\n  port: 1080\n", "# latest\nproxy:\n  port: 0\n"} {
+		for _, content := range []string{"# first\nweb_ui:\n  port: 1088\n", "# latest\nweb_ui:\n  port: 0\n"} {
 			if err := store.SaveRaw([]byte(content)); err != nil {
 				t.Fatal(err)
 			}
@@ -424,12 +662,17 @@ func TestStoreSaveRawAtomic(t *testing.T) {
 func TestStoreSaveRoundTrip(t *testing.T) {
 	store := NewStore(t.TempDir())
 	want := &Config{
-		CurrentContext: "a",
-		Contexts: []Context{{Name: "a", Way: []bridgeconfig.Node{
+		WebUI: Address{Host: "127.0.0.1", Port: 1088},
+		Rules: []Rule{{Name: "a", Disabled: true, Listen: Listen{
+			Host:     "::1",
+			Port:     1087,
+			Way:      []bridgeconfig.Node{{LB: []string{"ssh://user@host:22"}}},
+			Username: "user",
+			Password: "secret",
+		}, Forward: Forward{Way: []bridgeconfig.Node{
 			{LB: []string{"socks5://a:1080"}},
 			{LB: []string{"http://b:8080", "cmd:ssh host nc %h %p"}},
-		}}},
-		Proxy: Proxy{Host: "127.0.0.1", Port: 1087},
+		}}}},
 		NoProxy: NoProxy{
 			List:     []string{"localhost", "127.0.0.0/8"},
 			FromEnv:  []string{"NO_PROXY"},
@@ -446,46 +689,151 @@ func TestStoreSaveRoundTrip(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Load() = %#v, want %#v", got, want)
 	}
-	if !reflect.DeepEqual(got.Contexts[0].Way[0].LB, want.Contexts[0].Way[0].LB) {
-		t.Fatalf("single-node LB = %v, want %v", got.Contexts[0].Way[0].LB, want.Contexts[0].Way[0].LB)
+	if !reflect.DeepEqual(got.Rules[0].Forward.Way[0].LB, want.Rules[0].Forward.Way[0].LB) {
+		t.Fatalf("single-node LB = %v, want %v", got.Rules[0].Forward.Way[0].LB, want.Rules[0].Forward.Way[0].LB)
 	}
 	data, err := store.LoadRaw()
 	if err != nil {
 		t.Fatal(err)
 	}
 	var raw struct {
-		Contexts []struct {
-			Way []map[string][]string `yaml:"way"`
-		} `yaml:"contexts"`
+		Rules []struct {
+			Listen struct {
+				Way []map[string][]string `yaml:"way"`
+			} `yaml:"listen"`
+			Forward struct {
+				Way []map[string][]string `yaml:"way"`
+			} `yaml:"forward"`
+		} `yaml:"rules"`
 	}
 	if err := yaml.Unmarshal(data, &raw); err != nil {
 		t.Fatalf("node did not marshal as a YAML mapping: %v", err)
 	}
-	if len(raw.Contexts) == 0 || len(raw.Contexts[0].Way) == 0 || !reflect.DeepEqual(raw.Contexts[0].Way[0]["lb"], want.Contexts[0].Way[0].LB) {
+	if len(raw.Rules) == 0 || len(raw.Rules[0].Forward.Way) == 0 || !reflect.DeepEqual(raw.Rules[0].Forward.Way[0]["lb"], want.Rules[0].Forward.Way[0].LB) {
 		t.Fatalf("single-LB node did not marshal as an lb list: %s", data)
+	}
+	if len(raw.Rules[0].Listen.Way) == 0 || !reflect.DeepEqual(raw.Rules[0].Listen.Way[0]["lb"], want.Rules[0].Listen.Way[0].LB) {
+		t.Fatalf("listen node did not marshal as an lb list: %s", data)
+	}
+}
+
+func TestStoreSaveForwardRoundTrip(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		yaml string
+	}{
+		{
+			name: "port_forward",
+			yaml: "rules:\n  - name: db\n    listen: {port: 15432}\n    forward: {host: 10.0.0.5, port: 5432}\n",
+		},
+		{
+			name: "proxy",
+			yaml: "rules:\n  - name: proxy\n    listen: {port: 9000}\n    forward: {way: [{lb: [socks5://host:1080]}]}\n",
+		},
+		{
+			name: "zero_listen_and_forward",
+			yaml: "rules:\n  - name: direct\n",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			store := NewStore(t.TempDir())
+			if err := store.SaveRaw([]byte(test.yaml)); err != nil {
+				t.Fatal(err)
+			}
+			conf, err := store.Load()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := store.Save(conf); err != nil {
+				t.Fatal(err)
+			}
+			got, err := store.Load()
+			if err != nil {
+				t.Fatal(err)
+			}
+			data, err := store.LoadRaw()
+			if err != nil {
+				t.Fatal(err)
+			}
+			var actual, want struct {
+				Rules []map[string]any `yaml:"rules"`
+			}
+			if err := yaml.Unmarshal(data, &actual); err != nil {
+				t.Fatal(err)
+			}
+			if err := yaml.Unmarshal([]byte(test.yaml), &want); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(actual.Rules, want.Rules) {
+				t.Fatalf("saved rules = %#v, want %#v", actual.Rules, want.Rules)
+			}
+			if !reflect.DeepEqual(got.Rules, conf.Rules) {
+				t.Fatalf("loaded rules = %#v, want %#v", got.Rules, conf.Rules)
+			}
+		})
 	}
 }
 
 func TestJSONTags(t *testing.T) {
 	tests := []struct {
-		name  string
-		value any
-		keys  []string
+		name    string
+		value   any
+		keys    []string
+		omitted []string
 	}{
 		{
-			name:  "config",
-			value: &Config{CurrentContext: "a", Proxy: Proxy{Port: 1}},
-			keys:  []string{"current_context", "contexts", "proxy", "no_proxy", "host", "port", "list", "from_env", "from_file"},
+			name:    "config",
+			value:   Config{},
+			keys:    []string{"web_ui", "rules", "no_proxy"},
+			omitted: []string{"current_context", "contexts", "proxy", "WebUI", "Rules", "NoProxy"},
 		},
 		{
-			name:  "context",
-			value: Context{},
-			keys:  []string{"name", "way"},
+			name:    "enabled_rule",
+			value:   Rule{},
+			keys:    []string{"name", "listen", "forward"},
+			omitted: []string{"disabled", "way"},
 		},
 		{
-			name:  "proxy",
-			value: Proxy{},
+			name:    "disabled_rule",
+			value:   Rule{Disabled: true},
+			keys:    []string{"name", "disabled", "listen", "forward"},
+			omitted: []string{"way"},
+		},
+		{
+			name:    "direct_proxy_forward",
+			value:   Forward{},
+			omitted: []string{"host", "port", "way"},
+		},
+		{
+			name:    "chained_proxy_forward",
+			value:   Forward{Way: []bridgeconfig.Node{{LB: []string{"socks5://host:1080"}}}},
+			keys:    []string{"way"},
+			omitted: []string{"host", "port"},
+		},
+		{
+			name:  "port_forward",
+			value: Forward{Host: "10.0.0.5", Port: 5432, Way: []bridgeconfig.Node{{LB: []string{"ssh://u@bastion:22"}}}},
+			keys:  []string{"host", "port", "way"},
+		},
+		{
+			name:  "address",
+			value: Address{},
 			keys:  []string{"host", "port"},
+		},
+		{
+			name:    "local_listen",
+			value:   Listen{},
+			keys:    []string{"host", "port"},
+			omitted: []string{"way", "username", "password"},
+		},
+		{
+			name: "remote_listen_with_credentials",
+			value: Listen{
+				Way:      []bridgeconfig.Node{{LB: []string{"ssh://user@host:22"}}},
+				Username: "user",
+				Password: "secret",
+			},
+			keys: []string{"host", "port", "way", "username", "password"},
 		},
 		{
 			name:  "no_proxy",
@@ -499,13 +847,19 @@ func TestJSONTags(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			var fields map[string]json.RawMessage
+			if err := json.Unmarshal(data, &fields); err != nil {
+				t.Fatal(err)
+			}
 			for _, key := range test.keys {
-				if !strings.Contains(string(data), `"`+key+`":`) {
+				if _, ok := fields[key]; !ok {
 					t.Errorf("JSON %s is missing key %q", data, key)
 				}
 			}
-			if strings.Contains(string(data), `"CurrentContext"`) {
-				t.Errorf("JSON %s contains a Go field name", data)
+			for _, key := range test.omitted {
+				if _, ok := fields[key]; ok {
+					t.Errorf("JSON %s should omit key %q", data, key)
+				}
 			}
 		})
 	}
