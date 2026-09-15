@@ -55,14 +55,14 @@
       hosts: "Hosts",
       totalUp: "Total upload",
       totalDown: "Total download",
-      ratePair: "\u2191 / \u2193 per second",
-      totalPair: "\u2191 / \u2193 total",
+      traffic: "Traffic",
+      nowShort: "now",
       peak: "peak",
       peakUpperBound: "Sum of endpoint peaks \u2014 an upper bound",
       lastShort: "last",
       ago: "{time} ago",
       connections: "Connections",
-      connectionsTotals: "Active / total connections",
+      connectionsTotals: "Active / total",
       latency: "Latency",
       latencyTotals: "Last / average",
       dialFailures: "Failures",
@@ -210,14 +210,14 @@
       hosts: "主机",
       totalUp: "累计上传",
       totalDown: "累计下载",
-      ratePair: "\u2191 / \u2193 每秒",
-      totalPair: "\u2191 / \u2193 累计",
+      traffic: "流量",
+      nowShort: "当前",
       peak: "峰值",
       peakUpperBound: "各端点峰值之和（上界）",
       lastShort: "最后",
       ago: "{time}前",
       connections: "连接",
-      connectionsTotals: "当前 / 累计连接",
+      connectionsTotals: "当前 / 累计",
       latency: "延迟",
       latencyTotals: "最近 / 平均",
       dialFailures: "失败",
@@ -372,14 +372,15 @@
       element.textContent = "\u2014";
       return;
     }
-    const parts = ["\u2191 " + formatRate(stats.rate_up) + " \u2193 " + formatRate(stats.rate_down),
-      t("totalShort") + " \u2191 " + formatBytes(stats.up) + " \u2193 " + formatBytes(stats.down),
-      t("connectionsShort", { active: formatCount(stats.active), total: formatCount(stats.total) }),
+    const traffic = clone("traffic");
+    traffic.prepend(...trafficLabels());
+    renderStatFields(traffic, stats);
+    const summary = document.createElement("span");
+    summary.className = "stage-summary";
+    summary.textContent = [t("connectionsShort", { active: formatCount(stats.active), total: formatCount(stats.total) }),
       t("latencyPair", { last: formatLatency(stats), average: formatLatency(stats, "avg_latency_ms") }),
-      t("failedCount", { count: formatCount(stats.dial_failures) }),
-      t("peak") + " \u2191 " + formatRate(stats.peak_rate_up) + " \u2193 " + formatRate(stats.peak_rate_down),
-      t("lastShort") + " \u2191 " + formatAgo(stats.last_up) + " \u2193 " + formatAgo(stats.last_down)];
-    element.textContent = parts.join(" \u00b7 ");
+      t("failedCount", { count: formatCount(stats.dial_failures) })].join(" \u00b7 ");
+    element.replaceChildren(traffic, summary);
     element.title = t("totalUp") + ": " + formatBytes(stats.up) + " \u00b7 "
       + t("totalDown") + ": " + formatBytes(stats.down) + " \u00b7 "
       + formatCount(stats.dials) + " " + t("dialAttempts");
@@ -455,11 +456,13 @@
 
   function sortConnections(connections, sort = { key: "started", direction: "descending" }) {
     const direction = sort.direction === "ascending" ? 1 : -1;
+    const value = connection => sort.key in connection ? connection[sort.key] : connection.stats?.[sort.key];
     return connections.slice().sort((left, right) => {
       const comparison = ["rule", "client", "target"].includes(sort.key)
         ? text(left[sort.key]).localeCompare(text(right[sort.key]), language, { numeric: true })
-        : sort.key === "started" ? (Date.parse(left.started) || 0) - (Date.parse(right.started) || 0)
-          : (Number(left.stats?.[sort.key]) || 0) - (Number(right.stats?.[sort.key]) || 0);
+        : ["started", "last_up", "last_down"].includes(sort.key)
+          ? (Date.parse(value(left)) || 0) - (Date.parse(value(right)) || 0)
+          : (Number(value(left)) || 0) - (Number(value(right)) || 0);
       return comparison * direction || left.id - right.id;
     });
   }
@@ -795,12 +798,44 @@
   }
 
   const STATS_COLUMNS = [
-    { key: "rate", label: "ratePair", sort: "rate_down" },
-    { key: "total", label: "totalPair", sort: "down" },
+    { key: "traffic", label: "traffic" },
     { key: "connections", label: "connections", sub: "connectionsTotals" },
     { key: "latency", label: "latency", sub: "latencyTotals" },
     { key: "failures", label: "dialFailures" }
   ];
+
+  // One grid column per value of the traffic cell; sorting uses the download direction.
+  const TRAFFIC_COLUMNS = [
+    { label: "nowShort", sort: "rate_down" },
+    { label: "peak", sort: "peak_rate_down" },
+    { label: "totalShort", sort: "down" },
+    { label: "lastShort", sort: "last_down" }
+  ];
+
+  function sortButton(label, key, title = label.textContent) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "sort-button";
+    button.dataset.sort = key;
+    button.title = t("sort") + ": " + title;
+    button.setAttribute("aria-label", button.title);
+    const indicator = document.createElement("span");
+    indicator.className = "sort-indicator";
+    indicator.setAttribute("aria-hidden", "true");
+    button.append(label, indicator);
+    return button;
+  }
+
+  function trafficLabels({ sortable = false } = {}) {
+    return [document.createElement("span"), ...TRAFFIC_COLUMNS.map(column => {
+      const cell = document.createElement("span");
+      cell.className = "traffic-label";
+      const label = document.createElement("span");
+      label.textContent = t(column.label);
+      cell.append(sortable ? sortButton(label, column.sort, "\u2193 " + label.textContent) : label);
+      return cell;
+    })];
+  }
 
   function statsHeaders(keys, { sortable = false } = {}) {
     return keys.split(" ").map(key => {
@@ -810,18 +845,13 @@
       header.className = "number";
       const label = document.createElement("span");
       label.textContent = t(column.label);
-      header.append(label);
-      if (sortable && column.sort) {
-        header.dataset.sort = column.sort;
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "sort-button";
-        const indicator = document.createElement("span");
-        indicator.className = "sort-indicator";
-        indicator.setAttribute("aria-hidden", "true");
-        button.append(label, indicator);
-        header.append(button);
-      }
+      if (key === "traffic") {
+        label.className = "traffic-title";
+        const labels = document.createElement("span");
+        labels.className = "traffic";
+        labels.append(...trafficLabels({ sortable }));
+        header.append(label, labels);
+      } else header.append(label);
       if (column.sub) {
         const sub = document.createElement("span");
         sub.className = "table-sub";
@@ -836,8 +866,7 @@
     all("[data-stats-headers]", root).forEach(placeholder => {
       placeholder.replaceWith(...statsHeaders(placeholder.dataset.statsHeaders, { sortable: placeholder.hasAttribute("data-sortable") }));
     });
-    all("th[data-sort]", root).forEach(header => {
-      const button = find("button", header);
+    all("button[data-sort]:not([title])", root).forEach(button => {
       button.title = t("sort") + ": " + find("span", button).textContent;
       button.setAttribute("aria-label", button.title);
     });
@@ -846,6 +875,7 @@
   function statsCells(keys) {
     const fragment = find("#stats-cells-template").content.cloneNode(true);
     localize(fragment);
+    find('[data-column="traffic"]', fragment).append(clone("traffic"));
     return keys.split(" ").map(key => find('[data-column="' + key + '"]', fragment));
   }
 
@@ -926,12 +956,12 @@
         render();
       });
       query.addEventListener("input", render);
-      all("th[data-sort]", panel).forEach(header => {
-        header.addEventListener("click", () => {
+      all("button[data-sort]", panel).forEach(button => {
+        button.addEventListener("click", () => {
           if (busy) return;
-          connectionSort.direction = connectionSort.key === header.dataset.sort && connectionSort.direction === "ascending"
+          connectionSort.direction = connectionSort.key === button.dataset.sort && connectionSort.direction === "ascending"
             ? "descending" : "ascending";
-          connectionSort.key = header.dataset.sort;
+          connectionSort.key = button.dataset.sort;
           render();
         });
       });
@@ -975,7 +1005,15 @@
     expandedRules.forEach(name => { if (!names.has(name)) expandedRules.delete(name); });
     syncRows({ body: find("#stats-rules", panel), items: Array.from(names, name => snapshots.get(name) || { name, stats: {} }),
       key: rule => rule.name, template: "stats-rule", details: "rule-details",
-      update(row, rule, { details }) {
+      update(row, rule, { details, created }) {
+        if (created) {
+          // The active count doubles as the link to this rule's connections.
+          const cell = find('[data-column="connections"]', row);
+          const link = document.createElement("a");
+          link.className = "rule-connections";
+          link.append(...cell.childNodes);
+          cell.append(link);
+        }
         row.dataset.rule = rule.name;
         find(".stats-rule", row).textContent = rule.name;
         const config = configs.get(rule.name);
@@ -994,7 +1032,7 @@
         renderStatFields(row, rule.stats);
         const count = list(rule.connections).length;
         const connections = find(".rule-connections", row);
-        connections.textContent = t("connectionCount", { count: formatCount(count) }) + (count ? " \u2192" : "");
+        connections.title = t("connectionCount", { count: formatCount(count) });
         if (count) connections.href = statsRoute("connections", rule.name);
         else connections.removeAttribute("href");
         updateExpansion(row, details, expandedRules, rule.name, () => renderRuleChain(find(".chain", details), rule, address, runtime?.remote));
@@ -1050,7 +1088,7 @@
         label.title = endpoint.urls.join("\n");
         renderHostChips(find(".host-chips", row), endpoint.uses);
         renderStatFields(row, endpoint.stats);
-        find(".peak", row).title = t("peakUpperBound");
+        all(".peak", row).forEach(cell => { cell.title = t("peakUpperBound"); });
       }
     });
   }
@@ -1065,7 +1103,7 @@
         renderHostChips(find(".host-chips", row), host.rules.map(rule => ({ rule })));
         find(".endpoint-count", row).textContent = formatCount(host.endpoints.length);
         renderStatFields(row, host.stats);
-        find(".peak", row).title = t("peakUpperBound");
+        all(".peak", row).forEach(cell => { cell.title = t("peakUpperBound"); });
         updateExpansion(row, details, expandedHosts, host.host, () => renderHostEndpoints(find(".host-endpoints", details), host.endpoints));
       }
     });
@@ -1383,10 +1421,16 @@
   }
 
   function renderConnections(connections, total, filtered) {
-    all("th[data-sort]").forEach(header => {
-      const direction = header.dataset.sort === connectionSort.key ? connectionSort.direction : "none";
-      header.setAttribute("aria-sort", direction);
-      find(".sort-indicator", header).textContent = direction === "none" ? "" : direction === "ascending" ? "\u25b2" : "\u25bc";
+    all("#connections-table th").forEach(header => {
+      const buttons = all("button[data-sort]", header);
+      if (!buttons.length) return;
+      let active = "none";
+      buttons.forEach(button => {
+        const direction = button.dataset.sort === connectionSort.key ? connectionSort.direction : "none";
+        if (direction !== "none") active = direction;
+        find(".sort-indicator", button).textContent = direction === "none" ? "" : direction === "ascending" ? "\u25b2" : "\u25bc";
+      });
+      header.setAttribute("aria-sort", active);
     });
     syncRows({ body: find("#connection-rows"), items: connections.slice(0, 200), key: connection => connection.id,
       template: "connection-row", update(row, connection, { created }) {

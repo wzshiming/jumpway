@@ -173,7 +173,15 @@ input[type="checkbox"] { flex: 0 0 16px; width: 16px; min-height: 16px; height: 
 .stage-urls li:last-child { padding-bottom: 0; }
 .stage .address, .target-totals { font: 12px/1.6 var(--mono); overflow-wrap: anywhere; }
 .stage-targets li + li { margin-top: 6px; }
-.target-totals { color: var(--muted); font-variant-numeric: tabular-nums; }
+.target-totals { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+/* Fixed mono tracks keep header labels and every row aligned and stop live values from resizing the column. */
+.traffic { display: grid; grid-template-columns: 12px 11ch 11ch 9ch 10ch; column-gap: 8px; align-items: baseline; white-space: nowrap; font: 11px/1.6 var(--mono); font-variant-numeric: tabular-nums; }
+.traffic > * { text-align: right; }
+.traffic-arrow { color: var(--muted); }
+.traffic-label { color: var(--muted); font-size: 11px; font-weight: 400; }
+.traffic-title { display: block; }
+.traffic .sort-button { min-height: 22px; padding: 0; }
+.stage-summary { display: block; margin-top: 2px; }
 .stats-scroll { position: relative; max-width: 100%; overflow-x: auto; }
 .stats-toolbar, .stats-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
 .stats-toolbar { justify-content: space-between; margin-bottom: 18px; }
@@ -200,7 +208,6 @@ input[type="checkbox"] { flex: 0 0 16px; width: 16px; min-height: 16px; height: 
 .table-label > a, .table-label > .address, .table-label > .stats-rule { min-width: 0; overflow-wrap: anywhere; }
 .table-label > .host-name { display: inline-block; min-width: 156px; }
 .table-sub { display: block; color: var(--muted); font-size: 11px; font-weight: 400; white-space: normal; }
-.sub-pair { display: inline-block; white-space: nowrap; }
 .expand-toggle { display: inline-flex; flex: 0 0 26px; align-items: center; justify-content: center; width: 26px; height: 26px; min-height: 26px; padding: 0; border-color: transparent; background: transparent; font-size: 16px; }
 .expand-toggle span { display: inline-block; }
 .expand-toggle[aria-expanded="true"] span { transform: rotate(90deg); }
@@ -211,8 +218,7 @@ input[type="checkbox"] { flex: 0 0 16px; width: 16px; min-height: 16px; height: 
 .stats-table .rule-details:hover, .stats-table .host-details:hover { background: var(--surface); }
 .rule-details .chain { max-width: 900px; padding: 20px 24px; }
 .rules-table .rule-chip { min-height: 26px; padding: 3px 6px; gap: 5px; flex-wrap: nowrap; white-space: nowrap; }
-.rule-connections { white-space: nowrap; }
-.rule-connections:not([href]) { color: var(--muted); text-decoration: none; }
+.rule-connections:not([href]) { color: inherit; text-decoration: none; }
 .host-chips { display: flex; flex-wrap: wrap; gap: 5px; }
 .host-chip { max-width: 100%; padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); font-size: 11px; text-decoration: none; }
 .endpoint-table { border-left: 3px solid var(--primary); }
@@ -220,7 +226,6 @@ input[type="checkbox"] { flex: 0 0 16px; width: 16px; min-height: 16px; height: 
 .endpoint-table thead th { background: var(--surface); font-size: 11px; }
 .sort-button { display: inline-flex; align-items: center; gap: 4px; min-height: 30px; padding: 2px 0; border: 0; border-radius: 0; background: transparent; color: inherit; text-align: inherit; }
 .sort-indicator { display: inline-block; flex: 0 0 9px; width: 9px; font-size: 9px; color: var(--primary); }
-.stats-table th[data-sort] { cursor: pointer; }
 .path-hint { display: inline-flex; flex: 0 0 20px; align-items: center; justify-content: center; width: 20px; height: 20px; min-height: 20px; padding: 0; border-radius: 50%; color: var(--muted); font-size: 11px; }
 .path-hint:hover, .path-hint:focus-visible { border-color: var(--focus); color: var(--text); }
 .path-hint:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
