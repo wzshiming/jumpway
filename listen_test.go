@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -222,5 +223,89 @@ func TestNewListenConfigSSHRemoteBind(t *testing.T) {
 	})
 	if count := binds.Load(); count != 2 {
 		t.Errorf("SSH server binds = %d, want 2", count)
+	}
+}
+
+type closableListener struct {
+	net.Listener
+	mu    sync.Mutex
+	conns []net.Conn
+}
+
+func (l *closableListener) Accept() (net.Conn, error) {
+	conn, err := l.Listener.Accept()
+	if err == nil {
+		l.mu.Lock()
+		l.conns = append(l.conns, conn)
+		l.mu.Unlock()
+	}
+	return conn, err
+}
+
+func (l *closableListener) closeConns() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for _, conn := range l.conns {
+		conn.Close()
+	}
+}
+
+// A remote listener must report the loss of its SSH connection and close without hanging (x/crypto < 0.55 spun forever).
+func TestSSHRemoteListenerSurvivesConnectionLoss(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	raw, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepting := &closableListener{Listener: raw}
+	server, err := sshproxy.NewSimpleServer("ssh://u:p@" + raw.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.Listener = accepting
+	server.Context = ctx
+	server.ProxyListen = func(callCtx context.Context, network, address string) (net.Listener, error) {
+		_, port, err := net.SplitHostPort(address)
+		if err != nil {
+			return nil, err
+		}
+		return local.LOCAL.Listen(callCtx, network, net.JoinHostPort("127.0.0.1", port))
+	}
+	if err := server.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+	listenConfig, err := NewListenConfig(ctx, []config.Node{{LB: []string{server.ProxyURL()}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, err := listenConfig.Listen(ctx, "tcp", "0.0.0.0:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepted := make(chan error, 1)
+	go func() {
+		_, err := listener.Accept()
+		accepted <- err
+	}()
+	accepting.closeConns()
+	select {
+	case err := <-accepted:
+		if err == nil {
+			t.Fatal("Accept returned a connection after the SSH connection was closed")
+		}
+	case <-ctx.Done():
+		t.Fatal("Accept did not return after the SSH connection was closed")
+	}
+	closed := make(chan struct{})
+	go func() {
+		listener.Close()
+		close(closed)
+	}()
+	select {
+	case <-closed:
+	case <-ctx.Done():
+		t.Fatal("Close hung after the SSH connection was closed")
 	}
 }
