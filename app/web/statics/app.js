@@ -53,12 +53,14 @@
       failedCount: "{count} failed",
       stats: "Statistics",
       hosts: "Hosts",
-      rateUp: "Upload rate",
-      rateDown: "Download rate",
       totalUp: "Total upload",
       totalDown: "Total download",
       ratePair: "\u2191 / \u2193 per second",
       totalPair: "\u2191 / \u2193 total",
+      peak: "peak",
+      peakUpperBound: "Sum of endpoint peaks \u2014 an upper bound",
+      lastShort: "last",
+      ago: "{time} ago",
       connections: "Connections",
       connectionsTotals: "Active / total connections",
       latency: "Latency",
@@ -206,12 +208,14 @@
       failedCount: "失败 {count}",
       stats: "统计",
       hosts: "主机",
-      rateUp: "上传速率",
-      rateDown: "下载速率",
       totalUp: "累计上传",
       totalDown: "累计下载",
       ratePair: "\u2191 / \u2193 每秒",
       totalPair: "\u2191 / \u2193 累计",
+      peak: "峰值",
+      peakUpperBound: "各端点峰值之和（上界）",
+      lastShort: "最后",
+      ago: "{time}前",
       connections: "连接",
       connectionsTotals: "当前 / 累计连接",
       latency: "延迟",
@@ -372,20 +376,31 @@
       t("totalShort") + " \u2191 " + formatBytes(stats.up) + " \u2193 " + formatBytes(stats.down),
       t("connectionsShort", { active: formatCount(stats.active), total: formatCount(stats.total) }),
       t("latencyPair", { last: formatLatency(stats), average: formatLatency(stats, "avg_latency_ms") }),
-      t("failedCount", { count: formatCount(stats.dial_failures) })];
+      t("failedCount", { count: formatCount(stats.dial_failures) }),
+      t("peak") + " \u2191 " + formatRate(stats.peak_rate_up) + " \u2193 " + formatRate(stats.peak_rate_down),
+      t("lastShort") + " \u2191 " + formatAgo(stats.last_up) + " \u2193 " + formatAgo(stats.last_down)];
     element.textContent = parts.join(" \u00b7 ");
     element.title = t("totalUp") + ": " + formatBytes(stats.up) + " \u00b7 "
       + t("totalDown") + ": " + formatBytes(stats.down) + " \u00b7 "
       + formatCount(stats.dials) + " " + t("dialAttempts");
   }
 
-  function formatDuration(value) {
+  function formatElapsed(seconds, short = false) {
+    if (seconds < 60) return seconds + " s";
+    if (seconds < 3600) return Math.floor(seconds / 60) + " min" + (short ? "" : " " + seconds % 60 + " s");
+    return Math.floor(seconds / 3600) + " h" + (short ? "" : " " + Math.floor(seconds % 3600 / 60) + " min");
+  }
+
+  function formatDuration(value, short = false) {
     const timestamp = Date.parse(value);
     if (!Number.isFinite(timestamp)) return "\u2014";
     const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
-    if (seconds < 60) return seconds + " s";
-    if (seconds < 3600) return Math.floor(seconds / 60) + " min " + seconds % 60 + " s";
-    return Math.floor(seconds / 3600) + " h " + Math.floor(seconds % 3600 / 60) + " min";
+    return formatElapsed(seconds, short);
+  }
+
+  function formatAgo(value) {
+    const duration = formatDuration(value, true);
+    return duration === "\u2014" ? duration : t("ago", { time: duration });
   }
 
   function displayURL(value) {
@@ -444,19 +459,24 @@
       const comparison = ["rule", "client", "target"].includes(sort.key)
         ? text(left[sort.key]).localeCompare(text(right[sort.key]), language, { numeric: true })
         : sort.key === "started" ? (Date.parse(left.started) || 0) - (Date.parse(right.started) || 0)
-          : (Number(left[sort.key]) || 0) - (Number(right[sort.key]) || 0);
+          : (Number(left.stats?.[sort.key]) || 0) - (Number(right.stats?.[sort.key]) || 0);
       return comparison * direction || left.id - right.id;
     });
   }
 
   function sumStats(entries) {
     const stats = { up: 0, down: 0, rate_up: 0, rate_down: 0, active: 0, total: 0,
-      dials: 0, dial_failures: 0, latency_ms: 0, avg_latency_ms: 0 };
+      dials: 0, dial_failures: 0, latency_ms: 0, avg_latency_ms: 0, peak_rate_up: 0, peak_rate_down: 0 };
     let weightedLatency = 0;
     let latest = -Infinity;
     entries.forEach(entry => {
-      for (const key of ["up", "down", "rate_up", "rate_down", "active", "total", "dials", "dial_failures"]) {
+      for (const key of ["up", "down", "rate_up", "rate_down", "active", "total", "dials", "dial_failures", "peak_rate_up", "peak_rate_down"]) {
         stats[key] += Number(entry[key]) || 0;
+      }
+      for (const key of ["last_up", "last_down"]) {
+        if (Number.isFinite(Date.parse(entry[key])) && (!stats[key] || Date.parse(entry[key]) > Date.parse(stats[key]))) {
+          stats[key] = entry[key];
+        }
       }
       weightedLatency += Math.max(0, (entry.dials || 0) - (entry.dial_failures || 0)) * (entry.avg_latency_ms || 0);
       const timestamp = Date.parse(entry.last_active);
@@ -517,7 +537,7 @@
     movedMessage: find("#moved-message"),
     statusDot: find("#status-dot"), statusLabel: find("#status-label"),
     statusAddress: find("#status-address"), statusError: find("#status-error"),
-    statusRules: find("#rule-status"),
+    statusRules: find("#rule-status"), tooltip: find("#tooltip"),
     builder: find("#url-builder"), builderForm: find("#builder-form"),
     builderProtocol: find("#builder-protocol"), builderFields: find("#builder-fields"),
     builderPreview: find("#builder-preview"), builderHint: find("#builder-hint"),
@@ -538,6 +558,7 @@
   let builderLayouts = [];
   let builderRequest = null;
   let builderTarget = null;
+  let tooltipTarget = null;
   const expandedRules = new Set();
   const expandedHosts = new Set();
   const connectionSort = { key: "started", direction: "descending" };
@@ -616,6 +637,7 @@
   }
 
   async function renderRoute(route, notify = "") {
+    hideTooltip();
     const focusPage = Boolean(activeHash);
     activeHash = route.hash;
     page = { kind: route.kind, save: null, loaded: false };
@@ -658,7 +680,7 @@
     } finally {
       setBusy(false);
       startStats();
-      if (focusPage) {
+      if (!page.focus?.() && focusPage) {
         const target = find("[aria-selected=true]", ui.nav);
         (target || find("#page-heading")).focus();
       }
@@ -772,12 +794,115 @@
     return host + ":" + port;
   }
 
+  const STATS_COLUMNS = [
+    { key: "rate", label: "ratePair", sort: "rate_down" },
+    { key: "total", label: "totalPair", sort: "down" },
+    { key: "connections", label: "connections", sub: "connectionsTotals" },
+    { key: "latency", label: "latency", sub: "latencyTotals" },
+    { key: "failures", label: "dialFailures" }
+  ];
+
+  function statsHeaders(keys, { sortable = false } = {}) {
+    return keys.split(" ").map(key => {
+      const column = STATS_COLUMNS.find(column => column.key === key);
+      const header = document.createElement("th");
+      header.scope = "col";
+      header.className = "number";
+      const label = document.createElement("span");
+      label.textContent = t(column.label);
+      header.append(label);
+      if (sortable && column.sort) {
+        header.dataset.sort = column.sort;
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "sort-button";
+        const indicator = document.createElement("span");
+        indicator.className = "sort-indicator";
+        indicator.setAttribute("aria-hidden", "true");
+        button.append(label, indicator);
+        header.append(button);
+      }
+      if (column.sub) {
+        const sub = document.createElement("span");
+        sub.className = "table-sub";
+        sub.textContent = t(column.sub);
+        header.append(sub);
+      }
+      return header;
+    });
+  }
+
+  function initStatsHeaders(root) {
+    all("[data-stats-headers]", root).forEach(placeholder => {
+      placeholder.replaceWith(...statsHeaders(placeholder.dataset.statsHeaders, { sortable: placeholder.hasAttribute("data-sortable") }));
+    });
+    all("th[data-sort]", root).forEach(header => {
+      const button = find("button", header);
+      button.title = t("sort") + ": " + find("span", button).textContent;
+      button.setAttribute("aria-label", button.title);
+    });
+  }
+
+  function statsCells(keys) {
+    const fragment = find("#stats-cells-template").content.cloneNode(true);
+    localize(fragment);
+    return keys.split(" ").map(key => find('[data-column="' + key + '"]', fragment));
+  }
+
+  function syncRows({ body, items, key, template, details, update }) {
+    const rows = new Map(all(":scope > tr[data-key]", body).map(row => [row.dataset.key, row]));
+    const keys = new Set(items.map(item => text(key(item))));
+    rows.forEach((row, value) => {
+      if (!keys.has(value)) {
+        if (details) row.nextElementSibling.remove();
+        row.remove();
+      }
+    });
+    let next = body.firstElementChild;
+    items.forEach(item => {
+      const value = text(key(item));
+      const created = !rows.has(value);
+      const row = rows.get(value) || clone(template);
+      const detail = details ? created ? clone(details) : row.nextElementSibling : null;
+      if (created) {
+        row.dataset.key = value;
+        all("[data-stats-cells]", row).forEach(placeholder => {
+          placeholder.replaceWith(...statsCells(placeholder.dataset.statsCells));
+        });
+        if (detail) initStatsHeaders(detail);
+      }
+      if (row !== next) {
+        body.insertBefore(row, next);
+        if (detail) body.insertBefore(detail, next);
+      }
+      next = (detail || row).nextElementSibling;
+      update(row, item, { details: detail, created });
+    });
+  }
+
+  function toggleEmpty(panel, tableSelector, emptySelector, count) {
+    find(tableSelector, panel).hidden = !count;
+    find(emptySelector, panel).hidden = Boolean(count);
+  }
+
   async function loadStats(route, entries) {
     const panel = clone("stats");
     find("#page-content").append(panel);
     const connections = route.kind === "connections";
     const content = find("#stats-content", panel);
     content.append(clone(route.kind === "stats" ? "stats-rules" : route.kind));
+    initStatsHeaders(content);
+    let focusRule = route.kind === "stats" ? route.rule : "";
+    if (focusRule) expandedRules.add(focusRule);
+    page.focus = () => {
+      if (!focusRule) return false;
+      const row = all("#stats-rules > tr[data-rule]", panel).find(row => row.dataset.rule === focusRule);
+      if (!row) return false;
+      focusRule = "";
+      row.scrollIntoView({ block: "center" });
+      find(".expand-toggle", row).focus({ preventScroll: true });
+      return true;
+    };
     const configs = new Map(entries.map(rule => [rule.name, rule]));
     let latest = { rules: [] };
     let status = statusSnapshot;
@@ -801,11 +926,6 @@
       });
       query.addEventListener("input", render);
       all("th[data-sort]", panel).forEach(header => {
-        const labels = { rule: "ruleLabel", client: "client", target: "target",
-          rate_down: "ratePair", down: "totalPair", started: "duration" };
-        const button = find("button", header);
-        button.title = t("sort") + ": " + t(labels[header.dataset.sort]);
-        button.setAttribute("aria-label", button.title);
         header.addEventListener("click", () => {
           if (busy) return;
           connectionSort.direction = connectionSort.key === header.dataset.sort && connectionSort.direction === "ascending"
@@ -822,6 +942,7 @@
         time: Number.isFinite(timestamp) ? new Date(timestamp).toLocaleString(language) : "\u2014"
       });
       render();
+      if (!busy) page.focus();
     };
     page.renderStatus = snapshot => {
       status = snapshot;
@@ -850,52 +971,35 @@
     const states = new Map(list(status?.rules).map(rule => [rule.name, rule]));
     const snapshots = new Map(list(rules).map(rule => [rule.name, rule]));
     const names = new Set([...configs.keys(), ...snapshots.keys()]);
-    const body = find("#stats-rules", panel);
-    const rows = new Map(all("tr[data-rule]", body).map(row => [row.dataset.rule, row]));
-    rows.forEach((row, name) => {
-      if (!names.has(name)) {
-        row.nextElementSibling.remove();
-        row.remove();
-        expandedRules.delete(name);
+    expandedRules.forEach(name => { if (!names.has(name)) expandedRules.delete(name); });
+    syncRows({ body: find("#stats-rules", panel), items: Array.from(names, name => snapshots.get(name) || { name, stats: {} }),
+      key: rule => rule.name, template: "stats-rule", details: "rule-details",
+      update(row, rule, { details }) {
+        row.dataset.rule = rule.name;
+        find(".stats-rule", row).textContent = rule.name;
+        const config = configs.get(rule.name);
+        const runtime = states.get(rule.name);
+        const state = runtime ? runtime.running ? "running" : runtime.attempt > 0 ? "retrying" : "stopped" : "unknown";
+        const chip = find(".rule-chip", row);
+        chip.className = "rule-chip " + state;
+        chip.title = text(runtime?.error);
+        find(".chip-state", chip).textContent = t(state === "unknown" ? "checking" : state, { attempt: runtime?.attempt });
+        const target = runtime?.target || (config?.forward?.port ? submittedAddress(config.forward) : "");
+        const address = runtime?.address || (config?.listen ? submittedAddress(config.listen) : "") || "\u2014";
+        find(".stats-address", row).textContent = address;
+        const destination = find(".stats-target", row);
+        destination.textContent = target ? "\u2192 " + target : "";
+        destination.hidden = !target;
+        renderStatFields(row, rule.stats);
+        const count = list(rule.connections).length;
+        const connections = find(".rule-connections", row);
+        connections.textContent = t("connectionCount", { count: formatCount(count) }) + (count ? " \u2192" : "");
+        if (count) connections.href = statsRoute("connections", rule.name);
+        else connections.removeAttribute("href");
+        updateExpansion(row, details, expandedRules, rule.name, () => renderRuleChain(find(".chain", details), rule, address, runtime?.remote));
       }
     });
-    let next = body.firstElementChild;
-    names.forEach(name => {
-      const rule = snapshots.get(name) || { name, stats: {} };
-      const row = rows.get(name) || clone("stats-rule");
-      const details = rows.has(name) ? row.nextElementSibling : clone("rule-details");
-      row.dataset.rule = name;
-      if (row !== next) {
-        body.insertBefore(row, next);
-        body.insertBefore(details, next);
-      }
-      next = details.nextElementSibling;
-      const link = find(".stats-rule", row);
-      link.textContent = rule.name;
-      link.href = ruleRoute(rule.name);
-      const config = configs.get(rule.name);
-      const runtime = states.get(rule.name);
-      const state = runtime ? runtime.running ? "running" : runtime.attempt > 0 ? "retrying" : "stopped" : "unknown";
-      const chip = find(".rule-chip", row);
-      chip.className = "rule-chip " + state;
-      chip.title = text(runtime?.error);
-      find(".chip-state", chip).textContent = t(state === "unknown" ? "checking" : state, { attempt: runtime?.attempt });
-      const target = runtime?.target || (config?.forward?.port ? submittedAddress(config.forward) : "");
-      const address = runtime?.address || (config?.listen ? submittedAddress(config.listen) : "") || "\u2014";
-      find(".stats-address", row).textContent = address;
-      const destination = find(".stats-target", row);
-      destination.textContent = target ? "\u2192 " + target : "";
-      destination.hidden = !target;
-      renderStatFields(row, rule.stats);
-      const count = list(rule.connections).length;
-      const connections = find(".rule-connections", row);
-      connections.textContent = t("connectionCount", { count: formatCount(count) }) + (count ? " \u2192" : "");
-      if (count) connections.href = statsRoute("connections", name);
-      else connections.removeAttribute("href");
-      updateExpansion(row, details, expandedRules, name, () => renderRuleChain(find(".chain", details), rule, address, runtime?.remote));
-    });
-    find("#stats-rules-table", panel).hidden = !names.size;
-    find("#stats-empty", panel).hidden = Boolean(names.size);
+    toggleEmpty(panel, "#stats-rules-table", "#stats-empty", names.size);
   }
 
   function updateExpansion(row, details, expanded, key, render) {
@@ -928,7 +1032,7 @@
       const chip = chips.get(key) || document.createElement("a");
       chip.dataset.use = key;
       chip.className = "host-chip";
-      chip.href = ruleRoute(use.rule);
+      chip.href = statsRoute("stats", use.rule);
       chip.textContent = use.rule + (use.way ? " \u00b7 " + t(use.way === "listen" ? "listenThrough" : "exitChain")
         + " \u00b7 " + t("hop", { number: use.index + 1 }) : "");
       if (!chip.parentElement) container.append(chip);
@@ -937,52 +1041,34 @@
   }
 
   function renderHostEndpoints(body, endpoints) {
-    const rows = new Map(all("tr[data-endpoint]", body).map(row => [row.dataset.endpoint, row]));
-    const keys = new Set(endpoints.map(endpoint => endpoint.endpoint));
-    rows.forEach((row, key) => { if (!keys.has(key)) row.remove(); });
-    let next = body.firstElementChild;
-    endpoints.forEach(endpoint => {
-      const row = rows.get(endpoint.endpoint) || clone("host-endpoint");
-      row.dataset.endpoint = endpoint.endpoint;
-      if (row !== next) body.insertBefore(row, next);
-      next = row.nextElementSibling;
-      const label = find(".host-endpoint", row);
-      label.textContent = endpoint.endpoint;
-      label.title = endpoint.urls.join("\n");
-      renderHostChips(find(".host-chips", row), endpoint.uses);
-      renderStatFields(row, endpoint.stats);
+    syncRows({ body, items: endpoints, key: endpoint => endpoint.endpoint, template: "host-endpoint",
+      update(row, endpoint) {
+        row.dataset.endpoint = endpoint.endpoint;
+        const label = find(".host-endpoint", row);
+        label.textContent = endpoint.endpoint;
+        label.title = endpoint.urls.join("\n");
+        renderHostChips(find(".host-chips", row), endpoint.uses);
+        renderStatFields(row, endpoint.stats);
+        find(".peak", row).title = t("peakUpperBound");
+      }
     });
   }
 
   function renderHosts(panel, hosts) {
-    const body = find("#host-rows", panel);
-    const rows = new Map(all("tr[data-host]", body).map(row => [row.dataset.host, row]));
     const keys = new Set(hosts.map(host => host.host));
-    rows.forEach((row, key) => {
-      if (!keys.has(key)) {
-        row.nextElementSibling.remove();
-        row.remove();
-        expandedHosts.delete(key);
+    expandedHosts.forEach(key => { if (!keys.has(key)) expandedHosts.delete(key); });
+    syncRows({ body: find("#host-rows", panel), items: hosts, key: host => host.host, template: "host-row", details: "host-details",
+      update(row, host, { details }) {
+        row.dataset.host = host.host;
+        find(".host-name", row).textContent = host.host;
+        renderHostChips(find(".host-chips", row), host.rules.map(rule => ({ rule })));
+        find(".endpoint-count", row).textContent = formatCount(host.endpoints.length);
+        renderStatFields(row, host.stats);
+        find(".peak", row).title = t("peakUpperBound");
+        updateExpansion(row, details, expandedHosts, host.host, () => renderHostEndpoints(find(".host-endpoints", details), host.endpoints));
       }
     });
-    let next = body.firstElementChild;
-    hosts.forEach(host => {
-      const row = rows.get(host.host) || clone("host-row");
-      const details = rows.has(host.host) ? row.nextElementSibling : clone("host-details");
-      row.dataset.host = host.host;
-      if (row !== next) {
-        body.insertBefore(row, next);
-        body.insertBefore(details, next);
-      }
-      next = details.nextElementSibling;
-      find(".host-name", row).textContent = host.host;
-      renderHostChips(find(".host-chips", row), host.rules.map(rule => ({ rule })));
-      find(".endpoint-count", row).textContent = formatCount(host.endpoints.length);
-      renderStatFields(row, host.stats);
-      updateExpansion(row, details, expandedHosts, host.host, () => renderHostEndpoints(find(".host-endpoints", details), host.endpoints));
-    });
-    find("#hosts-table", panel).hidden = !hosts.length;
-    find("#hosts-empty", panel).hidden = Boolean(hosts.length);
+    toggleEmpty(panel, "#hosts-table", "#hosts-empty", hosts.length);
   }
 
   function renderRuleChain(chain, rule, address, remote) {
@@ -1038,7 +1124,7 @@
       const via = find(".target-via", row);
       via.textContent = entry.via ? displayURL(entry.via) : t("direct");
       via.title = entry.via || "";
-      find(".target-totals", row).textContent = "\u2191 " + formatBytes(entry.stats?.up) + " \u2193 " + formatBytes(entry.stats?.down);
+      renderStats(find(".target-totals", row), entry.stats);
       return row;
     }));
     chain.replaceChildren(clients, ...listen.map(hop => hopStage(hop, "listen", listen.length - 1)),
@@ -1279,12 +1365,19 @@
     const values = stats && {
       rate_up: formatRate(stats.rate_up), rate_down: formatRate(stats.rate_down),
       up: formatBytes(stats.up), down: formatBytes(stats.down),
+      peak_up: formatRate(stats.peak_rate_up), peak_down: formatRate(stats.peak_rate_down),
+      last_up: formatAgo(stats.last_up), last_down: formatAgo(stats.last_down),
       connections: formatCount(stats.active) + " / " + formatCount(stats.total),
       latency: formatLatency(stats), avg_latency: formatLatency(stats, "avg_latency_ms"),
       dial_failures: formatCount(stats.dial_failures)
     };
     all("[data-stat]", root).forEach(element => {
       element.textContent = values?.[element.dataset.stat] ?? "\u2014";
+      if (["last_up", "last_down"].includes(element.dataset.stat)) {
+        const timestamp = Date.parse(stats?.[element.dataset.stat]);
+        if (Number.isFinite(timestamp)) element.title = new Date(timestamp).toLocaleString(language);
+        else element.removeAttribute("title");
+      }
     });
   }
 
@@ -1294,42 +1387,32 @@
       header.setAttribute("aria-sort", direction);
       find(".sort-indicator", header).textContent = direction === "none" ? "" : direction === "ascending" ? "\u25b2" : "\u25bc";
     });
-    const body = find("#connection-rows");
-    const rows = new Map(all("tr[data-id]", body).map(row => [row.dataset.id, row]));
-    const shown = connections.slice(0, 200);
-    const ids = new Set(shown.map(connection => text(connection.id)));
-    rows.forEach((row, id) => { if (!ids.has(id)) row.remove(); });
-    let next = body.firstElementChild;
-    shown.forEach(connection => {
-      const id = text(connection.id);
-      let row = rows.get(id);
-      if (!row) {
-        row = clone("connection-row");
-        row.dataset.id = id;
-        const button = find(".disconnect-connection", row);
-        button.addEventListener("click", () => disconnectConnection(id, button));
+    syncRows({ body: find("#connection-rows"), items: connections.slice(0, 200), key: connection => connection.id,
+      template: "connection-row", update(row, connection, { created }) {
+        if (created) {
+          row.dataset.id = text(connection.id);
+          const button = find(".disconnect-connection", row);
+          button.addEventListener("click", () => disconnectConnection(row.dataset.id, button));
+        }
+        row.dataset.rule = connection.rule;
+        const link = find(".connection-rule", row);
+        link.textContent = connection.rule;
+        link.href = statsRoute("stats", connection.rule);
+        const client = find(".connection-client", row);
+        client.textContent = displayClient(connection.client);
+        client.title = connection.client || "";
+        find(".connection-target", row).textContent = connection.target;
+        const hint = find(".path-hint", row);
+        hint.dataset.tip = formatConnectionPath(connection);
+        hint.setAttribute("aria-label", t("path") + ": " + hint.dataset.tip);
+        find(".connection-duration", row).textContent = formatDuration(connection.started);
+        renderStatFields(row, connection.stats);
       }
-      if (row !== next) body.insertBefore(row, next);
-      next = row.nextElementSibling;
-      row.dataset.rule = connection.rule;
-      const link = find(".connection-rule", row);
-      link.textContent = connection.rule;
-      link.href = ruleRoute(connection.rule);
-      const client = find(".connection-client", row);
-      client.textContent = displayClient(connection.client);
-      client.title = connection.client || "";
-      find(".connection-target", row).textContent = connection.target;
-      const hint = find(".path-hint", row);
-      hint.title = formatConnectionPath(connection);
-      hint.setAttribute("aria-label", t("path") + ": " + hint.title);
-      find(".connection-duration", row).textContent = formatDuration(connection.started);
-      renderStatFields(row, connection);
     });
     find("#connections-count").textContent = t(filtered ? "filteredConnections" : "connectionCount", {
       count: formatCount(connections.length), total: formatCount(total)
     });
-    find("#connections-table").hidden = !connections.length;
-    find("#no-connections").hidden = Boolean(connections.length);
+    toggleEmpty(document, "#connections-table", "#no-connections", connections.length);
     const note = find("#connections-note");
     note.textContent = connections.length > 200
       ? t("showingConnections", { shown: formatCount(200), total: formatCount(connections.length) }) : "";
@@ -1589,7 +1672,47 @@
     }
   }
 
+  function hideTooltip() {
+    ui.tooltip.hidden = true;
+    tooltipTarget?.removeAttribute("aria-describedby");
+    tooltipTarget = null;
+  }
+
+  function bindTooltips() {
+    const show = event => {
+      const target = event.target.closest("[data-tip]");
+      if (!target?.dataset.tip) return;
+      hideTooltip();
+      tooltipTarget = target;
+      const tooltip = ui.tooltip;
+      tooltip.textContent = target.dataset.tip;
+      tooltip.hidden = false;
+      tooltip.style.left = "8px";
+      tooltip.style.top = "0";
+      const bounds = target.getBoundingClientRect();
+      const left = Math.max(8, Math.min(bounds.left, document.documentElement.clientWidth - tooltip.offsetWidth - 8));
+      const below = bounds.bottom + 6;
+      const top = below + tooltip.offsetHeight > innerHeight - 8
+        ? Math.max(8, bounds.top - tooltip.offsetHeight - 6) : below;
+      tooltip.style.left = left + "px";
+      tooltip.style.top = top + "px";
+      target.setAttribute("aria-describedby", "tooltip");
+    };
+    const leave = event => {
+      const target = event.target.closest("[data-tip]");
+      if (target && target === tooltipTarget && !target.contains(event.relatedTarget)) hideTooltip();
+    };
+    document.addEventListener("pointerover", show);
+    document.addEventListener("focusin", show);
+    document.addEventListener("pointerout", leave);
+    document.addEventListener("focusout", leave);
+    document.addEventListener("scroll", hideTooltip, { capture: true, passive: true });
+    document.addEventListener("keydown", event => { if (event.key === "Escape") hideTooltip(); });
+    window.addEventListener("resize", hideTooltip);
+  }
+
   function bindEvents() {
+    bindTooltips();
     document.addEventListener("click", event => {
       const link = event.target.closest("a[href^='#/']");
       if (!link || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;

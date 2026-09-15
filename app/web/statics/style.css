@@ -191,14 +191,16 @@ input[type="checkbox"] { flex: 0 0 16px; width: 16px; min-height: 16px; height: 
 .stats-table .number { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .stats-table thead .number { white-space: normal; }
 .stats-table td.number, .stats-table .address { font-family: var(--mono); }
-.stats-table .address { overflow-wrap: anywhere; }
+.stats-table .address { min-width: 140px; overflow-wrap: anywhere; }
 .stats-table .pair { display: block; }
 .stats-target { color: var(--muted); }
 .stats-table .stats-rule { display: inline-block; max-width: 100%; font-weight: 600; }
 .stats-table .connection-action { text-align: right; white-space: nowrap; }
 .table-label { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.table-label > a, .table-label > .address { min-width: 0; overflow-wrap: anywhere; }
+.table-label > a, .table-label > .address, .table-label > .stats-rule { min-width: 0; overflow-wrap: anywhere; }
+.table-label > .host-name { display: inline-block; min-width: 140px; }
 .table-sub { display: block; color: var(--muted); font-size: 11px; font-weight: 400; white-space: normal; }
+.sub-pair { display: inline-block; white-space: nowrap; }
 .expand-toggle { display: inline-flex; flex: 0 0 26px; align-items: center; justify-content: center; width: 26px; height: 26px; min-height: 26px; padding: 0; border-color: transparent; background: transparent; font-size: 16px; }
 .expand-toggle span { display: inline-block; }
 .expand-toggle[aria-expanded="true"] span { transform: rotate(90deg); }
@@ -208,16 +210,21 @@ input[type="checkbox"] { flex: 0 0 16px; width: 16px; min-height: 16px; height: 
 .rule-details, .host-details { background: var(--surface); }
 .stats-table .rule-details:hover, .stats-table .host-details:hover { background: var(--surface); }
 .rule-details .chain { max-width: 900px; padding: 20px 24px; }
-.rules-table .rule-chip { min-height: 26px; padding: 3px 6px; gap: 5px; }
+.rules-table .rule-chip { min-height: 26px; padding: 3px 6px; gap: 5px; flex-wrap: nowrap; white-space: nowrap; }
+.rule-connections { white-space: nowrap; }
 .rule-connections:not([href]) { color: var(--muted); text-decoration: none; }
 .host-chips { display: flex; flex-wrap: wrap; gap: 5px; }
 .host-chip { max-width: 100%; padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); font-size: 11px; text-decoration: none; }
 .endpoint-table { border-left: 3px solid var(--primary); }
+.endpoint-table .host-endpoint { min-width: 200px; }
 .endpoint-table thead th { background: var(--surface); font-size: 11px; }
 .sort-button { display: inline-flex; align-items: center; gap: 4px; min-height: 30px; padding: 2px 0; border: 0; border-radius: 0; background: transparent; color: inherit; text-align: inherit; }
 .sort-indicator { display: inline-block; flex: 0 0 9px; width: 9px; font-size: 9px; color: var(--primary); }
 .stats-table th[data-sort] { cursor: pointer; }
 .path-hint { display: inline-flex; flex: 0 0 20px; align-items: center; justify-content: center; width: 20px; height: 20px; min-height: 20px; padding: 0; border-radius: 50%; color: var(--muted); font-size: 11px; }
+.path-hint:hover, .path-hint:focus-visible { border-color: var(--focus); color: var(--text); }
+.path-hint:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+#tooltip { position: fixed; z-index: 30; max-width: min(480px, calc(100vw - 16px)); padding: 6px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text); font: 12px/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; pointer-events: none; box-shadow: 0 4px 16px rgb(0 0 0 / 16%); }
 .disconnect-connection { min-height: 30px; padding: 5px 8px; font-size: 12px; white-space: nowrap; }
 .yaml-label { margin-bottom: 10px; }
 .yaml { min-height: 60vh; padding: 16px; font: 13px/1.7 var(--mono); tab-size: 2; white-space: pre; overflow: auto; }
@@ -239,6 +246,7 @@ footer a { color: var(--muted); }
   .page { padding: 20px 16px 0; }
   .header { gap: 14px; padding-bottom: 12px; }
   .identity { flex-basis: 240px; }
+  .stats-table { min-width: 840px; }
   .section { padding: 10px 0 24px; }
   .address-fields, .no-proxy-fields { grid-template-columns: minmax(0, 1fr); gap: 14px; }
   .entry-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }

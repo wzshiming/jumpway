@@ -202,8 +202,7 @@
 						<th scope="col" data-sort="rule"><button type="button" class="sort-button"><span data-i18n="ruleLabel"></span><span class="sort-indicator" aria-hidden="true"></span></button></th>
 						<th scope="col" data-sort="client"><button type="button" class="sort-button"><span data-i18n="client"></span><span class="sort-indicator" aria-hidden="true"></span></button></th>
 						<th scope="col" data-sort="target"><button type="button" class="sort-button"><span data-i18n="target"></span><span class="sort-indicator" aria-hidden="true"></span></button></th>
-						<th scope="col" class="number" data-sort="rate_down"><button type="button" class="sort-button"><span data-i18n="ratePair"></span><span class="sort-indicator" aria-hidden="true"></span></button></th>
-						<th scope="col" class="number" data-sort="down"><button type="button" class="sort-button"><span data-i18n="totalPair"></span><span class="sort-indicator" aria-hidden="true"></span></button></th>
+						<th data-stats-headers="rate total" data-sortable></th>
 						<th scope="col" class="number" data-sort="started"><button type="button" class="sort-button"><span data-i18n="duration"></span><span class="sort-indicator" aria-hidden="true"></span></button></th>
 						<th scope="col"><span class="sr-only" data-i18n="disconnect"></span></th>
 					</tr></thead>
@@ -220,8 +219,7 @@
 			<th scope="row"><div class="table-label"><a class="connection-rule stats-rule"></a><button type="button" class="path-hint" data-i18n-aria="path">?</button></div></th>
 			<td class="connection-client address"></td>
 			<td class="connection-target address"></td>
-			<td class="number"><span class="pair">&#8593; <span data-stat="rate_up"></span></span><span class="pair">&#8595; <span data-stat="rate_down"></span></span></td>
-			<td class="number"><span class="pair">&#8593; <span data-stat="up"></span></span><span class="pair">&#8595; <span data-stat="down"></span></span></td>
+			<td data-stats-cells="rate total"></td>
 			<td class="number connection-duration"></td>
 			<td class="connection-action"><button class="disconnect-connection danger" type="button" data-i18n="disconnect"></button></td>
 		</tr>
@@ -252,11 +250,7 @@
 				<table class="stats-table rules-table">
 					<thead><tr>
 						<th scope="col" data-i18n="ruleLabel"></th><th scope="col" data-i18n="state"></th><th scope="col" data-i18n="address"></th>
-						<th scope="col" class="number" data-i18n="ratePair"></th>
-						<th scope="col" class="number" data-i18n="totalPair"></th>
-						<th scope="col" class="number"><span data-i18n="connections"></span><span class="table-sub" data-i18n="connectionsTotals"></span></th>
-						<th scope="col" class="number"><span data-i18n="latency"></span><span class="table-sub" data-i18n="latencyTotals"></span></th>
-						<th scope="col" class="number" data-i18n="dialFailures"></th>
+						<th data-stats-headers="rate total connections latency failures"></th>
 						<th scope="col"><span class="sr-only" data-i18n="connections"></span></th>
 					</tr></thead>
 					<tbody id="stats-rules"></tbody>
@@ -268,13 +262,11 @@
 
 	<template id="stats-rule-template">
 		<tr>
-			<th scope="row"><div class="table-label"><button type="button" class="expand-toggle" aria-expanded="false" data-i18n-aria="expand"><span aria-hidden="true">&#9656;</span></button><a class="stats-rule"></a></div></th>
+			<th scope="row"><div class="table-label"><button type="button" class="expand-toggle" aria-expanded="false" data-i18n-aria="expand"><span aria-hidden="true">&#9656;</span></button><span class="stats-rule"></span></div></th>
 			<td><span class="rule-chip"><span class="status-dot" aria-hidden="true"></span><span class="chip-state"></span></span></td>
 			<td class="address"><span class="stats-address pair"></span><span class="stats-target pair" hidden></span></td>
-			<td class="number"><span class="pair">&#8593; <span data-stat="rate_up"></span></span><span class="pair">&#8595; <span data-stat="rate_down"></span></span></td>
-			<td class="number"><span class="pair">&#8593; <span data-stat="up"></span></span><span class="pair">&#8595; <span data-stat="down"></span></span></td>
-			<td class="number" data-stat="connections"></td><td class="number"><span class="pair" data-stat="latency"></span><span class="pair table-sub" data-stat="avg_latency"></span></td>
-			<td class="number" data-stat="dial_failures"></td><td><a class="rule-connections"></a></td>
+			<td data-stats-cells="rate total connections latency failures"></td>
+			<td><a class="rule-connections"></a></td>
 		</tr>
 	</template>
 
@@ -288,11 +280,7 @@
 				<table class="stats-table hosts-table">
 					<thead><tr>
 						<th scope="col" data-i18n="host"></th><th scope="col" data-i18n="usedBy"></th><th scope="col" class="number" data-i18n="endpoints"></th>
-						<th scope="col" class="number" data-i18n="ratePair"></th>
-						<th scope="col" class="number" data-i18n="totalPair"></th>
-						<th scope="col" class="number"><span data-i18n="connections"></span><span class="table-sub" data-i18n="connectionsTotals"></span></th>
-						<th scope="col" class="number"><span data-i18n="latency"></span><span class="table-sub" data-i18n="latencyTotals"></span></th>
-						<th scope="col" class="number" data-i18n="dialFailures"></th>
+						<th data-stats-headers="rate total connections latency failures"></th>
 					</tr></thead>
 					<tbody id="host-rows"></tbody>
 				</table>
@@ -305,9 +293,7 @@
 		<tr>
 			<th scope="row"><div class="table-label"><button type="button" class="expand-toggle" aria-expanded="false" data-i18n-aria="expand"><span aria-hidden="true">&#9656;</span></button><span class="host-name address"></span></div></th>
 			<td><div class="host-chips"></div></td><td class="endpoint-count number"></td>
-			<td class="number"><span class="pair">&#8593; <span data-stat="rate_up"></span></span><span class="pair">&#8595; <span data-stat="rate_down"></span></span></td>
-			<td class="number"><span class="pair">&#8593; <span data-stat="up"></span></span><span class="pair">&#8595; <span data-stat="down"></span></span></td>
-			<td class="number" data-stat="connections"></td><td class="number"><span class="pair" data-stat="latency"></span><span class="pair table-sub" data-stat="avg_latency"></span></td><td class="number" data-stat="dial_failures"></td>
+			<td data-stats-cells="rate total connections latency failures"></td>
 		</tr>
 	</template>
 
@@ -316,11 +302,7 @@
 			<table class="stats-table endpoint-table">
 				<thead><tr>
 					<th scope="col" data-i18n="endpoints"></th><th scope="col" data-i18n="usedBy"></th>
-					<th scope="col" class="number" data-i18n="ratePair"></th>
-					<th scope="col" class="number" data-i18n="totalPair"></th>
-					<th scope="col" class="number"><span data-i18n="connections"></span><span class="table-sub" data-i18n="connectionsTotals"></span></th>
-					<th scope="col" class="number"><span data-i18n="latency"></span><span class="table-sub" data-i18n="latencyTotals"></span></th>
-					<th scope="col" class="number" data-i18n="dialFailures"></th>
+					<th data-stats-headers="rate total connections latency failures"></th>
 				</tr></thead>
 				<tbody class="host-endpoints"></tbody>
 			</table>
@@ -330,10 +312,22 @@
 	<template id="host-endpoint-template">
 		<tr>
 			<th scope="row" class="host-endpoint address"></th><td><div class="host-chips"></div></td>
-			<td class="number"><span class="pair">&#8593; <span data-stat="rate_up"></span></span><span class="pair">&#8595; <span data-stat="rate_down"></span></span></td>
-			<td class="number"><span class="pair">&#8593; <span data-stat="up"></span></span><span class="pair">&#8595; <span data-stat="down"></span></span></td>
-			<td class="number" data-stat="connections"></td><td class="number"><span class="pair" data-stat="latency"></span><span class="pair table-sub" data-stat="avg_latency"></span></td><td class="number" data-stat="dial_failures"></td>
+			<td data-stats-cells="rate total connections latency failures"></td>
 		</tr>
+	</template>
+
+	<template id="stats-cells-template">
+		<td class="number" data-column="rate">
+			<span class="pair">&#8593; <span data-stat="rate_up"></span></span><span class="pair">&#8595; <span data-stat="rate_down"></span></span>
+			<span class="table-sub peak"><span class="sub-pair"><span data-i18n="peak"></span> &#8593; <span data-stat="peak_up"></span></span> <span class="sub-pair">&#8595; <span data-stat="peak_down"></span></span></span>
+		</td>
+		<td class="number" data-column="total">
+			<span class="pair">&#8593; <span data-stat="up"></span></span><span class="pair">&#8595; <span data-stat="down"></span></span>
+			<span class="table-sub"><span class="sub-pair">&#8593; <span data-stat="last_up"></span></span> <span class="sub-pair">&#8595; <span data-stat="last_down"></span></span></span>
+		</td>
+		<td class="number" data-column="connections"><span data-stat="connections"></span></td>
+		<td class="number" data-column="latency"><span class="pair" data-stat="latency"></span><span class="pair table-sub" data-stat="avg_latency"></span></td>
+		<td class="number" data-column="failures"><span data-stat="dial_failures"></span></td>
 	</template>
 
 	<template id="stage-template">
@@ -360,7 +354,7 @@
 		<li>
 			<span class="target-address address"></span><span aria-hidden="true"> · </span>
 			<span class="target-via address"></span><span aria-hidden="true"> · </span>
-			<span class="target-totals number"></span>
+			<span class="target-totals"></span>
 		</li>
 	</template>
 
@@ -461,5 +455,6 @@
 			</div>
 		</div>
 	</template>
+	<div id="tooltip" role="tooltip" hidden></div>
 </body>
 </html>
