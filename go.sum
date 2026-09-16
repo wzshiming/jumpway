@@ -76,8 +76,8 @@ github.com/wzshiming/socks5 v0.7.0 h1:euJ+U48WrvVngi+opC8vAnpZ5sK12y1C2hPvb1f48R
 github.com/wzshiming/socks5 v0.7.0/go.mod h1:BvCAqlzocQN5xwLjBZDBbvWlrx8sCYSSbHEOf2wZgT0=
 github.com/wzshiming/sshd v0.2.5 h1:tJ4CukRzIHrOjNZscxnHgIt/qh7gggzHnMbkkoOMB5I=
 github.com/wzshiming/sshd v0.2.5/go.mod h1:IwV2OzhzyaphzOT7ee/+OF/X42Ht3A9tqk72UOOO3VY=
-github.com/wzshiming/sshproxy v0.6.0 h1:RKukxnJ49cY6NP0DvPCcKbuna1j8BFst2tPo202wdSo=
-github.com/wzshiming/sshproxy v0.6.0/go.mod h1:oo+5J389PuyKtOCmTDHLsTXfupZjA4CNALurjCpTijc=
+github.com/wzshiming/sshproxy v0.6.1 h1:bE3Oharos4VMSmoqOQZkc/8VGKUHwZZk/3RfBn4h5JQ=
+github.com/wzshiming/sshproxy v0.6.1/go.mod h1:fJSwky5H8hO7+ND5UbROtkK1z5JPyoIDSFFJOhjKHbk=
 github.com/wzshiming/sysnotify v0.0.2 h1:a5h1lm2D35Sof8MaM0htjwFRNNqkx42o3pgsoARRcEo=
 github.com/wzshiming/sysnotify v0.0.2/go.mod h1:wV51YHA43Y1rhnhTi4qdpyPMoyG+sB1bAGORkANLW5I=
 github.com/wzshiming/sysproxy v0.2.2 h1:OOZ7jRier8qA5U5hnzHwJCLlZleWqdqiNKEhJY+0H1E=

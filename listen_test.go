@@ -23,6 +23,7 @@ import (
 	_ "github.com/wzshiming/sshd/directtcp"
 	_ "github.com/wzshiming/sshd/tcpforward"
 	"github.com/wzshiming/sshproxy"
+	"golang.org/x/crypto/ssh"
 )
 
 func TestNewListenConfigLocal(t *testing.T) {
@@ -308,4 +309,75 @@ func TestSSHRemoteListenerSurvivesConnectionLoss(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("Close hung after the SSH connection was closed")
 	}
+}
+
+func TestSSHHopSurvivesRejectedDial(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	echo, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer echo.Close()
+	go func() {
+		for {
+			conn, err := echo.Accept()
+			if err != nil {
+				return
+			}
+			go func(conn net.Conn) {
+				defer conn.Close()
+				io.Copy(conn, conn)
+			}(conn)
+		}
+	}()
+	server, err := sshproxy.NewSimpleServer("ssh://u:p@127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.Context = ctx
+	if err := server.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+	// Mirrors a port-forward rule: one chain per hop URL, no NO_PROXY shunt.
+	forwardChain := *chain.Default
+	forwardChain.DialerFunc = nil
+	dialer, err := forwardChain.BridgeChainWithConfig(ctx, local.LOCAL, config.Node{LB: []string{server.ProxyURL()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := dialer.DialContext(ctx, "tcp", echo.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Close()
+	roundTrip := func(message string) {
+		t.Helper()
+		if err := first.SetDeadline(time.Now().Add(2 * time.Second)); err != nil {
+			guard := time.AfterFunc(2*time.Second, func() { first.Close() })
+			defer guard.Stop()
+		}
+		if _, err := io.WriteString(first, message); err != nil {
+			t.Fatalf("first SSH tunnel write %q: %v", message, err)
+		}
+		reply := make([]byte, len(message))
+		if _, err := io.ReadFull(first, reply); err != nil {
+			t.Fatalf("first SSH tunnel read %q: %v", message, err)
+		}
+		if string(reply) != message {
+			t.Fatalf("first SSH tunnel echoed %q, want %q", reply, message)
+		}
+	}
+	roundTrip("before rejected dial\n")
+	rejected, err := dialer.DialContext(ctx, "tcp", "127.0.0.1:1")
+	if rejected != nil {
+		rejected.Close()
+		t.Fatal("rejected dial returned a connection")
+	}
+	var channelError *ssh.OpenChannelError
+	if !errors.As(err, &channelError) {
+		t.Fatalf("rejected dial error = %v, want *ssh.OpenChannelError", err)
+	}
+	roundTrip("after rejected dial\n")
 }
