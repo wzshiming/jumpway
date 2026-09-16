@@ -210,10 +210,21 @@ func (r *Rule) target(key targetKey) *counter {
 func (r *Registry) Reset() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.since = time.Now()
+	now := time.Now()
+	r.since = now
 	r.eachCounter(func(count *counter) { count.reset(r.lastTick) })
+	kept := make(map[*counter]bool, len(r.live))
+	for _, entry := range r.live {
+		entry.count.reset(r.lastTick)
+		entry.started = now
+		kept[entry.rule.targets[targetKey{address: entry.target, via: entry.via}]] = true
+	}
 	for _, rule := range r.rules {
-		rule.targets = make(map[targetKey]*counter)
+		for key, count := range rule.targets {
+			if !kept[count] {
+				delete(rule.targets, key)
+			}
+		}
 		rule.targetsEvicted = 0
 		for _, way := range rule.ways {
 			for index := range way {

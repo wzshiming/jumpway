@@ -374,20 +374,48 @@ func TestRegistryResetKeepsConnections(t *testing.T) {
 	transferBytes(t, peer, connected, 5)
 	registry.tick(start.Add(time.Second))
 	before := registry.Snapshot().Rules[0].Connections
+	other, _ := dialRulePipe(t, rule, "other.example.com:443")
+	if err := other.Close(); err != nil {
+		t.Fatal(err)
+	}
+	resetAt := time.Now()
 	registry.Reset()
 	snapshot := registry.Snapshot().Rules[0]
-	if !reflect.DeepEqual(snapshot.Connections, before) {
-		t.Fatalf("reset connections = %+v, want %+v", snapshot.Connections, before)
+	if len(snapshot.Connections) != 1 {
+		t.Fatalf("reset connections = %+v, want one connection", snapshot.Connections)
 	}
-	if len(snapshot.Targets) != 0 || snapshot.Stats != (Stats{}) {
+	connection := snapshot.Connections[0]
+	if connection.ID != before[0].ID || connection.Client != before[0].Client ||
+		connection.Target != before[0].Target || connection.Via != before[0].Via ||
+		!reflect.DeepEqual(connection.Path, before[0].Path) {
+		t.Fatalf("reset connection = %+v, want identity and path from %+v", connection, before[0])
+	}
+	if connection.Stats != (Stats{}) {
+		t.Fatalf("reset connection stats = %+v, want empty counters", connection.Stats)
+	}
+	started, err := time.Parse(time.RFC3339Nano, connection.Started)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if started.Before(resetAt) {
+		t.Fatalf("reset connection started = %v, want at or after %v", started, resetAt)
+	}
+	if len(snapshot.Targets) != 1 || snapshot.Targets[0].Address != "example.com:443" || snapshot.Targets[0].Stats != (Stats{}) {
+		t.Fatalf("reset targets = %+v, want only the live target with empty counters", snapshot.Targets)
+	}
+	if snapshot.Stats != (Stats{}) {
 		t.Fatalf("reset aggregates = %+v, want empty counters", snapshot)
 	}
 	transferBytes(t, connected, peer, 7)
 	transferBytes(t, peer, connected, 11)
 	registry.tick(start.Add(2 * time.Second))
-	connection := registry.Snapshot().Rules[0].Connections[0]
-	if connection.Stats.Up != 10 || connection.Stats.Down != 16 || connection.Stats.RateUp != 7 || connection.Stats.RateDown != 11 {
-		t.Fatalf("post-reset traffic = %+v, want lifetime bytes and latest rates", connection)
+	snapshot = registry.Snapshot().Rules[0]
+	connection = snapshot.Connections[0]
+	if connection.Stats.Up != 7 || connection.Stats.Down != 11 || connection.Stats.RateUp != 7 || connection.Stats.RateDown != 11 {
+		t.Fatalf("post-reset traffic = %+v, want only post-reset bytes and latest rates", connection)
+	}
+	if snapshot.Targets[0].Stats.Up != 7 || snapshot.Targets[0].Stats.Down != 11 {
+		t.Fatalf("post-reset target traffic = %+v, want only post-reset bytes", snapshot.Targets[0])
 	}
 	dialRulePipe(t, rule, "example.com:443")
 	snapshot = registry.Snapshot().Rules[0]

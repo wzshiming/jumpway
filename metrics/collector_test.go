@@ -377,6 +377,9 @@ func TestCollectorRemovesSeries(t *testing.T) {
 	if _, err := reg.Gather(); err != nil {
 		t.Fatal(err)
 	}
+	if err := registry.Disconnect(registry.Snapshot().Rules[0].Connections[0].ID); err != nil {
+		t.Fatal(err)
+	}
 	registry.Reset()
 	families, err := reg.Gather()
 	if err != nil {

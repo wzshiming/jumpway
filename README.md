@@ -143,7 +143,9 @@ that closes it. Rule names on these pages open the rule's row in `Statistics`;
 editing stays on the rule tabs. Proxy URLs are shown as `scheme://host:port`.
 The counters live in memory since the process started, survive reloads for
 unchanged rule names and for URLs that keep their position in a chain, and keep
-at most 1000 targets per rule. Peaks are the highest one-second rate since start
+at most 1000 targets per rule. A reset also restarts the bytes, rates and
+duration of connections still open and drops the targets that no longer have
+an open connection. Peaks are the highest one-second rate since start
 or reset; a hop's peak is the peak of its URLs combined, while `Hosts`, which
 only sums per-rule numbers, shows the sum of its endpoints' peaks as an upper
 bound. Hops behind a connection-multiplexing hop (SSH) count transports rather
