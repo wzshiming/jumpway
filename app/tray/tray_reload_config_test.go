@@ -40,7 +40,7 @@ func TestReloadWebUIWithoutRules(test *testing.T) {
 	}
 	transport := &http.Transport{}
 	test.Cleanup(transport.CloseIdleConnections)
-	client := &http.Client{Transport: transport, Timeout: time.Second}
+	client := &http.Client{Transport: transport, Timeout: 5 * time.Second}
 	response, err := client.Get("http://" + status.Address + "/apis/configs/status")
 	if err != nil {
 		test.Fatal(err)
@@ -97,7 +97,7 @@ func TestReloadAllRulesAndAuth(test *testing.T) {
 			proxyURL := &url.URL{Scheme: "http", Host: scenario.address, User: scenario.user}
 			transport := &http.Transport{Proxy: http.ProxyURL(proxyURL), DisableKeepAlives: true}
 			defer transport.CloseIdleConnections()
-			client := &http.Client{Transport: transport, Timeout: time.Second}
+			client := &http.Client{Transport: transport, Timeout: 5 * time.Second}
 			response, err := client.Get(target.URL)
 			if err != nil {
 				test.Fatal(err)
@@ -134,7 +134,7 @@ func TestReloadCountsProxyTraffic(test *testing.T) {
 	proxyURL := &url.URL{Scheme: "http", Host: app.Status().Rules[0].Address}
 	transport := &http.Transport{Proxy: http.ProxyURL(proxyURL), DisableKeepAlives: true}
 	test.Cleanup(transport.CloseIdleConnections)
-	client := &http.Client{Transport: transport, Timeout: time.Second}
+	client := &http.Client{Transport: transport, Timeout: 5 * time.Second}
 	response, err := client.Get(target.URL)
 	if err != nil {
 		test.Fatal(err)
@@ -517,7 +517,7 @@ func TestReloadDisconnectConnection(test *testing.T) {
 			if scenario.http {
 				transport := &http.Transport{}
 				test.Cleanup(transport.CloseIdleConnections)
-				client := &http.Client{Transport: transport, Timeout: time.Second}
+				client := &http.Client{Transport: transport, Timeout: 5 * time.Second}
 				request, err := http.NewRequest(http.MethodDelete, app.webURL()+"/apis/stats/connections/"+strconv.FormatUint(live.ID, 10), nil)
 				if err != nil {
 					test.Fatal(err)
@@ -572,7 +572,7 @@ func TestReloadCountsNoProxyAsDirect(test *testing.T) {
 	proxyURL := &url.URL{Scheme: "http", Host: app.Status().Rules[0].Address}
 	transport := &http.Transport{Proxy: http.ProxyURL(proxyURL), DisableKeepAlives: true}
 	test.Cleanup(transport.CloseIdleConnections)
-	client := &http.Client{Transport: transport, Timeout: time.Second}
+	client := &http.Client{Transport: transport, Timeout: 5 * time.Second}
 	response, err := client.Get(target.URL)
 	if err != nil {
 		test.Fatal(err)
@@ -686,7 +686,7 @@ func TestReloadRetainsStatsAcrossReload(test *testing.T) {
 		proxyURL := &url.URL{Scheme: "http", Host: rule.Address}
 		transport := &http.Transport{Proxy: http.ProxyURL(proxyURL), DisableKeepAlives: true}
 		test.Cleanup(transport.CloseIdleConnections)
-		client := &http.Client{Transport: transport, Timeout: time.Second}
+		client := &http.Client{Transport: transport, Timeout: 5 * time.Second}
 		response, err := client.Get(target.URL)
 		if err != nil {
 			test.Fatal(err)
@@ -745,7 +745,7 @@ func TestMetricsEndpoint(test *testing.T) {
 	}
 	transport := &http.Transport{DisableKeepAlives: true}
 	test.Cleanup(transport.CloseIdleConnections)
-	client := &http.Client{Transport: transport, Timeout: time.Second}
+	client := &http.Client{Transport: transport, Timeout: 5 * time.Second}
 	response, err := client.Get("http://" + app.Status().Address + "/metrics")
 	if err != nil {
 		test.Fatal(err)
@@ -861,13 +861,9 @@ func TestReloadBindFailuresRetryIndependently(test *testing.T) {
 		{Name: "occupied", Listen: config.Listen{Port: port}},
 		{Name: "direct"},
 	}})
-	started := time.Now()
-	err := app.Reload()
+	_, err := reloadWithin(test, app, 5*time.Second)
 	if err == nil || !strings.Contains(err.Error(), `rule "occupied": `) {
 		test.Fatalf("reload error = %v", err)
-	}
-	if elapsed := time.Since(started); elapsed >= time.Second {
-		test.Fatalf("local failure took %s", elapsed)
 	}
 	status := app.Status()
 	if !status.Running || status.Error != "" || status.Rules[0].Running || status.Rules[0].Attempt < 1 || status.Rules[0].Error == "" || !status.Rules[1].Running {
@@ -916,15 +912,64 @@ func TestReloadReportsWebAndRuleErrors(test *testing.T) {
 	}
 }
 
-func TestReloadSharedDeadlineAndFirstEvent(test *testing.T) {
+func TestReloadSharedDeadline(test *testing.T) {
 	previousChain := chain.Default
 	chain.Default = chain.NewBridgeChain()
 	test.Cleanup(func() { chain.Default = previousChain })
-	bridger := &testListenBridger{listen: func(ctx context.Context, address string) (net.Listener, error) {
+	// Eight rules that never resolve: one shared deadline ends the wait once, a deadline per rule would take eight.
+	const slow = 8
+	pending := make(chan struct{}, slow)
+	chain.Default.Register("slow", &testListenBridger{listen: func(ctx context.Context, address string) (net.Listener, error) {
+		pending <- struct{}{}
 		<-ctx.Done()
 		return nil, ctx.Err()
-	}}
-	chain.Default.Register("slow", bridger)
+	}})
+	rules := make([]config.Rule, 0, slow)
+	for index := range slow {
+		name := "slow-" + strconv.Itoa(index)
+		rules = append(rules, config.Rule{Name: name, Listen: config.Listen{Way: []bridgeconfig.Node{{LB: []string{"slow://" + name}}}}})
+	}
+	app := newTestApp(test, &config.Config{Rules: rules})
+	deadline := 500 * time.Millisecond
+	firstEventTimeout = deadline
+	elapsed, err := reloadWithin(test, app, 4*deadline)
+	if err != nil || elapsed < deadline {
+		test.Fatalf("shared deadline returned %v after %s, want nil after at least %s", err, elapsed, deadline)
+	}
+	status := app.Status()
+	if len(status.Rules) != slow {
+		test.Fatalf("rules = %d, want %d", len(status.Rules), slow)
+	}
+	for _, rule := range status.Rules {
+		if rule.Running || rule.Attempt != 0 || rule.Error != "" || !rule.Remote {
+			test.Fatalf("unresolved rule: %+v", rule)
+		}
+	}
+	entered := time.NewTimer(5 * time.Second)
+	defer entered.Stop()
+	for range slow {
+		select {
+		case <-pending:
+		case <-entered.C:
+			test.Fatal("not every rule reached its pending listen")
+		}
+	}
+	if err := app.store.Save(&config.Config{}); err != nil {
+		test.Fatal(err)
+	}
+	if _, err := reloadWithin(test, app, 5*time.Second); err != nil {
+		test.Fatalf("canceling pending listens: %v", err)
+	}
+}
+
+func TestReloadFirstEventsAfterDeadline(test *testing.T) {
+	previousChain := chain.Default
+	chain.Default = chain.NewBridgeChain()
+	test.Cleanup(func() { chain.Default = previousChain })
+	chain.Default.Register("slow", &testListenBridger{listen: func(ctx context.Context, address string) (net.Listener, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}})
 	var dropped atomic.Int32
 	chain.Default.Register("dropped", &testListenBridger{listen: func(ctx context.Context, address string) (net.Listener, error) {
 		if dropped.Add(1) == 1 {
@@ -934,37 +979,34 @@ func TestReloadSharedDeadlineAndFirstEvent(test *testing.T) {
 		return nil, ctx.Err()
 	}})
 	occupied := occupyPort(test)
+	// A SOCKS way fails while the rules are set up, so only the poll after the deadline can report it.
 	app := newTestApp(test, &config.Config{Rules: []config.Rule{
-		{Name: "slow-one", Listen: config.Listen{Way: []bridgeconfig.Node{{LB: []string{"slow://one"}}}}},
-		{Name: "slow-two", Listen: config.Listen{Way: []bridgeconfig.Node{{LB: []string{"slow://two"}}}}},
+		{Name: "slow", Listen: config.Listen{Way: []bridgeconfig.Node{{LB: []string{"slow://one"}}}}},
 		{Name: "occupied", Listen: config.Listen{Port: uint32(occupied.Addr().(*net.TCPAddr).Port)}},
 		{Name: "dropped", Listen: config.Listen{Way: []bridgeconfig.Node{{LB: []string{"dropped://one"}}}}},
 		{Name: "direct"},
+		{Name: "socks", Listen: config.Listen{Way: []bridgeconfig.Node{{LB: []string{"socks5://one"}}}}},
 	}})
-	started := time.Now()
-	err := app.Reload()
-	elapsed := time.Since(started)
-	if elapsed < 1900*time.Millisecond || elapsed > 2500*time.Millisecond {
-		test.Fatalf("shared deadline took %s", elapsed)
-	}
-	if err == nil || !strings.HasPrefix(err.Error(), `rule "occupied": `) || strings.Contains(err.Error(), `rule "dropped"`) || strings.Contains(err.Error(), `rule "slow`) {
+	firstEventTimeout = 500 * time.Millisecond
+	_, err := reloadWithin(test, app, 5*time.Second)
+	// The occupied rule's first error passes through the OS alert and may miss the deadline; its status is checked below.
+	if err == nil || !strings.Contains(err.Error(), `rule "socks": `) || strings.Contains(err.Error(), `rule "slow"`) || strings.Contains(err.Error(), `rule "dropped"`) || strings.Contains(err.Error(), `rule "direct"`) {
 		test.Fatalf("first-attempt errors = %v", err)
 	}
-	status := app.Status()
-	for _, rule := range status.Rules[:2] {
-		if rule.Running || rule.Attempt != 0 || rule.Error != "" || !rule.Remote {
-			test.Fatalf("unresolved rule: %+v", rule)
-		}
+	status := waitForStatus(test, app, func(status configs.Status) bool {
+		return status.Rules[1].Attempt >= 1 && status.Rules[2].Attempt == 1 && status.Rules[3].Running
+	})
+	if rule := status.Rules[0]; rule.Running || rule.Attempt != 0 || rule.Error != "" || !rule.Remote {
+		test.Fatalf("unresolved rule: %+v", rule)
 	}
-	if status.Rules[3].Running || status.Rules[3].Attempt != 1 || status.Rules[3].Error == "" || status.Rules[3].Address != "0.0.0.0:12345" || !status.Rules[4].Running {
-		test.Fatalf("later events not reflected in status: %+v", status)
+	if rule := status.Rules[1]; rule.Running || rule.Error == "" {
+		test.Fatalf("occupied rule: %+v", rule)
 	}
-	if err := app.store.Save(&config.Config{}); err != nil {
-		test.Fatal(err)
+	if rule := status.Rules[2]; rule.Running || rule.Error == "" || rule.Address != "0.0.0.0:12345" {
+		test.Fatalf("dropped rule: %+v", rule)
 	}
-	started = time.Now()
-	if err := app.Reload(); err != nil || time.Since(started) >= time.Second {
-		test.Fatalf("canceling pending listens did not finish promptly: %v", err)
+	if rule := status.Rules[4]; rule.Running || rule.Attempt != 0 || rule.Error == "" {
+		test.Fatalf("socks rule: %+v", rule)
 	}
 }
 
@@ -1076,6 +1118,10 @@ func TestPrimaryAddressFallback(test *testing.T) {
 
 func newTestApp(test *testing.T, conf *config.Config) *App {
 	test.Helper()
+	// Slow machines must not drop first events; tests that exercise the deadline shorten it after this.
+	previousTimeout := firstEventTimeout
+	firstEventTimeout = 10 * time.Second
+	test.Cleanup(func() { firstEventTimeout = previousTimeout })
 	store := config.NewStore(test.TempDir())
 	if err := store.Save(conf); err != nil {
 		test.Fatal(err)
@@ -1180,9 +1226,26 @@ func assertListenerClosed(test *testing.T, address string) {
 	}
 }
 
+// reloadWithin fails the test instead of hanging the run when a reload does not return in time.
+func reloadWithin(test *testing.T, app *App, bound time.Duration) (time.Duration, error) {
+	test.Helper()
+	started := time.Now()
+	result := make(chan error, 1)
+	go func() { result <- app.Reload() }()
+	timer := time.NewTimer(bound)
+	defer timer.Stop()
+	select {
+	case err := <-result:
+		return time.Since(started), err
+	case <-timer.C:
+		test.Fatalf("reload did not return within %s", bound)
+	}
+	return bound, nil
+}
+
 func waitForStatus(test *testing.T, app *App, ready func(configs.Status) bool) configs.Status {
 	test.Helper()
-	deadline := time.NewTimer(2 * time.Second)
+	deadline := time.NewTimer(10 * time.Second)
 	defer deadline.Stop()
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()

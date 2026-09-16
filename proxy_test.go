@@ -214,7 +214,7 @@ func TestRunProxyAuth(t *testing.T) {
 			transport.Proxy = nil
 			transport.DialContext = proxy.DialContext
 		}
-		client := &http.Client{Transport: transport, Timeout: time.Second}
+		client := &http.Client{Transport: transport, Timeout: 5 * time.Second}
 		response, err := client.Get(target.URL + "/hello")
 		if scheme != "http" && wantStatus != http.StatusOK {
 			if err == nil {
