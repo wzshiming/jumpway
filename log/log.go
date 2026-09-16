@@ -43,6 +43,13 @@ func Error(err error, msg string, keysAndValues ...interface{}) {
 	}
 }
 
+func Warn(msg string, keysAndValues ...interface{}) {
+	mut.RLock()
+	defer mut.RUnlock()
+
+	logger.Warn(msg, keysAndValues...)
+}
+
 func Info(msg string, keysAndValues ...interface{}) {
 	mut.RLock()
 	defer mut.RUnlock()
