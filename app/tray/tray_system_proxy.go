@@ -44,6 +44,11 @@ func (a *App) syncSystemProxySelection() (address string, changed bool, removed 
 }
 
 func (a *App) selectSystemProxy(name string) {
+	a.proxyMu.Lock()
+	if a.stopped {
+		a.proxyMu.Unlock()
+		return
+	}
 	a.mu.Lock()
 	a.systemProxyRule = name
 	a.mu.Unlock()
@@ -52,11 +57,15 @@ func (a *App) selectSystemProxy(name string) {
 		log.Info("System proxy rule removed", "rule", removed)
 	}
 	setSystemProxy(address)
+	// updateStatus may wait on the UI thread, which may itself be in Quit waiting for proxyMu.
+	a.proxyMu.Unlock()
 	log.Info(i18n.ProxyMode(), "rule", name, "address", address)
 	a.updateStatus()
 }
 
 func (a *App) restoreSystemProxy() {
+	a.proxyMu.Lock()
+	defer a.proxyMu.Unlock()
 	address, changed, removed := a.syncSystemProxySelection()
 	if removed != "" {
 		log.Info("System proxy rule removed", "rule", removed)
@@ -66,7 +75,7 @@ func (a *App) restoreSystemProxy() {
 	}
 }
 
-func setSystemProxy(address string) {
+var setSystemProxy = func(address string) {
 	if address == "" {
 		if err := sysproxy.OffHTTPS(); err != nil {
 			log.Error(err, "sysproxy.OffHTTPS")
