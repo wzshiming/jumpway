@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/wzshiming/jumpway/i18n"
 )
@@ -191,5 +192,105 @@ func TestSystemProxySelectionReload(test *testing.T) {
 		if address, _, removed := app.syncSystemProxySelection(); address != "" || removed != "beta" || app.systemProxyRule != "" {
 			test.Fatal("non-local proxy remained selected")
 		}
+	}
+}
+
+func TestQuitDisablesSystemProxy(test *testing.T) {
+	var mu sync.Mutex
+	var calls []string
+	previous := setSystemProxy
+	setSystemProxy = func(address string) {
+		mu.Lock()
+		defer mu.Unlock()
+		calls = append(calls, address)
+	}
+	test.Cleanup(func() { setSystemProxy = previous })
+
+	app := &App{rules: []*ruleState{{name: "alpha", address: "127.0.0.1:1097"}}}
+	app.selectSystemProxy("alpha")
+	if !reflect.DeepEqual(calls, []string{"127.0.0.1:1097"}) {
+		test.Fatalf("selection calls = %q", calls)
+	}
+	app.Quit()
+	if !reflect.DeepEqual(calls, []string{"127.0.0.1:1097", ""}) || app.systemProxyRule != "" || app.systemProxyAddress != "" {
+		test.Fatalf("quit left the system proxy on: calls = %q, selection = %q/%q", calls, app.systemProxyRule, app.systemProxyAddress)
+	}
+	app.Quit()
+	app.stop()
+	app.selectSystemProxy("alpha")
+	(&App{}).Quit()
+	if len(calls) != 2 {
+		test.Fatalf("repeated quit, manual-mode quit or a late selection changed the system proxy: calls = %q", calls)
+	}
+
+	app = &App{systemProxyRule: "alpha", systemProxyAddress: "127.0.0.1:1097"}
+	var stops sync.WaitGroup
+	for worker := 0; worker < 8; worker++ {
+		stops.Add(1)
+		go func() {
+			defer stops.Done()
+			app.stop()
+		}()
+	}
+	stops.Wait()
+	if !reflect.DeepEqual(calls, []string{"127.0.0.1:1097", "", ""}) {
+		test.Fatalf("concurrent stops changed the system proxy more than once: calls = %q", calls)
+	}
+}
+
+func TestQuitWaitsForPendingSystemProxy(test *testing.T) {
+	var mu sync.Mutex
+	var calls []string
+	entered, release := make(chan struct{}, 1), make(chan struct{})
+	previous := setSystemProxy
+	setSystemProxy = func(address string) {
+		if address != "" {
+			entered <- struct{}{}
+			<-release
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		calls = append(calls, address)
+	}
+	test.Cleanup(func() { setSystemProxy = previous })
+	var pending sync.WaitGroup
+	var released sync.Once
+	test.Cleanup(func() {
+		released.Do(func() { close(release) })
+		pending.Wait()
+	})
+
+	app := &App{rules: []*ruleState{{name: "alpha", address: "127.0.0.1:1097"}}}
+	pending.Add(1)
+	go func() {
+		defer pending.Done()
+		app.selectSystemProxy("alpha")
+	}()
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		test.Fatal("selection never turned the system proxy on")
+	}
+	stopped := make(chan struct{})
+	pending.Add(1)
+	go func() {
+		defer pending.Done()
+		defer close(stopped)
+		app.stop()
+	}()
+	select {
+	case <-stopped:
+		test.Fatal("stop finished while the system proxy was still being turned on")
+	case <-time.After(200 * time.Millisecond):
+	}
+	released.Do(func() { close(release) })
+	select {
+	case <-stopped:
+	case <-time.After(5 * time.Second):
+		test.Fatal("stop did not finish once the system proxy was on")
+	}
+	pending.Wait()
+	if !reflect.DeepEqual(calls, []string{"127.0.0.1:1097", ""}) || app.systemProxyRule != "" || app.systemProxyAddress != "" {
+		test.Fatalf("quit raced the pending selection: calls = %q, selection = %q/%q", calls, app.systemProxyRule, app.systemProxyAddress)
 	}
 }

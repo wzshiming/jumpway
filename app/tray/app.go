@@ -38,6 +38,9 @@ type App struct {
 	webListener net.Listener
 	webServer   *http.Server
 
+	proxyMu sync.Mutex
+	stopped bool
+
 	mu                 sync.Mutex
 	webListenAddress   string
 	webAddress         string
@@ -198,10 +201,18 @@ func (a *App) webURL() string {
 }
 
 func (a *App) stop() {
+	a.proxyMu.Lock()
+	a.stopped = true
 	a.mu.Lock()
 	cancel, server := a.cancel, a.webServer
 	metricsCancel := a.metricsCancel
+	systemProxyAddress := a.systemProxyAddress
+	a.systemProxyRule, a.systemProxyAddress = "", ""
 	a.mu.Unlock()
+	if systemProxyAddress != "" {
+		setSystemProxy("")
+	}
+	a.proxyMu.Unlock()
 	if cancel != nil {
 		cancel()
 	}
