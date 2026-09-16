@@ -9,9 +9,63 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wzshiming/bridge"
 	"github.com/wzshiming/bridge/protocols/local"
 	"github.com/wzshiming/jumpway/utils"
 )
+
+func TestClientAddr(t *testing.T) {
+	ctx := context.Background()
+	if got := ClientAddr(ctx); got != "" {
+		t.Fatalf("ClientAddr() = %q, want empty address", got)
+	}
+	addr := &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12345}
+	ctx = WithClientAddr(ctx, addr)
+	if got := ClientAddr(ctx); got != addr.String() {
+		t.Fatalf("ClientAddr() = %q, want %q", got, addr.String())
+	}
+	if got := ClientAddr(WithClientAddr(ctx, nil)); got != "" {
+		t.Fatalf("ClientAddr(nil) = %q, want empty address", got)
+	}
+}
+
+func TestRunForwardPassesClientAddr(t *testing.T) {
+	target := startForwardTarget(t, func(conn net.Conn) { io.Copy(conn, conn) })
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	addresses := make(chan string, 1)
+	dialer := bridge.DialFunc(func(ctx context.Context, network, address string) (net.Conn, error) {
+		addresses <- ClientAddr(ctx)
+		return local.LOCAL.DialContext(ctx, network, address)
+	})
+	done := make(chan error, 1)
+	go func() { done <- RunForward(ctx, listener, dialer, target) }()
+	t.Cleanup(func() {
+		cancel()
+		listener.Close()
+		select {
+		case err := <-done:
+			if !utils.IsClosedConnError(err) {
+				t.Errorf("RunForward() = %v, want closed connection error", err)
+			}
+		case <-time.After(time.Second):
+			t.Error("RunForward did not stop")
+		}
+	})
+	client := dialForward(t, listener.Addr().String())
+	checkForwardEcho(t, client, "client address")
+	select {
+	case got := <-addresses:
+		if want := client.LocalAddr().String(); got != want {
+			t.Fatalf("ClientAddr() = %q, want %q", got, want)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("dialer did not receive the client address")
+	}
+}
 
 func TestRunForwardEcho(t *testing.T) {
 	target := startForwardTarget(t, func(conn net.Conn) { io.Copy(conn, conn) })

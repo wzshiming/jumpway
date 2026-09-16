@@ -14,7 +14,9 @@ import (
 	"testing"
 
 	"github.com/wzshiming/jumpway/app/web/services/configs"
+	"github.com/wzshiming/jumpway/app/web/services/stats"
 	"github.com/wzshiming/jumpway/config"
+	"github.com/wzshiming/jumpway/metrics"
 )
 
 const testConfigYAML = "web_ui:\n" +
@@ -46,14 +48,39 @@ func (fake *fakeRuntime) Status() configs.Status {
 	return fake.status
 }
 
-func setupConfigAPI(t *testing.T) (http.Handler, *fakeRuntime, *config.Store) {
+type fakeSource struct {
+	snapshot      metrics.Snapshot
+	resets        int
+	disconnected  []uint64
+	disconnectErr error
+}
+
+func (fake *fakeSource) Snapshot() metrics.Snapshot {
+	return fake.snapshot
+}
+
+func (fake *fakeSource) Reset() {
+	fake.resets++
+}
+
+func (fake *fakeSource) Disconnect(id uint64) error {
+	fake.disconnected = append(fake.disconnected, id)
+	return fake.disconnectErr
+}
+
+func setupConfigAPI(t *testing.T) (http.Handler, *fakeRuntime, *config.Store, *fakeSource) {
 	t.Helper()
 	store := config.NewStore(t.TempDir())
 	fake := &fakeRuntime{}
+	source := &fakeSource{}
 	if err := os.WriteFile(store.Path(), []byte(testConfigYAML), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return NewHandler(configs.NewConfigsService(store, fake)), fake, store
+	metricsHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		fmt.Fprint(w, "# stub metrics\n")
+	})
+	return NewHandler(configs.NewConfigsService(store, fake), stats.NewStatsService(source), metricsHandler), fake, store, source
 }
 
 func requestAPI(t *testing.T, handler http.Handler, method, target, body string, wantStatus int) *httptest.ResponseRecorder {
@@ -94,8 +121,192 @@ func listRulesAPI(t *testing.T, handler http.Handler) []config.Rule {
 	return rules
 }
 
+func TestStatsGet(t *testing.T) {
+	handler, _, _, fake := setupConfigAPI(t)
+	fake.snapshot = metrics.Snapshot{
+		Since: "2026-09-15T12:00:00Z",
+		Rules: []metrics.RuleStats{{
+			Name: "a",
+			Stats: metrics.Stats{
+				Up:           10,
+				Down:         20,
+				PeakRateUp:   4,
+				PeakRateDown: 8,
+				LastUp:       "2026-09-15T12:00:02.123Z",
+				LastDown:     "2026-09-15T12:00:03.456Z",
+				Active:       1,
+				Total:        3,
+				Dials:        2,
+				DialFailures: 1,
+				LatencyMs:    1.5,
+				AvgLatencyMs: 2.5,
+			},
+			Listen: []metrics.Hop{},
+			Forward: []metrics.Hop{{
+				Index:       0,
+				ParentIndex: -1,
+				URLs:        []metrics.URLStats{{URL: "ssh://u:xxxxx@h:22"}},
+			}},
+			Targets: []metrics.Target{{Address: "example.com:443", Via: "ssh://u:xxxxx@h:22"}},
+			Connections: []metrics.Connection{{
+				ID: 42, Client: "127.0.0.1:12345", Target: "example.com:443", Via: "ssh://u:xxxxx@h:22",
+				Path:    []metrics.PathHop{{Index: 0, URL: "ssh://u:xxxxx@h:22", Dialed: true}},
+				Started: "2026-09-15T12:00:01.123Z",
+				Stats: metrics.Stats{
+					Up: 3, Down: 5, RateUp: 1, RateDown: 2, PeakRateUp: 3, PeakRateDown: 5,
+					LastUp: "2026-09-15T12:00:02.123Z", LastDown: "2026-09-15T12:00:03.456Z",
+				},
+			}},
+		}},
+	}
+	response := requestAPI(t, handler, http.MethodGet, "/apis/stats", "", http.StatusOK)
+	var snapshot map[string]any
+	if err := json.Unmarshal(response.Body.Bytes(), &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if snapshot["since"] != fake.snapshot.Since {
+		t.Fatalf("since = %#v, want %q", snapshot["since"], fake.snapshot.Since)
+	}
+	rules, ok := snapshot["rules"].([]any)
+	if !ok || len(rules) != 1 {
+		t.Fatalf("rules = %#v, want one rule", snapshot["rules"])
+	}
+	rule, ok := rules[0].(map[string]any)
+	if !ok || rule["name"] != "a" {
+		t.Fatalf("rule = %#v, want rule a", rules[0])
+	}
+	counters, ok := rule["stats"].(map[string]any)
+	if !ok {
+		t.Fatalf("stats = %#v, want an object", rule["stats"])
+	}
+	for key, want := range map[string]float64{
+		"up": 10, "down": 20, "active": 1, "total": 3,
+		"peak_rate_up": 4, "peak_rate_down": 8,
+		"dials": 2, "dial_failures": 1, "latency_ms": 1.5, "avg_latency_ms": 2.5,
+	} {
+		if counters[key] != want {
+			t.Errorf("stats.%s = %#v, want %v", key, counters[key], want)
+		}
+	}
+	for key, want := range map[string]string{"last_up": fake.snapshot.Rules[0].Stats.LastUp, "last_down": fake.snapshot.Rules[0].Stats.LastDown} {
+		if counters[key] != want {
+			t.Errorf("stats.%s = %#v, want %q", key, counters[key], want)
+		}
+	}
+	listen, ok := rule["listen"].([]any)
+	if !ok || listen == nil || len(listen) != 0 {
+		t.Fatalf("listen = %#v, want an empty array", rule["listen"])
+	}
+	forward, ok := rule["forward"].([]any)
+	if !ok || len(forward) != 1 {
+		t.Fatalf("forward = %#v, want one hop", rule["forward"])
+	}
+	hop, ok := forward[0].(map[string]any)
+	if !ok || hop["index"] != float64(0) || hop["parent_index"] != float64(-1) {
+		t.Fatalf("hop = %#v, want index 0 and parent_index -1", forward[0])
+	}
+	urls, ok := hop["urls"].([]any)
+	if !ok || len(urls) != 1 {
+		t.Fatalf("urls = %#v, want one URL", hop["urls"])
+	}
+	url, ok := urls[0].(map[string]any)
+	if !ok || url["url"] != "ssh://u:xxxxx@h:22" {
+		t.Fatalf("url = %#v, want the redacted SSH URL", urls[0])
+	}
+	targets, ok := rule["targets"].([]any)
+	if !ok || len(targets) != 1 {
+		t.Fatalf("targets = %#v, want one target", rule["targets"])
+	}
+	target, ok := targets[0].(map[string]any)
+	if !ok || target["address"] != "example.com:443" || target["via"] != "ssh://u:xxxxx@h:22" {
+		t.Fatalf("target = %#v, want example.com:443 via the redacted SSH URL", targets[0])
+	}
+	connections, ok := rule["connections"].([]any)
+	if !ok || len(connections) != 1 {
+		t.Fatalf("connections = %#v, want one connection", rule["connections"])
+	}
+	want := map[string]any{
+		"id": float64(42), "client": "127.0.0.1:12345", "target": "example.com:443", "via": "ssh://u:xxxxx@h:22",
+		"path":    []any{map[string]any{"index": float64(0), "url": "ssh://u:xxxxx@h:22", "dialed": true}},
+		"started": "2026-09-15T12:00:01.123Z",
+		"stats": map[string]any{
+			"up": float64(3), "down": float64(5), "rate_up": float64(1), "rate_down": float64(2),
+			"peak_rate_up": float64(3), "peak_rate_down": float64(5),
+			"active": float64(0), "total": float64(0), "dials": float64(0), "dial_failures": float64(0),
+			"latency_ms": float64(0), "avg_latency_ms": float64(0),
+			"last_up": "2026-09-15T12:00:02.123Z", "last_down": "2026-09-15T12:00:03.456Z",
+		},
+	}
+	if !reflect.DeepEqual(connections[0], want) {
+		t.Fatalf("connection = %#v, want %#v", connections[0], want)
+	}
+}
+
+func TestStatsReset(t *testing.T) {
+	handler, _, _, fake := setupConfigAPI(t)
+	for want := 1; want <= 2; want++ {
+		response := requestAPI(t, handler, http.MethodDelete, "/apis/stats", "", http.StatusOK)
+		if strings.TrimSpace(response.Body.String()) != "null" {
+			t.Fatalf("body = %q, want null", response.Body.String())
+		}
+		if fake.resets != want {
+			t.Fatalf("resets = %d, want %d", fake.resets, want)
+		}
+	}
+}
+
+func TestStatsDisconnect(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		path   string
+		id     uint64
+		err    error
+		status int
+	}{
+		{name: "success", path: "42", id: 42, status: http.StatusOK},
+		{name: "max uint64", path: "18446744073709551615", id: ^uint64(0), status: http.StatusOK},
+		{name: "source error", path: "42", id: 42, err: errors.New("connection 42 not found"), status: http.StatusBadRequest},
+		{name: "invalid", path: "invalid", status: http.StatusBadRequest},
+		{name: "negative", path: "-1", status: http.StatusBadRequest},
+		{name: "overflow", path: "18446744073709551616", status: http.StatusBadRequest},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			handler, _, _, fake := setupConfigAPI(t)
+			fake.disconnectErr = test.err
+			response := requestAPI(t, handler, http.MethodDelete, "/apis/stats/connections/"+test.path, "", test.status)
+			if test.id != 0 {
+				if !slices.Equal(fake.disconnected, []uint64{test.id}) {
+					t.Fatalf("disconnected = %v, want [%d]", fake.disconnected, test.id)
+				}
+			} else if len(fake.disconnected) != 0 {
+				t.Fatalf("invalid ID reached source: %v", fake.disconnected)
+			}
+			if test.err != nil && !strings.Contains(response.Body.String(), test.err.Error()) {
+				t.Fatalf("body = %q, want %q", response.Body.String(), test.err.Error())
+			}
+			if test.status == http.StatusOK && strings.TrimSpace(response.Body.String()) != "null" {
+				t.Fatalf("body = %q, want null", response.Body.String())
+			}
+			if fake.resets != 0 {
+				t.Fatal("disconnect reset statistics")
+			}
+		})
+	}
+}
+
+func TestMetricsEndpoint(t *testing.T) {
+	handler, _, _, _ := setupConfigAPI(t)
+	response := requestAPI(t, handler, http.MethodGet, "/metrics", "", http.StatusOK)
+	if response.Body.String() != "# stub metrics\n" {
+		t.Fatalf("body = %q, want stub metrics", response.Body.String())
+	}
+	if contentType := response.Header().Get("Content-Type"); contentType != "text/plain" {
+		t.Fatalf("Content-Type = %q, want text/plain", contentType)
+	}
+}
+
 func TestGetConfig(t *testing.T) {
-	handler, _, _ := setupConfigAPI(t)
+	handler, _, _, _ := setupConfigAPI(t)
 	response := requestAPI(t, handler, http.MethodGet, "/apis/configs", "", http.StatusOK)
 	var conf map[string]any
 	if err := json.Unmarshal(response.Body.Bytes(), &conf); err != nil {
@@ -144,7 +355,7 @@ func TestGetConfig(t *testing.T) {
 }
 
 func TestListRules(t *testing.T) {
-	handler, _, _ := setupConfigAPI(t)
+	handler, _, _, _ := setupConfigAPI(t)
 	rules := listRulesAPI(t, handler)
 	if len(rules) != 1 || rules[0].Name != "a" || len(rules[0].Forward.Way) != 1 || !slices.Equal(rules[0].Forward.Way[0].LB, []string{"socks5://127.0.0.1:1080"}) {
 		t.Fatalf("rules = %#v, want seeded rule a", rules)
@@ -152,7 +363,7 @@ func TestListRules(t *testing.T) {
 }
 
 func TestCreateRule(t *testing.T) {
-	handler, fake, store := setupConfigAPI(t)
+	handler, fake, store, _ := setupConfigAPI(t)
 	requestAPI(t, handler, http.MethodPost, "/apis/configs/rules", `{"name":"b","listen":{"host":"::1","port":9000,"way":[{"lb":["ssh://user@host:22"]}],"username":"user","password":"secret"},"forward":{"way":[{"lb":["socks5://h:1080"]}]}}`, http.StatusOK)
 	rules := listRulesAPI(t, handler)
 	if len(rules) != 2 || rules[0].Name != "a" || rules[1].Name != "b" || len(rules[1].Forward.Way) != 1 || !slices.Equal(rules[1].Forward.Way[0].LB, []string{"socks5://h:1080"}) {
@@ -175,7 +386,7 @@ func TestCreateRule(t *testing.T) {
 }
 
 func TestCreatePortForwardRule(t *testing.T) {
-	handler, fake, store := setupConfigAPI(t)
+	handler, fake, store, _ := setupConfigAPI(t)
 	requestAPI(t, handler, http.MethodPost, "/apis/configs/rules", `{"name":"db","listen":{"port":15432},"forward":{"host":"10.0.0.5","port":5432,"way":[{"lb":["ssh://u@bastion:22"]}]}}`, http.StatusOK)
 	response := requestAPI(t, handler, http.MethodGet, "/apis/configs/rules/db", "", http.StatusOK)
 	var rule config.Rule
@@ -201,7 +412,7 @@ func TestCreatePortForwardRule(t *testing.T) {
 }
 
 func TestCreateFirstRule(t *testing.T) {
-	handler, fake, store := setupConfigAPI(t)
+	handler, fake, store, _ := setupConfigAPI(t)
 	if err := store.SaveRaw([]byte("web_ui:\n  host: 127.0.0.1\n  port: 1088\n")); err != nil {
 		t.Fatal(err)
 	}
@@ -253,7 +464,7 @@ func TestRuleMutationInvalid(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			handler, fake, store := setupConfigAPI(t)
+			handler, fake, store, _ := setupConfigAPI(t)
 			response := requestAPI(t, handler, test.method, "/apis/configs"+test.target, test.body, http.StatusBadRequest)
 			if !strings.Contains(response.Body.String(), test.wantError) {
 				t.Fatalf("body = %q, want error containing %q", response.Body.String(), test.wantError)
@@ -267,7 +478,7 @@ func TestRuleMutationInvalid(t *testing.T) {
 }
 
 func TestGetRule(t *testing.T) {
-	handler, _, _ := setupConfigAPI(t)
+	handler, _, _, _ := setupConfigAPI(t)
 	response := requestAPI(t, handler, http.MethodGet, "/apis/configs/rules/a", "", http.StatusOK)
 	var got config.Rule
 	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
@@ -296,7 +507,7 @@ func TestUpdateRule(t *testing.T) {
 		{name: "empty_name_keeps_path", body: `{"name":"","disabled":true,"listen":{"port":9000},"forward":{"way":[{"lb":["socks5://h:1080"]}]}}`, want: "a"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			handler, fake, store := setupConfigAPI(t)
+			handler, fake, store, _ := setupConfigAPI(t)
 			requestAPI(t, handler, http.MethodPut, "/apis/configs/rules/a", test.body, http.StatusOK)
 			rules := listRulesAPI(t, handler)
 			if len(rules) != 1 || rules[0].Name != test.want || len(rules[0].Forward.Way) != 1 || !slices.Equal(rules[0].Forward.Way[0].LB, []string{"socks5://h:1080"}) {
@@ -324,7 +535,7 @@ func TestUpdateRule(t *testing.T) {
 }
 
 func TestRenameRuleConflict(t *testing.T) {
-	handler, fake, store := setupConfigAPI(t)
+	handler, fake, store, _ := setupConfigAPI(t)
 	conf, err := store.Load()
 	if err != nil {
 		t.Fatal(err)
@@ -348,7 +559,7 @@ func TestRenameRuleConflict(t *testing.T) {
 }
 
 func TestDeleteRule(t *testing.T) {
-	handler, fake, store := setupConfigAPI(t)
+	handler, fake, store, _ := setupConfigAPI(t)
 	conf, err := store.Load()
 	if err != nil {
 		t.Fatal(err)
@@ -396,7 +607,7 @@ func TestDeleteRule(t *testing.T) {
 }
 
 func TestCreateRulesConcurrent(t *testing.T) {
-	handler, fake, _ := setupConfigAPI(t)
+	handler, fake, _, _ := setupConfigAPI(t)
 	const count = 20
 	responses := make(chan *httptest.ResponseRecorder, count)
 	start := make(chan struct{})
@@ -444,7 +655,7 @@ func TestCreateRulesConcurrent(t *testing.T) {
 }
 
 func TestWebUI(t *testing.T) {
-	handler, fake, store := setupConfigAPI(t)
+	handler, fake, store, _ := setupConfigAPI(t)
 	response := requestAPI(t, handler, http.MethodGet, "/apis/configs/web-ui", "", http.StatusOK)
 	var address config.Address
 	if err := json.Unmarshal(response.Body.Bytes(), &address); err != nil {
@@ -482,7 +693,7 @@ func TestWebUI(t *testing.T) {
 }
 
 func TestNoProxy(t *testing.T) {
-	handler, fake, store := setupConfigAPI(t)
+	handler, fake, store, _ := setupConfigAPI(t)
 	const seeded = testConfigYAML + `no_proxy:
   list: [old.example]
   from_env: [NO_PROXY]
@@ -525,7 +736,7 @@ func TestConfigResourceNullBody(t *testing.T) {
 		{target: "/no-proxy", wantError: "no-proxy is nil"},
 	} {
 		t.Run(test.target, func(t *testing.T) {
-			handler, fake, store := setupConfigAPI(t)
+			handler, fake, store, _ := setupConfigAPI(t)
 			response := requestAPI(t, handler, http.MethodPut, "/apis/configs"+test.target, `null`, http.StatusBadRequest)
 			if !strings.Contains(response.Body.String(), test.wantError) {
 				t.Fatalf("body = %q, want error containing %q", response.Body.String(), test.wantError)
@@ -572,7 +783,7 @@ func TestUpdateConfig(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			handler, fake, store := setupConfigAPI(t)
+			handler, fake, store, _ := setupConfigAPI(t)
 			fake.err = test.reloadError
 			body := test.body
 			if body == "" {
@@ -614,7 +825,7 @@ func TestUpdateConfig(t *testing.T) {
 }
 
 func TestUpdateConfigBodyTooLarge(t *testing.T) {
-	handler, fake, store := setupConfigAPI(t)
+	handler, fake, store, _ := setupConfigAPI(t)
 	body := `{"web_ui":{"port":1098}}`
 	body += strings.Repeat(" ", (2<<20)-len(body))
 	request := httptest.NewRequest(http.MethodPut, "/apis/configs", strings.NewReader(body))
@@ -631,7 +842,7 @@ func TestUpdateConfigBodyTooLarge(t *testing.T) {
 }
 
 func TestRawConfig(t *testing.T) {
-	handler, fake, store := setupConfigAPI(t)
+	handler, fake, store, _ := setupConfigAPI(t)
 	response := requestAPI(t, handler, http.MethodGet, "/apis/configs/raw", "", http.StatusOK)
 	var raw struct {
 		YAML string `json:"yaml"`
@@ -667,7 +878,7 @@ func TestUpdateRawConfigInvalid(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			handler, fake, store := setupConfigAPI(t)
+			handler, fake, store, _ := setupConfigAPI(t)
 			response := requestAPI(t, handler, http.MethodPut, "/apis/configs/raw", test.body, http.StatusBadRequest)
 			if !strings.Contains(response.Body.String(), test.wantError) {
 				t.Fatalf("body = %q, want error containing %q", response.Body.String(), test.wantError)
@@ -694,7 +905,7 @@ func TestConfigStatus(t *testing.T) {
 		{name: "port_forward", target: "10.0.0.5:5432", running: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			handler, fake, _ := setupConfigAPI(t)
+			handler, fake, _, _ := setupConfigAPI(t)
 			fake.status = configs.Status{
 				Address: "127.0.0.1:1088",
 				Running: true,
@@ -756,15 +967,15 @@ func TestConfigStatus(t *testing.T) {
 }
 
 func TestUnknownAPIRoute(t *testing.T) {
-	handler, _, _ := setupConfigAPI(t)
+	handler, _, _, _ := setupConfigAPI(t)
 	for _, target := range []string{"/apis/nope", "/apis/configs/current-context", "/apis/configs/contexts", "/apis/configs/proxy"} {
 		requestAPI(t, handler, http.MethodGet, target, "", http.StatusNotFound)
 	}
 }
 
 func TestConfigAPIIsolation(t *testing.T) {
-	handler, fake, store := setupConfigAPI(t)
-	otherHandler, otherFake, otherStore := setupConfigAPI(t)
+	handler, fake, store, _ := setupConfigAPI(t)
+	otherHandler, otherFake, otherStore, _ := setupConfigAPI(t)
 	fake.status = configs.Status{Address: "127.0.0.1:1088", Running: true}
 	otherFake.status = configs.Status{Address: "127.0.0.1:1089", Error: "not running"}
 	requestAPI(t, handler, http.MethodPut, "/apis/configs", `{"web_ui":{"port":1098}}`, http.StatusOK)

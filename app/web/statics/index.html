@@ -28,6 +28,9 @@
 		<div id="rule-status" class="status-rules" aria-live="polite" data-i18n-aria="ruleTabs"></div>
 
 		<nav id="page-nav" class="page-nav" role="tablist" data-i18n-aria="ruleTabs">
+			<a href="#/stats" data-page="stats" data-i18n="stats" role="tab" aria-selected="false" aria-controls="page-panel" tabindex="-1"></a>
+			<a href="#/hosts" data-page="hosts" data-i18n="hosts" role="tab" aria-selected="false" aria-controls="page-panel" tabindex="-1"></a>
+			<a href="#/connections" data-page="connections" data-i18n="connections" role="tab" aria-selected="false" aria-controls="page-panel" tabindex="-1"></a>
 			<a href="#/settings" data-page="settings" data-i18n="settings" role="tab" aria-selected="false" aria-controls="page-panel" tabindex="-1"></a>
 			<a href="#/yaml" data-page="yaml" data-i18n="yaml" role="tab" aria-selected="false" aria-controls="page-panel" tabindex="-1"></a>
 		</nav>
@@ -51,6 +54,7 @@
 			<nav data-i18n-aria="resources">
 				<a href="/swaggerui/" data-i18n="apiDocs"></a>
 				<a href="/debug/pprof/" data-i18n="pprof"></a>
+				<a href="/metrics" data-i18n="prometheus"></a>
 				<a href="https://github.com/wzshiming/jumpway" target="_blank" rel="noopener noreferrer" data-i18n="github"></a>
 			</nav>
 		</footer>
@@ -179,10 +183,168 @@
 		</div>
 	</template>
 
+	<template id="connections-template">
+		<div class="connections-view">
+			<div class="connections-toolbar">
+				<div class="field">
+					<label for="connection-rule" data-i18n="ruleLabel"></label>
+					<select id="connection-rule"></select>
+				</div>
+				<div class="field connection-filter-field">
+					<label for="connection-filter" data-i18n="filter"></label>
+					<input id="connection-filter" type="search" spellcheck="false" autocomplete="off">
+				</div>
+				<p id="connections-count" class="hint" role="status"></p>
+			</div>
+			<div id="connections-table" class="stats-scroll" role="region" tabindex="0" aria-labelledby="connections-count" hidden>
+				<table class="stats-table">
+					<thead><tr>
+						<th scope="col"><button type="button" class="sort-button" data-sort="rule"><span data-i18n="ruleLabel"></span><span class="sort-indicator" aria-hidden="true"></span></button></th>
+						<th scope="col"><button type="button" class="sort-button" data-sort="client"><span data-i18n="client"></span><span class="sort-indicator" aria-hidden="true"></span></button></th>
+						<th scope="col"><button type="button" class="sort-button" data-sort="target"><span data-i18n="target"></span><span class="sort-indicator" aria-hidden="true"></span></button></th>
+						<th data-stats-headers="traffic" data-sortable></th>
+						<th scope="col" class="number"><button type="button" class="sort-button" data-sort="started"><span data-i18n="duration"></span><span class="sort-indicator" aria-hidden="true"></span></button></th>
+						<th scope="col"><span class="sr-only" data-i18n="disconnect"></span></th>
+					</tr></thead>
+					<tbody id="connection-rows"></tbody>
+				</table>
+			</div>
+			<p id="no-connections" class="hint" data-i18n="noConnections"></p>
+			<p id="connections-note" class="hint" hidden></p>
+		</div>
+	</template>
+
+	<template id="connection-row-template">
+		<tr>
+			<th scope="row"><div class="table-label"><a class="connection-rule stats-rule"></a><button type="button" class="path-hint" data-i18n-aria="path">?</button></div></th>
+			<td class="connection-client address"></td>
+			<td class="connection-target address"></td>
+			<td data-stats-cells="traffic"></td>
+			<td class="number connection-duration"></td>
+			<td class="connection-action"><button class="disconnect-connection danger" type="button" data-i18n="disconnect"></button></td>
+		</tr>
+	</template>
+
 	<template id="rule-tab-template">
 		<a role="tab" aria-selected="false" aria-controls="page-panel" tabindex="-1">
 			<span class="tab-name"></span>
 		</a>
+	</template>
+
+	<template id="stats-template">
+		<div class="stats-page">
+			<div class="stats-toolbar">
+				<p id="stats-since" class="hint"></p>
+				<div class="stats-actions">
+					<a href="/metrics" data-i18n="prometheus"></a>
+					<button id="reset-stats" type="button" data-i18n="resetStats"></button>
+				</div>
+			</div>
+			<div id="stats-content"></div>
+		</div>
+	</template>
+
+	<template id="stats-rules-template">
+		<div class="rules-view">
+			<div id="stats-rules-table" class="stats-scroll" role="region" tabindex="0" aria-labelledby="page-heading">
+				<table class="stats-table rules-table">
+					<thead><tr>
+						<th scope="col" data-i18n="ruleLabel"></th><th scope="col" data-i18n="state"></th><th scope="col" data-i18n="address"></th>
+						<th data-stats-headers="traffic connections latency failures"></th>
+					</tr></thead>
+					<tbody id="stats-rules"></tbody>
+				</table>
+			</div>
+			<p id="stats-empty" class="hint" data-i18n="noRules" hidden></p>
+		</div>
+	</template>
+
+	<template id="stats-rule-template">
+		<tr>
+			<th scope="row"><div class="table-label"><button type="button" class="expand-toggle" aria-expanded="false" data-i18n-aria="expand"><span aria-hidden="true">&#9656;</span></button><span class="stats-rule"></span></div></th>
+			<td><span class="rule-chip"><span class="status-dot" aria-hidden="true"></span><span class="chip-state"></span></span></td>
+			<td class="address"><span class="stats-address pair"></span><span class="stats-target pair" hidden></span></td>
+			<td data-stats-cells="traffic connections latency failures"></td>
+		</tr>
+	</template>
+
+	<template id="rule-details-template">
+		<tr class="rule-details" hidden><td colspan="7"><ol class="chain" data-i18n-aria="path"></ol></td></tr>
+	</template>
+
+	<template id="hosts-template">
+		<div class="hosts-view">
+			<div id="hosts-table" class="stats-scroll" role="region" tabindex="0" aria-labelledby="page-heading" hidden>
+				<table class="stats-table hosts-table">
+					<thead><tr>
+						<th scope="col" data-i18n="host"></th><th scope="col" data-i18n="usedBy"></th><th scope="col" class="number" data-i18n="endpoints"></th>
+						<th data-stats-headers="traffic connections latency failures"></th>
+					</tr></thead>
+					<tbody id="host-rows"></tbody>
+				</table>
+			</div>
+			<p id="hosts-empty" class="hint" data-i18n="noHosts"></p>
+		</div>
+	</template>
+
+	<template id="host-row-template">
+		<tr>
+			<th scope="row"><div class="table-label"><button type="button" class="expand-toggle" aria-expanded="false" data-i18n-aria="expand"><span aria-hidden="true">&#9656;</span></button><span class="host-name address"></span></div></th>
+			<td><div class="host-chips"></div></td><td class="endpoint-count number"></td>
+			<td data-stats-cells="traffic connections latency failures"></td>
+		</tr>
+	</template>
+
+	<template id="host-details-template">
+		<tr class="host-details" hidden><td colspan="7">
+			<table class="stats-table endpoint-table">
+				<thead><tr>
+					<th scope="col" data-i18n="endpoints"></th><th scope="col" data-i18n="usedBy"></th>
+					<th data-stats-headers="traffic connections latency failures"></th>
+				</tr></thead>
+				<tbody class="host-endpoints"></tbody>
+			</table>
+		</td></tr>
+	</template>
+
+	<template id="host-endpoint-template">
+		<tr>
+			<th scope="row" class="host-endpoint address"></th><td><div class="host-chips"></div></td>
+			<td data-stats-cells="traffic connections latency failures"></td>
+		</tr>
+	</template>
+
+	<template id="stats-cells-template">
+		<td class="number" data-column="traffic"></td>
+		<td class="number" data-column="connections"><span data-stat="connections"></span></td>
+		<td class="number" data-column="latency"><span class="pair" data-stat="latency"></span><span class="pair table-sub" data-stat="avg_latency"></span></td>
+		<td class="number" data-column="failures"><span data-stat="dial_failures"></span></td>
+	</template>
+
+	<template id="traffic-template">
+		<span class="traffic">
+			<span class="traffic-arrow">&#8593;</span><span data-stat="rate_up"></span><span class="peak" data-stat="peak_up"></span><span data-stat="up"></span><span data-stat="last_up"></span>
+			<span class="traffic-arrow">&#8595;</span><span data-stat="rate_down"></span><span class="peak" data-stat="peak_down"></span><span data-stat="down"></span><span data-stat="last_down"></span>
+		</span>
+	</template>
+
+	<template id="stage-template">
+		<li class="stage">
+			<div class="stage-heading">
+				<h4 class="stage-title"></h4>
+				<p class="stage-parent hint" hidden></p>
+			</div>
+			<p class="stage-stats" hidden></p>
+			<ul class="stage-urls" hidden></ul>
+			<p class="stage-detail hint" hidden></p>
+		</li>
+	</template>
+
+	<template id="stage-url-template">
+		<li>
+			<span class="stage-url address"></span>
+			<p class="stage-url-stats"></p>
+		</li>
 	</template>
 
 	<template id="new-tab-template">
@@ -282,5 +444,6 @@
 			</div>
 		</div>
 	</template>
+	<div id="tooltip" role="tooltip" hidden></div>
 </body>
 </html>
