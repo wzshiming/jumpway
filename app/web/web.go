@@ -14,10 +14,11 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/wzshiming/jumpway/app/web/route"
 	"github.com/wzshiming/jumpway/app/web/services/configs"
+	"github.com/wzshiming/jumpway/app/web/services/stats"
 	"github.com/wzshiming/openapiui/v2/swaggerui"
 )
 
-func NewHandler(svc *configs.ConfigsService) http.Handler {
+func NewHandler(svc *configs.ConfigsService, statsSvc *stats.StatsService, metricsHandler http.Handler) http.Handler {
 	m := mux.NewRouter()
 	m.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
 	m.HandleFunc("/debug/pprof/profile", pprof.Profile)
@@ -29,10 +30,12 @@ func NewHandler(svc *configs.ConfigsService) http.Handler {
 			http.ServeContent(rw, r, "openapi.json", time.Time{}, bytes.NewReader(openapiJSON))
 		}))
 	m.PathPrefix("/swaggerui/").Handler(http.FileServer(http.FS(swaggerui.FS)))
+	m.Handle("/metrics", metricsHandler)
 	// The generated Router builds a zero-value service; register the injected instance here.
-	var apis http.Handler = route.RouteConfigsService(mux.NewRouter(), svc)
-	apis = handlers.CombinedLoggingHandler(os.Stdout, apis)
-	m.PathPrefix("/apis/").Handler(http.StripPrefix("/apis", http.MaxBytesHandler(apis, 1<<20)))
+	apis := route.RouteConfigsService(mux.NewRouter(), svc)
+	route.RouteStatsService(apis, statsSvc)
+	apiHandler := handlers.CombinedLoggingHandler(os.Stdout, apis)
+	m.PathPrefix("/apis/").Handler(http.StripPrefix("/apis", http.MaxBytesHandler(apiHandler, 1<<20)))
 	m.PathPrefix("/").Handler(http.FileServer(http.FS(staticsFS)))
 	return handlers.RecoveryHandler()(m)
 }

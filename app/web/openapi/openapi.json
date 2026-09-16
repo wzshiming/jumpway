@@ -444,6 +444,85 @@
      }
     }
    }
+  },
+  "/stats": {
+   "get": {
+    "tags": [
+     "StatsService"
+    ],
+    "summary": "Get the traffic statistics of every enabled rule",
+    "description": "Get the traffic statistics of every enabled rule\n\n\n#route:\"GET /\"#",
+    "responses": {
+     "200": {
+      "description": "Response code is 200",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Snapshot"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Response code is 400",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string",
+         "format": "error"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "StatsService"
+    ],
+    "summary": "Reset all traffic statistics",
+    "description": "Reset all traffic statistics\n\n\n#route:\"DELETE /\"#",
+    "responses": {
+     "400": {
+      "description": "Response code is 400",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string",
+         "format": "error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/stats/connections/{id}": {
+   "delete": {
+    "tags": [
+     "StatsService"
+    ],
+    "summary": "Disconnect closes one current connection",
+    "description": "Disconnect closes one current connection\n\n\n#route:\"DELETE /connections/{id}\"#",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/id_path"
+     }
+    ],
+    "responses": {
+     "400": {
+      "description": "Response code is 400",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string",
+         "format": "error"
+        }
+       }
+      }
+     }
+    }
+   }
   }
  },
  "components": {
@@ -513,6 +592,48 @@
      }
     }
    },
+   "Connection": {
+    "required": [
+     "id",
+     "target",
+     "via",
+     "path",
+     "started",
+     "stats"
+    ],
+    "type": "object",
+    "properties": {
+     "client": {
+      "type": "string"
+     },
+     "id": {
+      "type": "integer",
+      "format": "uint64"
+     },
+     "path": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/PathHop"
+      }
+     },
+     "started": {
+      "type": "string"
+     },
+     "stats": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/Stats"
+       }
+      ]
+     },
+     "target": {
+      "type": "string"
+     },
+     "via": {
+      "type": "string"
+     }
+    }
+   },
    "Forward": {
     "type": "object",
     "properties": {
@@ -531,6 +652,38 @@
      }
     },
     "description": "Forward is the exit: connections are dialed through Way (empty = from this machine) to Host:Port, or to the proxy client's own target when Port is 0.\n"
+   },
+   "Hop": {
+    "required": [
+     "index",
+     "parent_index",
+     "stats",
+     "urls"
+    ],
+    "type": "object",
+    "properties": {
+     "index": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "parent_index": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "stats": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/Stats"
+       }
+      ]
+     },
+     "urls": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/URLStats"
+      }
+     }
+    }
    },
    "Listen": {
     "required": [
@@ -631,6 +784,27 @@
      }
     }
    },
+   "PathHop": {
+    "required": [
+     "index",
+     "url",
+     "dialed"
+    ],
+    "type": "object",
+    "properties": {
+     "dialed": {
+      "type": "boolean"
+     },
+     "index": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "url": {
+      "type": "string"
+     }
+    },
+    "description": "PathHop is one hop of a connection's actual route; Dialed is false when a cached transport was reused and URL was inferred (or unknown).\n"
+   },
    "RawConfig": {
     "required": [
      "yaml"
@@ -709,6 +883,58 @@
     },
     "description": "Rule is one entry: where connections come in and where they go out.\n"
    },
+   "RuleStats": {
+    "required": [
+     "name",
+     "stats",
+     "listen",
+     "forward",
+     "targets",
+     "connections",
+     "targets_evicted"
+    ],
+    "type": "object",
+    "properties": {
+     "connections": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Connection"
+      }
+     },
+     "forward": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Hop"
+      }
+     },
+     "listen": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Hop"
+      }
+     },
+     "name": {
+      "type": "string"
+     },
+     "stats": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/Stats"
+       }
+      ]
+     },
+     "targets": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Target"
+      }
+     },
+     "targets_evicted": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   },
    "RuleStatus": {
     "required": [
      "name",
@@ -744,6 +970,100 @@
     },
     "description": "RuleStatus is one rule's listener state; Attempt counts consecutive failed listen attempts.\n"
    },
+   "Snapshot": {
+    "required": [
+     "since",
+     "rules"
+    ],
+    "type": "object",
+    "properties": {
+     "rules": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/RuleStats"
+      }
+     },
+     "since": {
+      "type": "string"
+     }
+    }
+   },
+   "Stats": {
+    "required": [
+     "up",
+     "down",
+     "rate_up",
+     "rate_down",
+     "peak_rate_up",
+     "peak_rate_down",
+     "active",
+     "total",
+     "dials",
+     "dial_failures",
+     "latency_ms",
+     "avg_latency_ms"
+    ],
+    "type": "object",
+    "properties": {
+     "active": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "avg_latency_ms": {
+      "type": "number",
+      "format": "double"
+     },
+     "dial_failures": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "dials": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "down": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "last_active": {
+      "type": "string"
+     },
+     "last_down": {
+      "type": "string"
+     },
+     "last_up": {
+      "type": "string"
+     },
+     "latency_ms": {
+      "type": "number",
+      "format": "double"
+     },
+     "peak_rate_down": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "peak_rate_up": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "rate_down": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "rate_up": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "total": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "up": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   },
    "Status": {
     "required": [
      "address",
@@ -769,6 +1089,48 @@
      }
     },
     "description": "Status is what the web UI shows about the running app: the web UI listener and every enabled rule.\n"
+   },
+   "Target": {
+    "required": [
+     "address",
+     "via",
+     "stats"
+    ],
+    "type": "object",
+    "properties": {
+     "address": {
+      "type": "string"
+     },
+     "stats": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/Stats"
+       }
+      ]
+     },
+     "via": {
+      "type": "string"
+     }
+    }
+   },
+   "URLStats": {
+    "required": [
+     "url",
+     "stats"
+    ],
+    "type": "object",
+    "properties": {
+     "stats": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/Stats"
+       }
+      ]
+     },
+     "url": {
+      "type": "string"
+     }
+    }
    }
   },
   "responses": {
@@ -793,6 +1155,17 @@
     }
    },
    "err_body": {
+    "description": "Response code is 400",
+    "content": {
+     "text/plain": {
+      "schema": {
+       "type": "string",
+       "format": "error"
+      }
+     }
+    }
+   },
+   "err_body.1": {
     "description": "Response code is 400",
     "content": {
      "text/plain": {
@@ -846,6 +1219,16 @@
      }
     }
    },
+   "snapshot_body": {
+    "description": "Response code is 200",
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/Snapshot"
+      }
+     }
+    }
+   },
    "status_body": {
     "description": "Response code is 200",
     "content": {
@@ -858,6 +1241,16 @@
    }
   },
   "parameters": {
+   "id_path": {
+    "name": "id",
+    "in": "path",
+    "description": "\n\n#name:\"id\"#",
+    "required": true,
+    "explode": false,
+    "schema": {
+     "type": "string"
+    }
+   },
    "name_path": {
     "name": "name",
     "in": "path",
@@ -921,6 +1314,10 @@
   {
    "name": "ConfigsService",
    "description": "ConfigsService\n\n\n#path:\"/configs/\"#"
+  },
+  {
+   "name": "StatsService",
+   "description": "StatsService exposes traffic statistics of the running rules\n\n\n#path:\"/stats/\"#"
   }
  ]
 }

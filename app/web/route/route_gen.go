@@ -11,7 +11,9 @@ import (
 
 	mux "github.com/gorilla/mux"
 	githubComWzshimingJumpwayAppWebServicesConfigs "github.com/wzshiming/jumpway/app/web/services/configs"
+	githubComWzshimingJumpwayAppWebServicesStats "github.com/wzshiming/jumpway/app/web/services/stats"
 	githubComWzshimingJumpwayConfig "github.com/wzshiming/jumpway/config"
+	githubComWzshimingJumpwayMetrics "github.com/wzshiming/jumpway/metrics"
 )
 
 // notFoundHandler Is the not found of handler
@@ -31,6 +33,10 @@ func Router() http.Handler {
 	// ConfigsService Define the method scope
 	var _configsService githubComWzshimingJumpwayAppWebServicesConfigs.ConfigsService
 	RouteConfigsService(router, &_configsService)
+
+	// StatsService Define the method scope
+	var _statsService githubComWzshimingJumpwayAppWebServicesStats.StatsService
+	RouteStatsService(router, &_statsService)
 
 	router.NotFoundHandler = http.HandlerFunc(notFoundHandler)
 	return router
@@ -151,6 +157,44 @@ func RouteConfigsService(router *mux.Router, _configsService *githubComWzshiming
 	return router
 }
 
+// RouteStatsService is routing for StatsService
+func RouteStatsService(router *mux.Router, _statsService *githubComWzshimingJumpwayAppWebServicesStats.StatsService, fs ...mux.MiddlewareFunc) *mux.Router {
+	if router == nil {
+		router = mux.NewRouter()
+	}
+
+	_routeStats := router.PathPrefix("/stats").Subrouter()
+	if len(fs) != 0 {
+		_routeStats.Use(fs...)
+	}
+
+	// Registered routing GET /stats
+	var __operationGetStats http.Handler
+	__operationGetStats = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_operationGetStats(_statsService, w, r)
+	})
+	_routeStats.Methods("GET").Path("").Handler(__operationGetStats)
+
+	// Registered routing DELETE /stats
+	var __operationDeleteStats http.Handler
+	__operationDeleteStats = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_operationDeleteStats(_statsService, w, r)
+	})
+	_routeStats.Methods("DELETE").Path("").Handler(__operationDeleteStats)
+
+	// Registered routing DELETE /stats/connections/{id}
+	var __operationDeleteStatsConnectionsID http.Handler
+	__operationDeleteStatsConnectionsID = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_operationDeleteStatsConnectionsID(_statsService, w, r)
+	})
+	_routeStats.Methods("DELETE").Path("/connections/{id}").Handler(__operationDeleteStatsConnectionsID)
+
+	if router.NotFoundHandler == nil {
+		router.NotFoundHandler = http.HandlerFunc(notFoundHandler)
+	}
+	return router
+}
+
 // _requestBodyAddress Parsing the body for of address
 func _requestBodyAddress(w http.ResponseWriter, r *http.Request) (_address *githubComWzshimingJumpwayConfig.Address, err error) {
 
@@ -188,6 +232,20 @@ func _requestBodyConf(w http.ResponseWriter, r *http.Request) (_conf *githubComW
 	}
 
 	err = json.Unmarshal(__conf, &_conf)
+	if err != nil {
+		http.Error(w, err.Error(), 400)
+
+		return
+	}
+
+	return
+}
+
+// _requestPathID Parsing the path for of id
+func _requestPathID(w http.ResponseWriter, r *http.Request) (_id string, err error) {
+
+	var _rawID = mux.Vars(r)["id"]
+	_id = string(_rawID)
 	if err != nil {
 		http.Error(w, err.Error(), 400)
 
@@ -818,6 +876,103 @@ func _operationPostConfigsRules(s *githubComWzshimingJumpwayAppWebServicesConfig
 	// Response code 400 Bad Request for err.
 	if _err != nil {
 		http.Error(w, _err.Error(), 400)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(200)
+	w.Write([]byte("null"))
+
+	return
+}
+
+// _operationDeleteStats Is the route of Reset
+func _operationDeleteStats(s *githubComWzshimingJumpwayAppWebServicesStats.StatsService, w http.ResponseWriter, r *http.Request) {
+	// responses github.com/wzshiming/jumpway/app/web/services/stats StatsService.Reset.err
+	var _err_1 error
+
+	// Call github.com/wzshiming/jumpway/app/web/services/stats StatsService.Reset.
+	_err_1 = s.Reset()
+
+	// Response code 400 Bad Request for err.
+	if _err_1 != nil {
+		http.Error(w, _err_1.Error(), 400)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(200)
+	w.Write([]byte("null"))
+
+	return
+}
+
+// _operationGetStats Is the route of Get
+func _operationGetStats(s *githubComWzshimingJumpwayAppWebServicesStats.StatsService, w http.ResponseWriter, r *http.Request) {
+	// responses github.com/wzshiming/jumpway/app/web/services/stats StatsService.Get.snapshot
+	var _snapshot *githubComWzshimingJumpwayMetrics.Snapshot
+	// responses github.com/wzshiming/jumpway/app/web/services/stats StatsService.Get.err
+	var _err_1 error
+
+	// Call github.com/wzshiming/jumpway/app/web/services/stats StatsService.Get.
+	_snapshot, _err_1 = s.Get()
+
+	// Response code 200 OK for snapshot.
+	if _snapshot != nil {
+		var __snapshot []byte
+		__snapshot, _err_1 = json.Marshal(_snapshot)
+		if _err_1 != nil {
+			http.Error(w, _err_1.Error(), 500)
+
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(200)
+		w.Write(__snapshot)
+		return
+	}
+
+	// Response code 400 Bad Request for err.
+	if _err_1 != nil {
+		http.Error(w, _err_1.Error(), 400)
+		return
+	}
+
+	var __snapshot []byte
+	__snapshot, _err_1 = json.Marshal(_snapshot)
+	if _err_1 != nil {
+		http.Error(w, _err_1.Error(), 500)
+
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(200)
+	w.Write(__snapshot)
+
+	return
+}
+
+// _operationDeleteStatsConnectionsID Is the route of Disconnect
+func _operationDeleteStatsConnectionsID(s *githubComWzshimingJumpwayAppWebServicesStats.StatsService, w http.ResponseWriter, r *http.Request) {
+	// requests github.com/wzshiming/jumpway/app/web/services/stats StatsService.Disconnect.id
+	var _id string
+	// responses github.com/wzshiming/jumpway/app/web/services/stats StatsService.Disconnect.err
+	var _err_1 error
+
+	// Parsing id.
+	_id, _err_1 = _requestPathID(w, r)
+	if _err_1 != nil {
+		return
+	}
+
+	// Call github.com/wzshiming/jumpway/app/web/services/stats StatsService.Disconnect.
+	_err_1 = s.Disconnect(_id)
+
+	// Response code 400 Bad Request for err.
+	if _err_1 != nil {
+		http.Error(w, _err_1.Error(), 400)
 		return
 	}
 

@@ -20,7 +20,7 @@ func RunForward(ctx context.Context, listener net.Listener, dialer bridge.Dialer
 			return err
 		}
 		go func() {
-			remote, err := dialer.DialContext(ctx, "tcp", target)
+			remote, err := dialer.DialContext(WithClientAddr(ctx, conn.RemoteAddr()), "tcp", target)
 			if err != nil {
 				conn.Close()
 				return

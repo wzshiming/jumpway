@@ -12,9 +12,11 @@ import (
 	"github.com/gogpu/systray"
 	"github.com/wzshiming/jumpway/app/web"
 	"github.com/wzshiming/jumpway/app/web/services/configs"
+	"github.com/wzshiming/jumpway/app/web/services/stats"
 	"github.com/wzshiming/jumpway/config"
 	"github.com/wzshiming/jumpway/i18n"
 	"github.com/wzshiming/jumpway/log"
+	"github.com/wzshiming/jumpway/metrics"
 	"github.com/wzshiming/notify"
 )
 
@@ -26,9 +28,12 @@ type App struct {
 	actions chan func()
 	store   *config.Store
 	web     http.Handler
+	metrics *metrics.Registry
 
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
+	root          context.Context
+	cancel        context.CancelFunc
+	metricsCancel context.CancelFunc
+	wg            sync.WaitGroup
 
 	webListener net.Listener
 	webServer   *http.Server
@@ -39,9 +44,17 @@ type App struct {
 	webErr             error
 	lastErr            error
 	rules              []*ruleState
+	runtimes           map[string]*ruleRuntime
 	menuItems          *menuItems
 	systemProxyRule    string
 	systemProxyAddress string
+}
+
+type ruleRuntime struct {
+	fingerprint string
+	state       *ruleState
+	cancel      context.CancelFunc
+	done        chan struct{}
 }
 
 type ruleState struct {
@@ -61,6 +74,7 @@ func NewApp(store *config.Store) *App {
 	a := &App{
 		actions: make(chan func()),
 		store:   store,
+		metrics: metrics.NewRegistry(),
 	}
 	notify.On(os.Interrupt, a.Quit)
 	return a
@@ -86,13 +100,19 @@ func (a *App) Run() {
 		return
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	a.mu.Lock()
+	a.metricsCancel = cancel
+	a.mu.Unlock()
+	go a.metrics.Run(ctx)
+
 	go func() {
 		for fn := range a.actions {
 			fn()
 		}
 	}()
 
-	a.web = web.NewHandler(configs.NewConfigsService(a.store, a))
+	a.web = web.NewHandler(configs.NewConfigsService(a.store, a), stats.NewStatsService(a.metrics), metrics.NewHandler(a.metrics))
 	a.tray = systray.New()
 	a.onReady()
 	err = a.tray.Run()
@@ -180,9 +200,13 @@ func (a *App) webURL() string {
 func (a *App) stop() {
 	a.mu.Lock()
 	cancel, server := a.cancel, a.webServer
+	metricsCancel := a.metricsCancel
 	a.mu.Unlock()
 	if cancel != nil {
 		cancel()
+	}
+	if metricsCancel != nil {
+		metricsCancel()
 	}
 	if server != nil {
 		server.Close()
