@@ -1154,18 +1154,13 @@
     const detail = find(".stage-detail", targets);
     detail.hidden = false;
     detail.textContent = entries.length ? t("targetCount", { count: formatCount(new Set(entries.map(entry => entry.address)).size) }) : t("noTargets");
-    const rows = find(".stage-targets", targets);
-    rows.hidden = !entries.length;
-    const total = entry => (entry.stats?.up || 0) + (entry.stats?.down || 0);
-    rows.replaceChildren(...entries.slice().sort((left, right) => total(right) - total(left)).slice(0, 5).map(entry => {
-      const row = clone("stage-target");
-      find(".target-address", row).textContent = entry.address;
-      const via = find(".target-via", row);
-      via.textContent = entry.via ? displayURL(entry.via) : t("direct");
-      via.title = entry.via || "";
-      renderStats(find(".target-totals", row), entry.stats);
-      return row;
-    }));
+    const count = list(rule.connections).length;
+    if (count) {
+      const link = document.createElement("a");
+      link.href = statsRoute("connections", rule.name);
+      link.textContent = t("connectionCount", { count: formatCount(count) }) + " \u2192";
+      detail.append(" \u00b7 ", link);
+    }
     chain.replaceChildren(clients, ...listen.map(hop => hopStage(hop, "listen", listen.length - 1)),
       stage(t("thisMachine") + " \u00b7 " + address),
       ...(forward.length ? forward.slice().reverse().map(hop => hopStage(hop, "forward", forward.length - 1)) : [stage(t("directStage"))]), targets);
