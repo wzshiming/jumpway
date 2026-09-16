@@ -2,6 +2,7 @@ package tray
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,6 +11,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -881,6 +884,65 @@ func TestReloadBindFailuresRetryIndependently(test *testing.T) {
 	status = waitForStatus(test, app, func(status configs.Status) bool { return status.Rules[0].Running })
 	if status.Rules[0].Attempt != 0 || status.Rules[0].Error != "" || app.primaryAddress() != occupied.Addr().String() {
 		test.Fatalf("retry did not recover: %+v", status)
+	}
+}
+
+func TestReloadAlertsOnceOnBindFailure(test *testing.T) {
+	if os.Getenv("JUMPWAY_TEST_OCCUPIED_EPISODE") != "" {
+		occupied := occupyPort(test)
+		app := newTestApp(test, &config.Config{Rules: []config.Rule{
+			{Name: "occupied", Listen: config.Listen{Port: uint32(occupied.Addr().(*net.TCPAddr).Port)}},
+		}})
+		if err := app.Reload(); err == nil {
+			test.Fatal("reload bound an occupied port")
+		}
+		waitForStatus(test, app, func(status configs.Status) bool { return status.Rules[0].Attempt >= 3 })
+		occupied.Close()
+		waitForStatus(test, app, func(status configs.Status) bool { return status.Rules[0].Running })
+		return
+	}
+	// The logger writes to the process's stderr, so the episode runs in a child test binary.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, os.Args[0], "-test.run=^"+test.Name()+"$", "-test.count=1", "-test.timeout=20s")
+	command.WaitDelay = time.Second
+	command.Env = append(os.Environ(), "JUMPWAY_TEST_OCCUPIED_EPISODE=1")
+	var stdout, stderr bytes.Buffer
+	command.Stdout, command.Stderr = &stdout, &stderr
+	if err := command.Run(); err != nil {
+		test.Fatalf("episode child: %v\n%s%s", err, stdout.String(), stderr.String())
+	}
+	var errorLines, warnLines, infoLines []string
+	for _, line := range strings.Split(stderr.String(), "\n") {
+		if !strings.Contains(line, " rule=occupied") {
+			continue
+		}
+		switch {
+		case strings.Contains(line, " level=ERROR "):
+			errorLines = append(errorLines, line)
+		case strings.Contains(line, " level=WARN "):
+			warnLines = append(warnLines, line)
+		case strings.Contains(line, " level=INFO "):
+			infoLines = append(infoLines, line)
+		}
+	}
+	if len(errorLines) != 1 || len(warnLines) < 2 || len(infoLines) != 1 {
+		test.Fatalf("occupied rule logged %d ERROR, %d WARN and %d INFO lines, want 1 ERROR, >= 2 WARN and 1 INFO:\n%s", len(errorLines), len(warnLines), len(infoLines), stderr.String())
+	}
+	first := errorLines[0]
+	start, end := strings.Index(first, " msg="), strings.Index(first, " err=")
+	if start < 0 || end < start || !strings.Contains(first, " attempt=1 ") {
+		test.Fatalf("first failure = %q, want msg, err and attempt=1", first)
+	}
+	msg := first[start:end]
+	for _, line := range warnLines {
+		if !strings.Contains(line, msg) || !strings.Contains(line, " err=") || !strings.Contains(line, " attempt=") ||
+			strings.Contains(line, " attempt=1 ") || !strings.Contains(line, " backoff=") {
+			test.Fatalf("retry = %q, want%s with err, attempt >= 2 and backoff", line, msg)
+		}
+	}
+	if strings.Contains(infoLines[0], " attempt=") {
+		test.Fatalf("recovery = %q, want a bound address", infoLines[0])
 	}
 }
 

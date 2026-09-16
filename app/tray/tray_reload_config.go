@@ -146,8 +146,11 @@ func (a *App) reload() error {
 				} else {
 					log.Info(i18n.Listen(address), "rule", rule.Name, "target", target)
 				}
-			} else {
+			} else if event.Attempt <= 1 {
 				log.Error(event.Err, i18n.Listen(address), "rule", rule.Name, "attempt", event.Attempt, "backoff", event.Backoff)
+			} else {
+				// Only the first failure of an outage alerts; retries stay in the log.
+				log.Warn(i18n.Listen(address), "err", event.Err, "rule", rule.Name, "attempt", event.Attempt, "backoff", event.Backoff)
 			}
 			a.updateStatus()
 			once.Do(func() { first <- event.Err })
