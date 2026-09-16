@@ -489,6 +489,7 @@ func TestStoreInit(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			store := NewStore(filepath.Join(t.TempDir(), ".jumpway"))
 			want := defaultConfig
+			wantMode := os.FileMode(0o600)
 			if name != "missing" {
 				content := ""
 				if name == "existing" {
@@ -498,6 +499,10 @@ func TestStoreInit(t *testing.T) {
 				if err := store.SaveRaw([]byte(content)); err != nil {
 					t.Fatal(err)
 				}
+				if err := os.Chmod(store.Path(), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				wantMode = 0o644
 			}
 			if err := store.Init(); err != nil {
 				t.Fatal(err)
@@ -508,6 +513,15 @@ func TestStoreInit(t *testing.T) {
 			}
 			if string(data) != want {
 				t.Fatalf("LoadRaw() after Init() = %q, want %q", data, want)
+			}
+			if runtime.GOOS != "windows" {
+				info, err := os.Stat(store.Path())
+				if err != nil {
+					t.Fatal(err)
+				}
+				if info.Mode().Perm() != wantMode {
+					t.Fatalf("config mode after Init() = %04o, want %04o", info.Mode().Perm(), wantMode)
+				}
 			}
 		})
 	}
@@ -565,6 +579,12 @@ func TestNoProxyHTTPCacheIsolation(t *testing.T) {
 func TestStoreSaveRawAtomic(t *testing.T) {
 	t.Run("replace", func(t *testing.T) {
 		store := NewStore(t.TempDir())
+		if err := os.WriteFile(store.Path(), []byte("# stale\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(store.Path(), 0o644); err != nil {
+			t.Fatal(err)
+		}
 		for _, content := range []string{"# first\nweb_ui:\n  port: 1088\n", "# latest\nweb_ui:\n  port: 0\n"} {
 			if err := store.SaveRaw([]byte(content)); err != nil {
 				t.Fatal(err)
@@ -588,8 +608,8 @@ func TestStoreSaveRawAtomic(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if info.Mode().Perm() != 0o644 {
-			t.Fatalf("config mode = %04o, want 0644", info.Mode().Perm())
+		if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
+			t.Fatalf("config mode = %04o, want 0600", info.Mode().Perm())
 		}
 	})
 	t.Run("concurrent", func(t *testing.T) {

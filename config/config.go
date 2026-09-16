@@ -181,7 +181,7 @@ func (s *Store) Init() error {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0755); err != nil {
 		return err
 	}
-	return os.WriteFile(s.path, []byte(defaultConfig), 0644)
+	return os.WriteFile(s.path, []byte(defaultConfig), 0600)
 }
 
 func (s *Store) Load() (*Config, error) {
@@ -302,7 +302,7 @@ func (s *Store) SaveRaw(data []byte) error {
 		tmpFile.Close()
 		return err
 	}
-	if err := tmpFile.Chmod(0644); err != nil {
+	if err := tmpFile.Chmod(0600); err != nil {
 		tmpFile.Close()
 		return err
 	}
