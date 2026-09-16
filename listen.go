@@ -7,12 +7,11 @@ import (
 	"strings"
 
 	"github.com/wzshiming/bridge"
-	"github.com/wzshiming/bridge/chain"
 	"github.com/wzshiming/bridge/config"
 	"github.com/wzshiming/bridge/protocols/local"
 )
 
-func NewListenConfig(ctx context.Context, way []config.Node) (bridge.ListenConfig, error) {
+func NewListenConfig(ctx context.Context, way []config.Node, wrap HopWrapper) (bridge.ListenConfig, error) {
 	if len(way) == 0 {
 		return local.LOCAL, nil
 	}
@@ -27,10 +26,7 @@ func NewListenConfig(ctx context.Context, way []config.Node) (bridge.ListenConfi
 			return nil, fmt.Errorf("the first hop %q cannot listen: SOCKS BIND is not a listener", hop.Redacted())
 		}
 	}
-	// NewEnvDialer wraps the chain for NO_PROXY/ONLY_PROXY and loses ListenConfig.
-	listenChain := *chain.Default
-	listenChain.DialerFunc = nil
-	dialer, err := listenChain.BridgeChainWithConfig(ctx, local.LOCAL, way...)
+	dialer, err := NewChainDialer(ctx, local.LOCAL, way, wrap)
 	if err != nil {
 		return nil, err
 	}
