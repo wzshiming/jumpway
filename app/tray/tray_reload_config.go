@@ -22,6 +22,9 @@ import (
 	"github.com/wzshiming/jumpway/utils"
 )
 
+// firstEventTimeout bounds how long one reload waits for every new rule's first listen event.
+var firstEventTimeout = 2 * time.Second
+
 func (a *App) ItemReloadConfig(menu *systray.Menu) {
 	menu.Add(i18n.ReloadConfig(), func() {
 		a.do(func() { _ = a.reload() })
@@ -103,7 +106,7 @@ func (a *App) reload() error {
 	a.rules = rules
 	a.mu.Unlock()
 
-	timer := time.NewTimer(2 * time.Second)
+	timer := time.NewTimer(firstEventTimeout)
 	defer timer.Stop()
 	firsts := make([]chan error, len(enabled))
 	for index, rule := range enabled {
