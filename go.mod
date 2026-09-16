@@ -17,10 +17,11 @@ require (
 	github.com/wzshiming/notify v0.1.1
 	github.com/wzshiming/openapiui/v2 v2.0.0
 	github.com/wzshiming/sshd v0.2.5
-	github.com/wzshiming/sshproxy v0.6.0
+	github.com/wzshiming/sshproxy v0.6.1
 	github.com/wzshiming/sysnotify v0.0.2
 	github.com/wzshiming/sysproxy v0.2.2
 	github.com/wzshiming/systheme v0.0.1
+	golang.org/x/crypto v0.55.0
 	golang.org/x/text v0.41.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -40,7 +41,6 @@ require (
 	github.com/wzshiming/socks4 v0.4.0 // indirect
 	github.com/wzshiming/socks5 v0.7.0 // indirect
 	github.com/wzshiming/trie v0.3.1 // indirect
-	golang.org/x/crypto v0.55.0 // indirect
 	golang.org/x/net v0.57.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
