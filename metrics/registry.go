@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/netip"
 	"net/url"
 	"sync"
 	"sync/atomic"
@@ -12,6 +13,7 @@ import (
 	"github.com/wzshiming/bridge"
 	bridgeconfig "github.com/wzshiming/bridge/config"
 	"github.com/wzshiming/jumpway/config"
+	"github.com/wzshiming/jumpway/netproc"
 )
 
 type Role int
@@ -24,13 +26,15 @@ const (
 const MaxTargets = 1000
 
 type Registry struct {
-	mu       sync.RWMutex
-	nextID   atomic.Uint64
-	since    time.Time
-	lastTick time.Time
-	rules    map[string]*Rule
-	order    []string
-	live     map[uint64]*live
+	mu        sync.RWMutex
+	nextID    atomic.Uint64
+	since     time.Time
+	lastTick  time.Time
+	rules     map[string]*Rule
+	order     []string
+	live      map[uint64]*live
+	lookup    func(context.Context) (map[netip.AddrPort]netproc.Process, error)
+	resolving sync.Mutex
 }
 
 type Rule struct {
@@ -81,6 +85,8 @@ type live struct {
 	id      uint64
 	rule    *Rule
 	client  string
+	pending netip.AddrPort
+	process netproc.Process
 	target  string
 	via     string
 	path    []PathHop
@@ -91,7 +97,13 @@ type live struct {
 
 func NewRegistry() *Registry {
 	now := time.Now()
-	return &Registry{since: now, lastTick: now, rules: make(map[string]*Rule), live: make(map[uint64]*live)}
+	return &Registry{
+		since:    now,
+		lastTick: now,
+		rules:    make(map[string]*Rule),
+		live:     make(map[uint64]*live),
+		lookup:   netproc.Owners,
+	}
 }
 
 func (r *Registry) Sync(rules []config.Rule) {

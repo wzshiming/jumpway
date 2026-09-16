@@ -616,6 +616,14 @@
        "$ref": "#/components/schemas/PathHop"
       }
      },
+     "process": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/Process"
+       }
+      ],
+      "description": "Process identifies the local process that owns a TCP socket.\n"
+     },
      "started": {
       "type": "string"
      },
@@ -804,6 +812,24 @@
      }
     },
     "description": "PathHop is one hop of a connection's actual route; Dialed is false when a cached transport was reused and URL was inferred (or unknown).\n"
+   },
+   "Process": {
+    "required": [
+     "pid",
+     "name"
+    ],
+    "type": "object",
+    "properties": {
+     "name": {
+      "type": "string",
+      "description": "Name may be empty when the process cannot be inspected.\n"
+     },
+     "pid": {
+      "type": "integer",
+      "format": "int64"
+     }
+    },
+    "description": "Process identifies the local process that owns a TCP socket.\n"
    },
    "RawConfig": {
     "required": [

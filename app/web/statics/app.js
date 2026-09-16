@@ -438,6 +438,10 @@
     }
   }
 
+  function clientLabel(connection) {
+    return connection.process?.name || displayClient(connection.client);
+  }
+
   function filterConnections(connections, rule, query) {
     const needle = text(query).trim().toLocaleLowerCase(language);
     const matches = value => {
@@ -451,15 +455,16 @@
       return true;
     };
     return connections.filter(connection => (!rule || connection.rule === rule)
-      && [connection.target, connection.client, connection.rule].some(matches));
+      && [connection.target, connection.client, connection.rule, connection.process?.name].some(matches));
   }
 
   function sortConnections(connections, sort = { key: "started", direction: "descending" }) {
     const direction = sort.direction === "ascending" ? 1 : -1;
-    const value = connection => sort.key in connection ? connection[sort.key] : connection.stats?.[sort.key];
+    const value = connection => sort.key === "client" ? clientLabel(connection)
+      : sort.key in connection ? connection[sort.key] : connection.stats?.[sort.key];
     return connections.slice().sort((left, right) => {
       const comparison = ["rule", "client", "target"].includes(sort.key)
-        ? text(left[sort.key]).localeCompare(text(right[sort.key]), language, { numeric: true })
+        ? text(value(left)).localeCompare(text(value(right)), language, { numeric: true })
         : ["started", "last_up", "last_down"].includes(sort.key)
           ? (Date.parse(value(left)) || 0) - (Date.parse(value(right)) || 0)
           : (Number(value(left)) || 0) - (Number(value(right)) || 0);
@@ -1439,8 +1444,10 @@
         link.textContent = connection.rule;
         link.href = statsRoute("stats", connection.rule);
         const client = find(".connection-client", row);
-        client.textContent = displayClient(connection.client);
-        client.title = connection.client || "";
+        client.textContent = clientLabel(connection);
+        client.title = connection.process
+          ? (connection.process.name ? connection.process.name + " " : "") + "(" + connection.process.pid + ") " + text(connection.client)
+          : connection.client || "";
         find(".connection-target", row).textContent = connection.target;
         const hint = find(".path-hint", row);
         hint.dataset.tip = formatConnectionPath(connection);

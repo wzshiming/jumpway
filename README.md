@@ -139,7 +139,11 @@ server shared by several rules is one row, expandable into its endpoints and
 the rules that use them. `Connections` lists every current connection with its
 client IP, rule (the hops it actually went through are shown on hover), target,
 bytes, rates and duration, sortable and filterable, with a `Disconnect` button
-that closes it. Rule names on these pages open the rule's row in `Statistics`;
+that closes it. For loopback clients of rules that listen locally, the client
+column shows the local process that opened the connection instead of its IP
+(PID and address on hover), resolved through `lsof` on macOS, `/proc` on Linux
+and the IP Helper API on Windows, limited to processes jumpway is allowed to
+inspect. Rule names on these pages open the rule's row in `Statistics`;
 editing stays on the rule tabs. Proxy URLs are shown as `scheme://host:port`.
 The counters live in memory since the process started, survive reloads for
 unchanged rule names and for URLs that keep their position in a chain, and keep
