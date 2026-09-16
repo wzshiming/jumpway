@@ -72,7 +72,7 @@ func (d *ruleDialer) DialContext(ctx context.Context, network, address string) (
 	now := time.Now()
 	trace.mu.Lock()
 	defer trace.mu.Unlock()
-	key := targetKey{address: address, via: trace.urls[0]}
+	key := targetKey{address: address, via: endpoint(trace.urls[0])}
 	registry := d.rule.registry
 	registry.mu.Lock()
 	defer registry.mu.Unlock()

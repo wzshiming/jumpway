@@ -74,17 +74,17 @@ jumpway_rule_peak_bandwidth_bytes_per_second{direction="up",rule="b"} 0
 # HELP jumpway_target_dials_total Total number of dial attempts.
 # TYPE jumpway_target_dials_total counter
 jumpway_target_dials_total{rule="a",target="example.com:443",via=""} 1
-jumpway_target_dials_total{rule="a",target="example.com:443",via="ssh://u:xxxxx@h:22"} 2
+jumpway_target_dials_total{rule="a",target="example.com:443",via="ssh://h:22"} 2
 # HELP jumpway_target_last_transfer_timestamp_seconds Unix timestamp of the last byte transferred in each direction.
 # TYPE jumpway_target_last_transfer_timestamp_seconds gauge
-jumpway_target_last_transfer_timestamp_seconds{direction="down",rule="a",target="example.com:443",via="ssh://u:xxxxx@h:22"} 100.75
-jumpway_target_last_transfer_timestamp_seconds{direction="up",rule="a",target="example.com:443",via="ssh://u:xxxxx@h:22"} 100.25
+jumpway_target_last_transfer_timestamp_seconds{direction="down",rule="a",target="example.com:443",via="ssh://h:22"} 100.75
+jumpway_target_last_transfer_timestamp_seconds{direction="up",rule="a",target="example.com:443",via="ssh://h:22"} 100.25
 # HELP jumpway_target_peak_bandwidth_bytes_per_second Highest bytes per second observed in a completed sampling window since the last reset.
 # TYPE jumpway_target_peak_bandwidth_bytes_per_second gauge
 jumpway_target_peak_bandwidth_bytes_per_second{direction="down",rule="a",target="example.com:443",via=""} 0
 jumpway_target_peak_bandwidth_bytes_per_second{direction="up",rule="a",target="example.com:443",via=""} 0
-jumpway_target_peak_bandwidth_bytes_per_second{direction="down",rule="a",target="example.com:443",via="ssh://u:xxxxx@h:22"} 5
-jumpway_target_peak_bandwidth_bytes_per_second{direction="up",rule="a",target="example.com:443",via="ssh://u:xxxxx@h:22"} 3
+jumpway_target_peak_bandwidth_bytes_per_second{direction="down",rule="a",target="example.com:443",via="ssh://h:22"} 5
+jumpway_target_peak_bandwidth_bytes_per_second{direction="up",rule="a",target="example.com:443",via="ssh://h:22"} 3
 `
 	if err := testutil.CollectAndCompare(collector, strings.NewReader(expected),
 		"jumpway_rule_peak_bandwidth_bytes_per_second", "jumpway_rule_last_transfer_timestamp_seconds",
@@ -269,7 +269,7 @@ func TestCollectorGather(t *testing.T) {
 			{labels: map[string]string{"rule": "a", "way": "forward", "hop": "0", "url": "ssh://u:xxxxx@h:22"}, up: 3, down: 5, total: 1, active: 1, dials: 2, failures: 1, duration: 0.012345678, activity: 100},
 		},
 		"target": {
-			{labels: map[string]string{"rule": "a", "target": "example.com:443", "via": "ssh://u:xxxxx@h:22"}, up: 3, down: 5, total: 1, active: 1, dials: 2, failures: 1, duration: 0.012345678, activity: 100},
+			{labels: map[string]string{"rule": "a", "target": "example.com:443", "via": "ssh://h:22"}, up: 3, down: 5, total: 1, active: 1, dials: 2, failures: 1, duration: 0.012345678, activity: 100},
 			{labels: map[string]string{"rule": "a", "target": "example.com:443", "via": ""}, dials: 1, failures: 1, activity: 100},
 		},
 	}

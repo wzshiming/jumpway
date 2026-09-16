@@ -162,11 +162,11 @@ func TestRuleDialerTargets(t *testing.T) {
 		url  string
 		err  error
 	}{
-		{name: "forward chain", role: Forward, url: "ssh://user:secret@exit:22", via: "ssh://user:xxxxx@exit:22"},
+		{name: "forward chain", role: Forward, url: "ssh://user:secret@exit:22", via: "ssh://exit:22"},
 		{name: "listen chain", role: Listen, url: "ssh://user:secret@exit:22"},
 		{name: "direct"},
 		{name: "failed direct", err: failure},
-		{name: "failed chain", role: Forward, url: "ssh://user:secret@exit:22", via: "ssh://user:xxxxx@exit:22", err: failure},
+		{name: "failed chain", role: Forward, url: "ssh://user:secret@exit:22", via: "ssh://exit:22", err: failure},
 		{name: "invalid URL", role: Forward, url: "ssh://user:secret@%zz", via: "<invalid url>"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -258,7 +258,7 @@ func TestRuleDialerTargets(t *testing.T) {
 				path := []map[string]any{}
 				if test.role == Forward && test.url != "" {
 					path = append(path,
-						map[string]any{"index": float64(0), "url": test.via, "dialed": true},
+						map[string]any{"index": float64(0), "url": redact(test.url), "dialed": true},
 						map[string]any{"index": float64(1), "url": "socks5://entry:1080", "dialed": true},
 					)
 				}
@@ -329,7 +329,7 @@ func TestTargetViaUnderFailover(t *testing.T) {
 			}
 			snapshot := registry.Snapshot().Rules[0]
 			targets := snapshot.Targets
-			if len(targets) != 1 || targets[0].Via != "ssh://user:xxxxx@good:22" {
+			if len(targets) != 1 || targets[0].Via != "ssh://good:22" {
 				t.Fatalf("targets = %+v, want via the URL that was tried last", targets)
 			}
 			if test.goodErr == nil {
@@ -342,6 +342,39 @@ func TestTargetViaUnderFailover(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Exit URLs that differ only in credentials or options are one endpoint, like the Web UI shows them.
+func TestTargetViaGroupsByEndpoint(t *testing.T) {
+	registry := NewRegistry()
+	registry.Sync([]config.Rule{{Name: "rule"}})
+	rule := registry.Rule("rule")
+	wrap := rule.HopWrapper(Forward)
+	base := bridge.DialFunc(func(context.Context, string, string) (net.Conn, error) {
+		connected, peer := net.Pipe()
+		closeOnCleanup(t, connected)
+		closeOnCleanup(t, peer)
+		return connected, nil
+	})
+	for _, raw := range []string{"ssh://alice:secret@exit:22", "ssh://bob:secret@exit:22?identity_file=%2Fkeys%2Fbob"} {
+		connected, err := rule.WrapDialer(wrap(0, raw, base)).DialContext(context.Background(), "tcp", "example.com:443")
+		if err != nil {
+			t.Fatal(err)
+		}
+		closeOnCleanup(t, connected)
+	}
+	snapshot := registry.Snapshot().Rules[0]
+	if len(snapshot.Targets) != 1 || snapshot.Targets[0].Via != "ssh://exit:22" || snapshot.Targets[0].Stats.Dials != 2 {
+		t.Fatalf("targets = %+v, want one target via ssh://exit:22 with two dials", snapshot.Targets)
+	}
+	if urls := snapshot.Forward[0].URLs; len(urls) != 2 || urls[0].URL == urls[1].URL {
+		t.Fatalf("hop URLs = %+v, want two distinct redacted URLs", urls)
+	}
+	for _, connection := range snapshot.Connections {
+		if connection.Via != "ssh://exit:22" || connection.Path[0].URL == connection.Via {
+			t.Fatalf("connection = %+v, want endpoint via and the full redacted URL in the path", connection)
+		}
 	}
 }
 

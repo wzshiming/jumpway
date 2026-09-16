@@ -279,3 +279,12 @@ func redact(raw string) string {
 	}
 	return parsed.Redacted()
 }
+
+// endpoint keeps scheme and host:port only, so targets group by the exit server they went through.
+func endpoint(redacted string) string {
+	parsed, err := url.Parse(redacted)
+	if err != nil || parsed.Host == "" {
+		return redacted
+	}
+	return parsed.Scheme + "://" + parsed.Host
+}
