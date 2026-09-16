@@ -17,6 +17,7 @@ import (
 	"github.com/wzshiming/jumpway/app/web/services/stats"
 	"github.com/wzshiming/jumpway/config"
 	"github.com/wzshiming/jumpway/metrics"
+	"github.com/wzshiming/jumpway/netproc"
 )
 
 const testConfigYAML = "web_ui:\n" +
@@ -150,6 +151,7 @@ func TestStatsGet(t *testing.T) {
 			Targets: []metrics.Target{{Address: "example.com:443", Via: "ssh://u:xxxxx@h:22"}},
 			Connections: []metrics.Connection{{
 				ID: 42, Client: "127.0.0.1:12345", Target: "example.com:443", Via: "ssh://u:xxxxx@h:22",
+				Process: &netproc.Process{PID: 4242, Name: "curl"},
 				Path:    []metrics.PathHop{{Index: 0, URL: "ssh://u:xxxxx@h:22", Dialed: true}},
 				Started: "2026-09-15T12:00:01.123Z",
 				Stats: metrics.Stats{
@@ -227,6 +229,7 @@ func TestStatsGet(t *testing.T) {
 	}
 	want := map[string]any{
 		"id": float64(42), "client": "127.0.0.1:12345", "target": "example.com:443", "via": "ssh://u:xxxxx@h:22",
+		"process": map[string]any{"pid": float64(4242), "name": "curl"},
 		"path":    []any{map[string]any{"index": float64(0), "url": "ssh://u:xxxxx@h:22", "dialed": true}},
 		"started": "2026-09-15T12:00:01.123Z",
 		"stats": map[string]any{

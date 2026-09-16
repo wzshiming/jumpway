@@ -5,15 +5,19 @@ import (
 	"encoding/json"
 	"errors"
 	"net"
+	"net/netip"
 	"reflect"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/wzshiming/bridge"
 	bridgeconfig "github.com/wzshiming/bridge/config"
+	"github.com/wzshiming/jumpway"
 	"github.com/wzshiming/jumpway/config"
+	"github.com/wzshiming/jumpway/netproc"
 )
 
 func TestSnapshotJSON(t *testing.T) {
@@ -160,6 +164,184 @@ func TestSnapshotTransferJSON(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSnapshotResolvesProcess(t *testing.T) {
+	dial := func(rule *Rule, client net.Addr) {
+		inner, peer := net.Pipe()
+		closeOnCleanup(t, peer)
+		ctx := context.Background()
+		if client != nil {
+			ctx = jumpway.WithClientAddr(ctx, client)
+		}
+		connected, err := rule.WrapDialer(bridge.DialFunc(func(context.Context, string, string) (net.Conn, error) {
+			return inner, nil
+		})).DialContext(ctx, "tcp", "example.com:443")
+		if err != nil {
+			t.Fatal(err)
+		}
+		closeOnCleanup(t, connected)
+	}
+	client := &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12345}
+	want := &netproc.Process{PID: 4242, Name: "curl"}
+	owners := map[netip.AddrPort]netproc.Process{netip.MustParseAddrPort("127.0.0.1:12345"): *want}
+	t.Run("resolution", func(t *testing.T) {
+		registry := NewRegistry()
+		registry.lookup = nil
+		registry.Sync([]config.Rule{
+			{Name: "local"},
+			{Name: "remote", Listen: config.Listen{Way: []bridgeconfig.Node{{LB: []string{"ssh://user:secret@entry:22"}}}}},
+		})
+		local := registry.Rule("local")
+		dial(local, client)
+		dial(local, &net.TCPAddr{IP: net.ParseIP("::1"), Port: 12346})
+		dial(local, &net.TCPAddr{IP: net.ParseIP("10.0.0.1"), Port: 1})
+		dial(registry.Rule("remote"), &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12347})
+		dial(local, nil)
+		for _, rule := range registry.Snapshot().Rules {
+			for _, connection := range rule.Connections {
+				if connection.Process != nil {
+					t.Fatalf("without lookup: connection = %+v", connection)
+				}
+			}
+		}
+		var calls atomic.Int32
+		registry.lookup = func(ctx context.Context) (map[netip.AddrPort]netproc.Process, error) {
+			calls.Add(1)
+			if _, ok := ctx.Deadline(); !ok {
+				t.Error("lookup context has no deadline")
+			}
+			return owners, nil
+		}
+		snapshot := registry.Snapshot()
+		if calls.Load() != 1 || !reflect.DeepEqual(snapshot.Rules[0].Connections[0].Process, want) {
+			t.Fatalf("first Snapshot: calls = %d, process = %+v, want %+v", calls.Load(), snapshot.Rules[0].Connections[0].Process, want)
+		}
+		for _, rule := range snapshot.Rules {
+			for _, connection := range rule.Connections {
+				if connection.ID != 1 && connection.Process != nil {
+					t.Fatalf("unexpected process: connection = %+v", connection)
+				}
+			}
+		}
+		registry.Snapshot()
+		if calls.Load() != 1 {
+			t.Fatalf("second Snapshot: calls = %d, want 1", calls.Load())
+		}
+		dial(local, &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12348})
+		registry.Snapshot()
+		if calls.Load() != 2 {
+			t.Fatalf("new connection: calls = %d, want 2", calls.Load())
+		}
+		snapshot.Rules[0].Connections[0].Process.Name = "changed"
+		snapshot = registry.Snapshot()
+		if !reflect.DeepEqual(snapshot.Rules[0].Connections[0].Process, want) {
+			t.Fatalf("snapshot shares process storage: %+v", snapshot.Rules[0].Connections[0].Process)
+		}
+		for _, index := range []int{0, 2} {
+			data, err := json.Marshal(snapshot.Rules[0].Connections[index])
+			if err != nil {
+				t.Fatal(err)
+			}
+			var object map[string]interface{}
+			if err := json.Unmarshal(data, &object); err != nil {
+				t.Fatal(err)
+			}
+			keys := []string{"id", "client", "target", "via", "path", "started", "stats"}
+			if index == 0 {
+				keys = append(keys, "process")
+			}
+			assertKeys(t, object, keys...)
+		}
+	})
+	t.Run("non-candidates", func(t *testing.T) {
+		registry := NewRegistry()
+		registry.Sync([]config.Rule{
+			{Name: "local"},
+			{Name: "remote", Listen: config.Listen{Way: []bridgeconfig.Node{{LB: []string{"ssh://user:secret@entry:22"}}}}},
+		})
+		dial(registry.Rule("local"), &net.TCPAddr{IP: net.ParseIP("10.0.0.1"), Port: 1})
+		dial(registry.Rule("remote"), client)
+		dial(registry.Rule("local"), nil)
+		var calls atomic.Int32
+		registry.lookup = func(context.Context) (map[netip.AddrPort]netproc.Process, error) {
+			calls.Add(1)
+			return owners, nil
+		}
+		if registry.Snapshot(); calls.Load() != 0 {
+			t.Fatalf("non-candidates: calls = %d, want 0", calls.Load())
+		}
+	})
+	t.Run("error", func(t *testing.T) {
+		registry := NewRegistry()
+		registry.Sync([]config.Rule{{Name: "local"}})
+		dial(registry.Rule("local"), client)
+		var calls atomic.Int32
+		registry.lookup = func(context.Context) (map[netip.AddrPort]netproc.Process, error) {
+			calls.Add(1)
+			return nil, errors.New("boom")
+		}
+		for range 2 {
+			connection := registry.Snapshot().Rules[0].Connections[0]
+			if calls.Load() != 1 || connection.Process != nil {
+				t.Fatalf("failed lookup: calls = %d, connection = %+v", calls.Load(), connection)
+			}
+		}
+	})
+	t.Run("concurrency", func(t *testing.T) {
+		registry := NewRegistry()
+		registry.Sync([]config.Rule{{Name: "local"}})
+		dial(registry.Rule("local"), client)
+		started := make(chan struct{}, 1)
+		release := make(chan struct{})
+		defer func() {
+			select {
+			case <-release:
+			default:
+				close(release)
+			}
+		}()
+		var calls atomic.Int32
+		registry.lookup = func(context.Context) (map[netip.AddrPort]netproc.Process, error) {
+			calls.Add(1)
+			started <- struct{}{}
+			<-release
+			return owners, nil
+		}
+		resolved := make(chan Snapshot, 1)
+		go func() { resolved <- registry.Snapshot() }()
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatal("lookup did not start")
+		}
+		skipped := make(chan Snapshot, 1)
+		go func() { skipped <- registry.Snapshot() }()
+		select {
+		case snapshot := <-skipped:
+			if connection := snapshot.Rules[0].Connections[0]; connection.Process != nil {
+				t.Fatalf("in-flight lookup: connection = %+v", connection)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("concurrent Snapshot blocked on lookup")
+		}
+		written := make(chan struct{})
+		go func() { registry.Reset(); close(written) }()
+		select {
+		case <-written:
+		case <-time.After(time.Second):
+			t.Fatal("writer blocked on lookup")
+		}
+		close(release)
+		select {
+		case snapshot := <-resolved:
+			if process := snapshot.Rules[0].Connections[0].Process; calls.Load() != 1 || !reflect.DeepEqual(process, want) {
+				t.Fatalf("resolved lookup: calls = %d, process = %+v, want %+v", calls.Load(), process, want)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("resolving Snapshot did not finish")
+		}
+	})
 }
 
 func assertKeys(t *testing.T, object map[string]interface{}, expected ...string) {

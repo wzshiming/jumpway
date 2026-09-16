@@ -1,8 +1,12 @@
 package metrics
 
 import (
+	"context"
+	"net/netip"
 	"sort"
 	"time"
+
+	"github.com/wzshiming/jumpway/netproc"
 )
 
 type Snapshot struct {
@@ -57,13 +61,14 @@ type Target struct {
 }
 
 type Connection struct {
-	ID      uint64    `json:"id"`
-	Client  string    `json:"client,omitempty"`
-	Target  string    `json:"target"`
-	Via     string    `json:"via"`
-	Path    []PathHop `json:"path"`
-	Started string    `json:"started"`
-	Stats   Stats     `json:"stats"`
+	ID      uint64           `json:"id"`
+	Client  string           `json:"client,omitempty"`
+	Process *netproc.Process `json:"process,omitempty"`
+	Target  string           `json:"target"`
+	Via     string           `json:"via"`
+	Path    []PathHop        `json:"path"`
+	Started string           `json:"started"`
+	Stats   Stats            `json:"stats"`
 }
 
 // PathHop is one hop of a connection's actual route; Dialed is false when a cached transport was reused and URL was inferred (or unknown).
@@ -82,13 +87,46 @@ type counterSnapshot struct {
 	latencySum int64
 }
 
+func (r *Registry) resolveProcesses() {
+	r.mu.RLock()
+	lookup := r.lookup
+	var pending []*live
+	if lookup != nil {
+		for _, entry := range r.live {
+			if entry.pending.IsValid() {
+				pending = append(pending, entry)
+			}
+		}
+	}
+	r.mu.RUnlock()
+	if len(pending) == 0 {
+		return
+	}
+	if !r.resolving.TryLock() {
+		return
+	}
+	defer r.resolving.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	owners, _ := lookup(ctx)
+	cancel()
+	r.mu.Lock()
+	for _, entry := range pending {
+		if process, ok := owners[entry.pending]; ok {
+			entry.process = process
+		}
+		entry.pending = netip.AddrPort{}
+	}
+	r.mu.Unlock()
+}
+
 func (r *Registry) Snapshot() Snapshot {
+	r.resolveProcesses()
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	snapshot := Snapshot{Since: r.since.Format(time.RFC3339), Rules: make([]RuleStats, 0, len(r.order))}
 	connections := make(map[*Rule][]Connection)
 	for _, entry := range r.live {
-		connections[entry.rule] = append(connections[entry.rule], Connection{
+		connection := Connection{
 			ID:      entry.id,
 			Client:  entry.client,
 			Target:  entry.target,
@@ -96,7 +134,12 @@ func (r *Registry) Snapshot() Snapshot {
 			Path:    append([]PathHop{}, entry.path...),
 			Started: entry.started.UTC().Format(time.RFC3339Nano),
 			Stats:   entry.count.snapshot().stats,
-		})
+		}
+		if entry.process.PID != 0 {
+			process := entry.process
+			connection.Process = &process
+		}
+		connections[entry.rule] = append(connections[entry.rule], connection)
 	}
 	for _, name := range r.order {
 		rule := r.rules[name]

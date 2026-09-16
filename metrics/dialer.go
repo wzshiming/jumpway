@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"sync"
 	"time"
 
@@ -110,6 +111,11 @@ func (d *ruleDialer) DialContext(ctx context.Context, network, address string) (
 		started: now,
 		count:   newCounter(registry.lastTick),
 		conn:    wrapped,
+	}
+	if len(d.rule.ways[Listen]) == 0 {
+		if addr, err := netip.ParseAddrPort(entry.client); err == nil && addr.Addr().Unmap().IsLoopback() {
+			entry.pending = netip.AddrPortFrom(addr.Addr().Unmap(), addr.Port())
+		}
 	}
 	wrapped.extra = entry.count
 	registry.live[entry.id] = entry
