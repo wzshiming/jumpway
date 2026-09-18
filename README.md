@@ -17,8 +17,11 @@ A cross-platform proxy GUI client
     - [x] System proxy
     - [x] Proxy export line to clipboard
         - [x] Shell
+        - [x] Shell git (`nc`)
         - [x] Cmd
+        - [x] Cmd git (Git for Windows bundled `ssh` and `connect.exe`)
         - [x] PowerShell
+        - [x] PowerShell git (Git for Windows bundled `ssh` and `connect.exe`)
 - [x] Configure the proxy with GUI (Web UI, see below)
     - [x] Configure the multi-level proxy
     - [ ] Support to get SSH proxy configuration from `~/.ssh/config`
