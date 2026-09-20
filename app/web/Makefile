@@ -19,3 +19,17 @@ route: $(GEN)
 .PHONY: openapi
 openapi: $(GEN)
 	mkdir -p openapi && $(GEN) openapi -o ./openapi/openapi.json $(PACKAGES)
+
+PNPM := pnpm --dir $(CURDIR)/ui
+
+.PHONY: ui
+ui:
+	$(PNPM) install --frozen-lockfile && $(PNPM) build
+
+.PHONY: ui-check
+ui-check:
+	$(PNPM) install --frozen-lockfile && $(PNPM) check && $(PNPM) test
+
+.PHONY: ui-dev
+ui-dev:
+	$(PNPM) install --frozen-lockfile && $(PNPM) dev

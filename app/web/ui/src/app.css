@@ -1,0 +1,204 @@
+@import 'tailwindcss';
+
+/* An explicit theme wins; until the theme module stamps one, the system preference applies. */
+@custom-variant dark {
+	&:where([data-theme='dark'], [data-theme='dark'] *) {
+		@slot;
+	}
+	@media (prefers-color-scheme: dark) {
+		&:where(:root:not([data-theme]), :root:not([data-theme]) *) {
+			@slot;
+		}
+	}
+}
+
+:root {
+	--canvas: #f4f5f6;
+	--surface: #ffffff;
+	--surface-2: #eaedf0;
+	--line: #dde1e5;
+	--line-strong: #c5cbd2;
+	--fg: #22282e;
+	--fg-muted: #5a636d;
+	--fg-subtle: #8a939c;
+	--accent: #0f766e;
+	--accent-strong: #0d5f59;
+	--accent-soft: #dff2ee;
+	--on-accent: #ffffff;
+	--link: #0e7490;
+	--running: #15803d;
+	--running-soft: #dcf5e3;
+	--warning: #a16207;
+	--warning-soft: #fdf1c7;
+	--danger: #b42318;
+	--danger-soft: #fde4e1;
+	--unknown: #6b7480;
+	color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+	--canvas: #17191b;
+	--surface: #1f2225;
+	--surface-2: #292d31;
+	--line: #34393e;
+	--line-strong: #474d54;
+	--fg: #e4e7ea;
+	--fg-muted: #9ea7b0;
+	--fg-subtle: #6f7882;
+	--accent: #2fb5a4;
+	--accent-strong: #5accbe;
+	--accent-soft: #163b37;
+	--on-accent: #0b1a18;
+	--link: #4cc3e6;
+	--running: #3ecf86;
+	--running-soft: #163826;
+	--warning: #e2ad3c;
+	--warning-soft: #3a3014;
+	--danger: #f3766b;
+	--danger-soft: #431f1c;
+	--unknown: #8b949e;
+	color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme]) {
+		--canvas: #17191b;
+		--surface: #1f2225;
+		--surface-2: #292d31;
+		--line: #34393e;
+		--line-strong: #474d54;
+		--fg: #e4e7ea;
+		--fg-muted: #9ea7b0;
+		--fg-subtle: #6f7882;
+		--accent: #2fb5a4;
+		--accent-strong: #5accbe;
+		--accent-soft: #163b37;
+		--on-accent: #0b1a18;
+		--link: #4cc3e6;
+		--running: #3ecf86;
+		--running-soft: #163826;
+		--warning: #e2ad3c;
+		--warning-soft: #3a3014;
+		--danger: #f3766b;
+		--danger-soft: #431f1c;
+		--unknown: #8b949e;
+		color-scheme: dark;
+	}
+}
+
+@theme {
+	--font-sans:
+		'Avenir Next', Avenir, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC',
+		system-ui, sans-serif;
+	--font-mono: 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+	--animate-page-enter: page-enter 180ms ease-out;
+	@keyframes page-enter {
+		from {
+			opacity: 0;
+			transform: translateY(4px);
+		}
+		to {
+			opacity: 1;
+			transform: none;
+		}
+	}
+}
+
+@theme inline {
+	--color-canvas: var(--canvas);
+	--color-surface: var(--surface);
+	--color-surface-2: var(--surface-2);
+	--color-line: var(--line);
+	--color-line-strong: var(--line-strong);
+	--color-fg: var(--fg);
+	--color-fg-muted: var(--fg-muted);
+	--color-fg-subtle: var(--fg-subtle);
+	--color-accent: var(--accent);
+	--color-accent-strong: var(--accent-strong);
+	--color-accent-soft: var(--accent-soft);
+	--color-on-accent: var(--on-accent);
+	--color-link: var(--link);
+	--color-running: var(--running);
+	--color-running-soft: var(--running-soft);
+	--color-warning: var(--warning);
+	--color-warning-soft: var(--warning-soft);
+	--color-danger: var(--danger);
+	--color-danger-soft: var(--danger-soft);
+	--color-unknown: var(--unknown);
+}
+
+@layer base {
+	html {
+		background-color: var(--canvas);
+		color: var(--fg);
+		-webkit-font-smoothing: antialiased;
+	}
+	body {
+		font-size: var(--text-sm);
+		line-height: var(--text-sm--line-height);
+	}
+	:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
+	}
+	dialog::backdrop {
+		background-color: rgb(0 0 0 / 0.45);
+	}
+}
+
+@layer components {
+	.btn {
+		@apply inline-flex h-8 items-center justify-center gap-1.5 rounded-md border px-3 text-sm font-medium whitespace-nowrap transition-colors select-none disabled:cursor-not-allowed disabled:opacity-50;
+	}
+	.btn-primary {
+		@apply border-transparent bg-accent text-on-accent hover:bg-accent-strong;
+	}
+	.btn-secondary {
+		@apply border-line bg-surface text-fg hover:bg-surface-2;
+	}
+	.btn-danger {
+		@apply border-transparent bg-danger text-white hover:opacity-90;
+	}
+	.btn-ghost {
+		@apply border-transparent text-fg-muted hover:bg-surface-2 hover:text-fg;
+	}
+	.icon-btn {
+		@apply inline-flex size-8 shrink-0 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg disabled:opacity-50 aria-pressed:bg-accent-soft aria-pressed:text-accent;
+	}
+	.input {
+		@apply h-8 w-full min-w-0 rounded-md border border-line bg-surface px-2.5 text-sm text-fg placeholder:text-fg-subtle focus-visible:border-accent disabled:cursor-not-allowed disabled:opacity-60 aria-invalid:border-danger;
+	}
+	.textarea {
+		@apply block w-full min-w-0 rounded-md border border-line bg-surface px-2.5 py-1.5 text-sm text-fg placeholder:text-fg-subtle focus-visible:border-accent disabled:cursor-not-allowed disabled:opacity-60;
+	}
+	.field-label {
+		@apply mb-1 block text-xs font-medium text-fg-muted;
+	}
+	/* Full-width bands separate form sections instead of cards. */
+	.band {
+		@apply min-w-0 border-b border-line py-5;
+	}
+	.band-title {
+		@apply mb-3 text-sm font-semibold text-fg;
+	}
+	.segment {
+		@apply inline-flex h-8 items-center rounded-md border border-line bg-surface p-0.5;
+	}
+	.segment label {
+		@apply relative inline-flex h-full cursor-pointer items-center rounded-[5px] px-3 text-sm text-fg-muted transition-colors has-checked:bg-accent-soft has-checked:font-medium has-checked:text-accent has-focus-visible:outline-2 has-focus-visible:outline-accent;
+	}
+	.segment input {
+		@apply absolute inset-0 m-0 appearance-none opacity-0;
+	}
+	/* A native checkbox drawn as a switch; `checked` drives the track, the knob is ::before. */
+	.switch {
+		@apply relative inline-block h-5 w-9 shrink-0 cursor-pointer appearance-none rounded-full border border-line-strong bg-surface-2 align-middle transition-colors checked:border-accent checked:bg-accent disabled:cursor-not-allowed disabled:opacity-50 motion-safe:aria-busy:animate-pulse;
+	}
+	.switch::before {
+		content: '';
+		@apply absolute top-0.5 left-0.5 size-3.5 rounded-full bg-white shadow-sm transition-transform;
+	}
+	.switch:checked::before {
+		@apply translate-x-4;
+	}
+}

@@ -43,6 +43,8 @@ func NewHandler(svc *configs.ConfigsService, statsSvc *stats.StatsService, metri
 //go:embed openapi/openapi.json
 var openapiJSON []byte
 
+// statics is built from app/web/ui (make -C app/web ui) and committed.
+//
 //go:embed statics
 var fstmp embed.FS
 

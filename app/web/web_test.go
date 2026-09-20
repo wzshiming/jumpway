@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"mime"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"reflect"
 	"slices"
@@ -18,6 +20,7 @@ import (
 	"github.com/wzshiming/jumpway/config"
 	"github.com/wzshiming/jumpway/metrics"
 	"github.com/wzshiming/jumpway/netproc"
+	"golang.org/x/net/html"
 )
 
 const testConfigYAML = "web_ui:\n" +
@@ -306,6 +309,94 @@ func TestMetricsEndpoint(t *testing.T) {
 	if contentType := response.Header().Get("Content-Type"); contentType != "text/plain" {
 		t.Fatalf("Content-Type = %q, want text/plain", contentType)
 	}
+}
+
+func TestStaticsIndex(t *testing.T) {
+	handler, _, _, _ := setupConfigAPI(t)
+	response := requestAPI(t, handler, http.MethodGet, "/", "", http.StatusOK)
+	if mediaType := mediaTypeOf(t, response); mediaType != "text/html" {
+		t.Fatalf("GET /: Content-Type = %q, want text/html", response.Header().Get("Content-Type"))
+	}
+	document, err := html.Parse(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attr := func(node *html.Node, key string) string {
+		for _, attribute := range node.Attr {
+			if attribute.Key == key {
+				return attribute.Val
+			}
+		}
+		return ""
+	}
+	javascript := []string{"text/javascript", "application/javascript"}
+	stylesheet := []string{"text/css"}
+	type asset struct {
+		kind       string
+		reference  string
+		mediaTypes []string
+	}
+	var assets []asset
+	counts := map[string]int{}
+	for node := range document.Descendants() {
+		if node.Type != html.ElementNode {
+			continue
+		}
+		switch node.Data {
+		case "script":
+			if src := attr(node, "src"); src != "" {
+				assets = append(assets, asset{kind: "script", reference: src, mediaTypes: javascript})
+			}
+		case "link":
+			href := attr(node, "href")
+			switch attr(node, "rel") {
+			case "stylesheet":
+				assets = append(assets, asset{kind: "stylesheet", reference: href, mediaTypes: stylesheet})
+			case "modulepreload":
+				assets = append(assets, asset{kind: "script", reference: href, mediaTypes: javascript})
+			case "icon":
+				assets = append(assets, asset{kind: "icon", reference: href, mediaTypes: []string{"image/"}})
+			}
+		case "img":
+			assets = append(assets, asset{kind: "image", reference: attr(node, "src"), mediaTypes: []string{"image/"}})
+		}
+	}
+	base := &url.URL{Path: "/"}
+	for _, candidate := range assets {
+		counts[candidate.kind]++
+		reference, err := url.Parse(candidate.reference)
+		if err != nil {
+			t.Errorf("%s %q: %v", candidate.kind, candidate.reference, err)
+			continue
+		}
+		if reference.Scheme != "" || reference.Host != "" {
+			t.Errorf("%s %q is not served from this origin", candidate.kind, candidate.reference)
+			continue
+		}
+		target := base.ResolveReference(reference).EscapedPath()
+		response := requestAPI(t, handler, http.MethodGet, target, "", http.StatusOK)
+		mediaType := mediaTypeOf(t, response)
+		if !slices.ContainsFunc(candidate.mediaTypes, func(want string) bool { return strings.HasPrefix(mediaType, want) }) {
+			t.Errorf("%s %s: Content-Type = %q, want one of %q", candidate.kind, target, response.Header().Get("Content-Type"), candidate.mediaTypes)
+		}
+		if response.Body.Len() == 0 {
+			t.Errorf("%s %s: empty body", candidate.kind, target)
+		}
+	}
+	if counts["script"] == 0 || counts["stylesheet"] == 0 || counts["icon"] == 0 {
+		t.Fatalf("index.html references %d scripts, %d stylesheets and %d icons, want at least one of each", counts["script"], counts["stylesheet"], counts["icon"])
+	}
+	requestAPI(t, handler, http.MethodGet, "/does-not-exist.js", "", http.StatusNotFound)
+	requestAPI(t, handler, http.MethodGet, "/assets/does-not-exist.js", "", http.StatusNotFound)
+}
+
+func mediaTypeOf(t *testing.T, response *httptest.ResponseRecorder) string {
+	t.Helper()
+	mediaType, _, err := mime.ParseMediaType(response.Header().Get("Content-Type"))
+	if err != nil {
+		t.Fatalf("Content-Type = %q: %v", response.Header().Get("Content-Type"), err)
+	}
+	return mediaType
 }
 
 func TestGetConfig(t *testing.T) {
