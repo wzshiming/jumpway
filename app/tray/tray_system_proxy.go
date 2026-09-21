@@ -14,7 +14,7 @@ func (a *App) ruleAddress(name string) string {
 
 func localProxyAddress(rules []*ruleState, name string) string {
 	for _, rule := range rules {
-		if rule.name != name || rule.remote || rule.target != "" {
+		if rule.name != name || rule.remote || rule.virtual || rule.target != "" {
 			continue
 		}
 		address := rule.address

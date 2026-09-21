@@ -11,12 +11,19 @@ import (
 	"github.com/wzshiming/bridge"
 )
 
+// VirtualNetwork is the Addr.Network of in-process channel endpoints.
+const VirtualNetwork = "virtual"
+
 func RunProxy(ctx context.Context, listener net.Listener, dialer bridge.Dialer, user *url.Userinfo) error {
 	addr := listener.Addr()
 	if addr == nil {
 		return errors.New("listener has no address")
 	}
 	address := addr.String()
+	if addr.Network() == VirtualNetwork {
+		// anyproxy keys protocol servers by host:port, which a channel name is not.
+		address = "virtual.invalid:0"
+	}
 	proxyAddress := address
 	if user != nil {
 		proxyAddress = user.String() + "@" + address

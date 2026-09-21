@@ -96,6 +96,7 @@ func (a *App) reload() error {
 			address:       rule.Listen.Address(),
 			target:        rule.Forward.Target(),
 			remote:        rule.Listen.Remote(),
+			virtual:       rule.Listen.Virtual != "",
 		})
 	}
 	a.metrics.Sync(enabled)
@@ -165,6 +166,9 @@ func (a *App) reload() error {
 		dialer := jumpway.NewLogDialer(local.LOCAL, func(ctx context.Context, network, address string) {
 			log.Info(i18n.UseProxy(), "address", address, "rule", rule.Name)
 		})
+		if rule.Forward.Virtual != "" {
+			dialer = virtualDialer{network: &a.virtual, name: rule.Forward.Virtual}
+		}
 		dialer, err = jumpway.NewChainDialer(ctx, dialer, rule.Forward.Way, rs.HopWrapper(metrics.Forward))
 		if err != nil {
 			report(jumpway.Event{Err: err})
@@ -191,13 +195,19 @@ func (a *App) reload() error {
 		}
 		dialer = rs.WrapDialer(dialer)
 
+		listen := func(ctx context.Context) (net.Listener, error) {
+			return listenConfig.Listen(ctx, "tcp", rule.Listen.Address())
+		}
+		if rule.Listen.Virtual != "" {
+			listen = func(context.Context) (net.Listener, error) {
+				return a.virtual.Listen(rule.Listen.Virtual)
+			}
+		}
 		a.wg.Add(1)
 		go func() {
 			defer a.wg.Done()
 			defer close(done)
-			jumpway.Serve(ctx, func(ctx context.Context) (net.Listener, error) {
-				return listenConfig.Listen(ctx, "tcp", rule.Listen.Address())
-			}, func(ctx context.Context, listener net.Listener) error {
+			jumpway.Serve(ctx, listen, func(ctx context.Context, listener net.Listener) error {
 				listener = rs.WrapListener(listener)
 				if target == "" {
 					return jumpway.RunProxy(ctx, listener, dialer, rule.Listen.User())

@@ -58,7 +58,7 @@ func menuModel(rules []ruleState) []ruleMenuEntry {
 			address:    address,
 			label:      rule.name + " (" + address + ")",
 			status:     status,
-			localProxy: !rule.remote && rule.target == "",
+			localProxy: !rule.remote && !rule.virtual && rule.target == "",
 		})
 	}
 	return entries

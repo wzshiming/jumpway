@@ -505,6 +505,26 @@ func TestCreatePortForwardRule(t *testing.T) {
 	}
 }
 
+func TestCreateVirtualRule(t *testing.T) {
+	handler, fake, store, _ := setupConfigAPI(t)
+	requestAPI(t, handler, http.MethodPost, "/apis/configs/rules", `{"name":"entry","listen":{"port":15433},"forward":{"virtual":"x"}}`, http.StatusOK)
+	requestAPI(t, handler, http.MethodPost, "/apis/configs/rules", `{"name":"exit","listen":{"virtual":"x"}}`, http.StatusOK)
+	response := requestAPI(t, handler, http.MethodGet, "/apis/configs/rules/entry", "", http.StatusOK)
+	if want := `{"name":"entry","listen":{"host":"","port":15433},"forward":{"virtual":"x"}}`; strings.TrimSpace(response.Body.String()) != want {
+		t.Fatalf("rule = %s, want %s", response.Body.String(), want)
+	}
+	if fake.reloads != 2 {
+		t.Fatalf("reloads = %d, want 2", fake.reloads)
+	}
+	conf, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(conf.Rules) != 3 || conf.Rules[1].Forward.Virtual != "x" || conf.Rules[2].Listen.Virtual != "x" || !conf.Rules[2].Forward.IsProxy() {
+		t.Fatalf("saved config = %#v, want virtual entry and exit rules", conf.Rules)
+	}
+}
+
 func TestCreateFirstRule(t *testing.T) {
 	handler, fake, store, _ := setupConfigAPI(t)
 	if err := store.SaveRaw([]byte("web_ui:\n  host: 127.0.0.1\n  port: 1088\n")); err != nil {
@@ -546,6 +566,8 @@ func TestRuleMutationInvalid(t *testing.T) {
 		{name: "listen_port", method: http.MethodPost, target: "/rules", body: `{"name":"b","listen":{"port":70000}}`, wantError: "rules[1].listen.port 70000"},
 		{name: "forward_port", method: http.MethodPost, target: "/rules", body: `{"name":"db","forward":{"port":70000}}`, wantError: "rules[1].forward.port 70000"},
 		{name: "forward_host_without_port", method: http.MethodPost, target: "/rules", body: `{"name":"db","forward":{"host":"10.0.0.5"}}`, wantError: "rules[1].forward.host is set but port is 0"},
+		{name: "virtual_listen_with_port", method: http.MethodPost, target: "/rules", body: `{"name":"b","listen":{"virtual":"x","port":1}}`, wantError: "rules[1].listen.virtual must not be combined with port"},
+		{name: "virtual_self_loop", method: http.MethodPost, target: "/rules", body: `{"name":"b","listen":{"virtual":"x"},"forward":{"virtual":"x"}}`, wantError: `rules[1].forward.virtual "x" loops back to its own listener`},
 		{name: "port_forward_with_username", method: http.MethodPost, target: "/rules", body: `{"name":"db","listen":{"port":15432,"username":"user"},"forward":{"host":"10.0.0.5","port":5432}}`, wantError: "rules[1].listen.username is only used by proxy rules"},
 		{name: "password_without_username", method: http.MethodPost, target: "/rules", body: `{"name":"b","listen":{"password":"secret"}}`, wantError: "rules[1].listen.password is set but username is empty"},
 		{name: "web_ui_collision", method: http.MethodPost, target: "/rules", body: `{"name":"b","listen":{"port":1088}}`, wantError: "rules[1].listen address 127.0.0.1:1088 is already used by web_ui"},

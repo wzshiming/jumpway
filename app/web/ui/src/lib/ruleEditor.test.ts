@@ -21,7 +21,7 @@ describe('draftFrom', () => {
 			password: '',
 			way: []
 		});
-		expect(draft.target).toEqual({ host: '', port: '' });
+		expect(draft.target).toEqual({ kind: 'address', host: '', port: '', virtual: '' });
 		expect(urlsOf(draft, 'forward')).toEqual([
 			['socks5://demo:placeholder@hop-a.example:1080'],
 			['ssh://ops@bastion.example:22', 'ssh://ops@bastion-2.example:22']
@@ -39,7 +39,12 @@ describe('draftFrom', () => {
 		});
 		const tunnel = draftFrom(dbTunnel);
 		expect(tunnel.mode).toBe('forward');
-		expect(tunnel.target).toEqual({ host: '127.0.0.1', port: '5432' });
+		expect(tunnel.target).toEqual({
+			kind: 'address',
+			host: '127.0.0.1',
+			port: '5432',
+			virtual: ''
+		});
 		expect(urlsOf(tunnel, 'listen')).toEqual([['ssh://ops@edge.example:22']]);
 		expect(urlsOf(tunnel, 'forward')).toEqual([]);
 		expect(draftFrom(lab)).toMatchObject({
@@ -57,7 +62,7 @@ describe('draftFrom', () => {
 		};
 		const draft = draftFrom(rule);
 		expect(draft.listen.host).toBe('');
-		expect(draft.target).toEqual({ host: '', port: '8080' });
+		expect(draft.target).toEqual({ kind: 'address', host: '', port: '8080', virtual: '' });
 		expect(urlsOf(draft, 'forward')).toEqual([['ssh://a:22', 'ssh://b:22']]);
 	});
 
@@ -68,7 +73,7 @@ describe('draftFrom', () => {
 			enabled: true,
 			mode: 'proxy',
 			listen: { host: '127.0.0.1', port: '0', username: '', password: '', way: [] },
-			target: { host: '', port: '' },
+			target: { kind: 'address', host: '', port: '', virtual: '' },
 			forward: { way: [] }
 		});
 	});
@@ -222,5 +227,116 @@ describe('snapshot', () => {
 		extraHop.forward.way.push(newHop());
 		expect(snapshot(extraHop)).not.toBe(before);
 		expect(before).not.toContain('"id"');
+	});
+});
+
+describe('virtual endpoints', () => {
+	const sharedExit: Rule = {
+		name: 'shared-exit',
+		listen: { host: '', port: 0, virtual: 'exit', username: 'demo', password: 'placeholder' },
+		forward: { way: [{ lb: ['ssh://ops@bastion.example:22'] }] }
+	};
+	const lanEntry: Rule = {
+		name: 'lan-entry',
+		listen: { host: '0.0.0.0', port: 18100 },
+		forward: { virtual: 'exit' }
+	};
+	const tcpTunnel: Rule = {
+		name: 'db-tunnel',
+		listen: { host: '0.0.0.0', port: 18099, way: [{ lb: ['ssh://ops@edge.example:22'] }] },
+		forward: { host: '127.0.0.1', port: 5432 }
+	};
+	const read = (draft: RuleDraft) => {
+		const result = readRule(draft);
+		if (!result.ok) throw new Error('unexpected errors ' + JSON.stringify(result.errors));
+		return result.rule;
+	};
+	const errorsOf = (draft: RuleDraft) => {
+		const result = readRule(draft);
+		return result.ok ? {} : result.errors;
+	};
+
+	test('draftFrom marks a virtual listen and keeps the rule a proxy', () => {
+		const draft = draftFrom(sharedExit);
+		expect(draft.mode).toBe('proxy');
+		expect(draft.listen).toMatchObject({ kind: 'virtual', virtual: 'exit', username: 'demo' });
+		expect(draft.target).toEqual({ kind: 'address', host: '', port: '', virtual: '' });
+	});
+
+	test('draftFrom marks a virtual target as a forward without a port', () => {
+		const draft = draftFrom(lanEntry);
+		expect(draft.mode).toBe('forward');
+		expect(draft.listen).toMatchObject({
+			kind: 'address',
+			host: '0.0.0.0',
+			port: '18100',
+			virtual: ''
+		});
+		expect(draft.target).toEqual({ kind: 'virtual', host: '', port: '', virtual: 'exit' });
+		expect(emptyDraft().listen).toMatchObject({ kind: 'address', virtual: '' });
+		expect(emptyDraft().target).toEqual({ kind: 'address', host: '', port: '', virtual: '' });
+	});
+
+	test('a virtual listen sends host "" port 0 and the channel, skipping hidden port and hops', () => {
+		const draft = draftFrom(sharedExit);
+		draft.listen.port = 'junk';
+		draft.listen.way = [newHop(['ssh://ops@edge.example:22'])];
+		draft.listen.virtual = ' exit ';
+		const rule = read(draft);
+		expect(rule.listen).toEqual({
+			host: '',
+			port: 0,
+			virtual: 'exit',
+			username: 'demo',
+			password: 'placeholder'
+		});
+		expect(rule.forward).toEqual({ way: [{ lb: ['ssh://ops@bastion.example:22'] }] });
+	});
+
+	test('a virtual target sends only the channel, skipping the hidden port and exit hops', () => {
+		const draft = draftFrom(lanEntry);
+		draft.target.port = 'junk';
+		draft.forward.way = [newHop(['ssh://ops@bastion.example:22'])];
+		expect(read(draft).forward).toEqual({ virtual: 'exit' });
+		const proxy = draftFrom(lanEntry);
+		proxy.mode = 'proxy';
+		expect(read(proxy).forward).toEqual({});
+	});
+
+	test('address endpoints never send virtual fields even when the inactive drafts hold text', () => {
+		const draft = draftFrom(tcpTunnel);
+		draft.listen.virtual = 'entry';
+		draft.target.virtual = 'exit';
+		expect(read(draft)).toEqual(tcpTunnel);
+	});
+
+	test('channels must be non-empty without whitespace or slashes; a direct self loop is refused', () => {
+		for (const bad of ['', '  ', 'a b', 'a/b']) {
+			const draft = draftFrom(sharedExit);
+			draft.listen.virtual = bad;
+			expect(errorsOf(draft)).toEqual({ listenVirtual: 'invalidVirtualChannel' });
+			const target = draftFrom(lanEntry);
+			target.target.virtual = bad;
+			expect(errorsOf(target)).toEqual({ targetVirtual: 'invalidVirtualChannel' });
+		}
+		const loop = draftFrom(sharedExit);
+		loop.mode = 'forward';
+		loop.target = { kind: 'virtual', host: '', port: '', virtual: 'exit' };
+		expect(errorsOf(loop)).toEqual({ targetVirtual: 'virtualSelfLoop' });
+		loop.target.virtual = 'Exit';
+		expect(read(loop).forward).toEqual({ virtual: 'Exit' });
+		// A virtual target is neither validated nor sent while the rule is a proxy.
+		const proxy = draftFrom(lanEntry);
+		proxy.mode = 'proxy';
+		proxy.target.virtual = 'a/b';
+		expect(read(proxy).forward).toEqual({});
+	});
+
+	test('mixed kinds and proxy transitions round-trip through readRule and draftFrom', () => {
+		for (const rule of [sharedExit, lanEntry]) {
+			const draft = draftFrom(rule);
+			expect(read(draft)).toEqual(rule);
+			expect(snapshot(draftFrom(read(draft)))).toBe(snapshot(draft));
+		}
 	});
 });

@@ -3,6 +3,7 @@ package jumpway
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net"
@@ -258,5 +259,94 @@ func TestRunProxyAuth(t *testing.T) {
 				checkProxy(t, scheme, escaped, escaped, http.StatusOK)
 			})
 		})
+	}
+}
+
+type virtualTestAddr struct{}
+
+func (virtualTestAddr) Network() string { return "virtual" }
+
+func (virtualTestAddr) String() string { return "virtual://x" }
+
+type virtualTestListener struct {
+	conns chan net.Conn
+	done  chan struct{}
+}
+
+func (l *virtualTestListener) Accept() (net.Conn, error) {
+	select {
+	case conn := <-l.conns:
+		return conn, nil
+	case <-l.done:
+		return nil, net.ErrClosed
+	}
+}
+
+func (l *virtualTestListener) Close() error {
+	select {
+	case <-l.done:
+	default:
+		close(l.done)
+	}
+	return nil
+}
+
+func (l *virtualTestListener) Addr() net.Addr { return virtualTestAddr{} }
+
+func TestRunProxyVirtualListener(t *testing.T) {
+	target := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		io.WriteString(writer, "proxy-ok")
+	}))
+	t.Cleanup(target.Close)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	listener := &virtualTestListener{conns: make(chan net.Conn), done: make(chan struct{})}
+	clients := make(chan string, 1)
+	dialer := bridge.DialFunc(func(ctx context.Context, network, address string) (net.Conn, error) {
+		clients <- ClientAddr(ctx)
+		return local.LOCAL.DialContext(ctx, network, address)
+	})
+	done := make(chan error, 1)
+	go func() { done <- RunProxy(ctx, listener, dialer, url.UserPassword("alice", "s3cr3t")) }()
+	t.Cleanup(func() {
+		cancel()
+		listener.Close()
+		select {
+		case err := <-done:
+			if err == nil || !utils.IsClosedConnError(err) {
+				t.Errorf("RunProxy() = %v, want closed connection error", err)
+			}
+		case <-time.After(time.Second):
+			t.Error("RunProxy did not stop after closing its listener")
+		}
+	})
+	client, server := net.Pipe()
+	t.Cleanup(func() { client.Close() })
+	select {
+	case listener.conns <- server:
+	case <-ctx.Done():
+		t.Fatal("RunProxy did not accept the virtual connection")
+	}
+	if err := client.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	credentials := base64.StdEncoding.EncodeToString([]byte("alice:s3cr3t"))
+	if _, err := fmt.Fprintf(client, "CONNECT %s HTTP/1.1\r\nHost: %s\r\nProxy-Authorization: Basic %s\r\n\r\n", target.Listener.Addr(), target.Listener.Addr(), credentials); err != nil {
+		t.Fatal(err)
+	}
+	response, err := http.ReadResponse(bufio.NewReader(client), &http.Request{Method: http.MethodConnect})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("CONNECT status = %d, want 200", response.StatusCode)
+	}
+	select {
+	case got := <-clients:
+		if want := server.RemoteAddr().String(); got != want {
+			t.Fatalf("ClientAddr() = %q, want %q", got, want)
+		}
+	case <-ctx.Done():
+		t.Fatal("proxy did not dial the target")
 	}
 }

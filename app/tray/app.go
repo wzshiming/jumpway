@@ -40,6 +40,7 @@ type App struct {
 
 	proxyMu sync.Mutex
 	stopped bool
+	virtual virtualNetwork
 
 	mu                 sync.Mutex
 	webListenAddress   string
@@ -66,6 +67,7 @@ type ruleState struct {
 	address       string
 	target        string
 	remote        bool
+	virtual       bool
 	running       bool
 	attempt       int
 	err           error
@@ -181,7 +183,7 @@ func (a *App) primaryAddress() string {
 	defer a.mu.Unlock()
 	var fallback string
 	for _, rule := range a.rules {
-		if rule.remote || rule.target != "" {
+		if rule.remote || rule.virtual || rule.target != "" {
 			continue
 		}
 		if rule.running {

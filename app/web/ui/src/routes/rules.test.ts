@@ -1,6 +1,11 @@
 import { flushSync, mount, unmount } from 'svelte';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { rulesFixture, snapshotFixture, statusFixture } from '../../e2e/fixtures/api';
+import {
+	rulesFixture,
+	snapshotFixture,
+	statusFixture,
+	virtualRulesFixture
+} from '../../e2e/fixtures/api';
 import App from '../App.svelte';
 import { SAVED_PREFIX } from '../lib/api';
 import { toasts } from '../lib/toast.svelte';
@@ -771,4 +776,173 @@ test('the URL builder offers command and netcat hops with a single raw command f
 		{ lb: ['nc:ssh jump'] },
 		{ lb: ['ssh://ops@bastion.example:22', 'ssh://ops@bastion-2.example:22'] }
 	]);
+});
+
+// Virtual endpoints: Address | Virtual segments on the listen and target sides.
+const kind = (side: 'listen' | 'target', value: 'address' | 'virtual') =>
+	target.querySelector<HTMLInputElement>(`input[name="${side}-kind"][value="${value}"]`)!;
+const peers = () =>
+	Array.from(target.querySelectorAll('main [data-virtual-peers] a')).map((link) => [
+		link.textContent?.trim(),
+		link.getAttribute('href')
+	]);
+const peerText = () =>
+	Array.from(target.querySelectorAll('main [data-virtual-peers]'))
+		.map((node) => node.textContent!.replace(/\s+/g, ' ').trim())
+		.join(' | ');
+const options = (id: string) =>
+	Array.from(target.querySelectorAll<HTMLOptionElement>(`#${id} option`)).map(
+		(option) => option.value
+	);
+
+test('#/new: Virtual replaces host, port and listen-through hops by one channel; hidden fields are not validated; a self loop is refused; the pair reopens', async () => {
+	await render('#/new');
+	expect(kind('listen', 'address').checked).toBe(true);
+	expect(target.querySelector('input[name="target-kind"]')).toBeNull();
+	type('rule-name', 'pair');
+	type('listen-port', 'junk');
+	type('listen-username', 'demo');
+	choose(kind('listen', 'virtual'));
+	expect(target.querySelector('#listen-host')).toBeNull();
+	expect(target.querySelector('#listen-port')).toBeNull();
+	expect(target.querySelector('#listen-add-hop')).toBeNull();
+	expect(target.querySelector('main')?.textContent).not.toContain('Listen through');
+	expect(field('listen-username').value).toBe('demo');
+	type('listen-virtual', 'exit');
+	expect(chain()).toEqual(['Clients', 'This machine virtual://exit', 'Direct', 'Target target']);
+
+	choose(target.querySelector<HTMLInputElement>('input[name="mode"][value="forward"]')!);
+	expect(kind('target', 'address').checked).toBe(true);
+	expect(target.querySelector('#target-port')).not.toBeNull();
+	choose(kind('target', 'virtual'));
+	expect(target.querySelector('#target-host')).toBeNull();
+	expect(target.querySelector('#target-port')).toBeNull();
+	expect(target.querySelector('#exit-add-hop')).toBeNull();
+	expect(target.querySelector('main [data-chain-summary]')).toBeNull();
+	expect(target.querySelector('#listen-username')).toBeNull();
+	type('target-virtual', 'exit');
+	expect(chain()).toEqual([
+		'Clients',
+		'This machine virtual://exit',
+		'Direct',
+		'Target virtual://exit'
+	]);
+	await save();
+	expect(writes()).toEqual([]);
+	expect(target.querySelector('#target-virtual-error')?.textContent).toBe(
+		'A rule cannot forward to its own listen channel.'
+	);
+	expect(document.activeElement).toBe(field('target-virtual'));
+	type('target-virtual', 'egress');
+	expect(target.querySelector('#target-virtual-error')).toBeNull();
+
+	await save();
+	expect(writes()).toEqual([
+		{
+			method: 'POST',
+			url: '/apis/configs/rules',
+			body: {
+				name: 'pair',
+				listen: { host: '', port: 0, virtual: 'exit' },
+				forward: { virtual: 'egress' }
+			}
+		}
+	]);
+	expect(location.hash).toBe('#/rules/pair');
+	expect(badge()).toBeNull();
+	expect(kind('listen', 'virtual').checked).toBe(true);
+	expect(kind('target', 'virtual').checked).toBe(true);
+	expect(inputs()).toMatchObject({ 'listen-virtual': 'exit', 'target-virtual': 'egress' });
+	expect(inputs()).not.toHaveProperty('listen-port');
+});
+
+test('channels must be valid before a request; the credentials of a virtual proxy listener are sent', async () => {
+	await render('#/new');
+	type('rule-name', 'exit');
+	choose(kind('listen', 'virtual'));
+	type('listen-virtual', 'a b');
+	type('listen-username', 'demo');
+	type('listen-password', 'placeholder');
+	await save();
+	expect(writes()).toEqual([]);
+	expect(target.querySelector('#listen-virtual-error')?.textContent).toBe(
+		'Channel is required and must not contain spaces or "/".'
+	);
+	expect(document.activeElement).toBe(field('listen-virtual'));
+	type('listen-virtual', ' exit ');
+	expect(target.querySelector('#listen-virtual-error')).toBeNull();
+	await save();
+	expect(writes().map((call) => call.body)).toEqual([
+		{
+			name: 'exit',
+			listen: { host: '', port: 0, virtual: 'exit', username: 'demo', password: 'placeholder' },
+			forward: {}
+		}
+	]);
+});
+
+test('switching kinds keeps every typed draft and hides inactive hops from the diagram; an address rule never sends virtual fields', async () => {
+	await render('#/rules/db-tunnel');
+	expect(chain().join(' ')).toContain('ssh://edge.example:22');
+	choose(kind('listen', 'virtual'));
+	type('listen-virtual', 'entry');
+	expect(chain().join(' ')).not.toContain('edge.example');
+	expect(chain()).toContain('This machine virtual://entry');
+	choose(kind('listen', 'address'));
+	expect(inputs()).toMatchObject({ 'listen-host': '0.0.0.0', 'listen-port': '18099' });
+	expect(chain().join(' ')).toContain('ssh://edge.example:22');
+	choose(kind('target', 'virtual'));
+	type('target-virtual', 'exit');
+	expect(chain().join(' ')).toContain('Target virtual://exit');
+	choose(kind('target', 'address'));
+	expect(inputs()).toMatchObject({ 'target-host': '127.0.0.1', 'target-port': '5432' });
+	choose(kind('listen', 'virtual'));
+	expect(field('listen-virtual').value).toBe('entry');
+	choose(kind('listen', 'address'));
+	type('target-port', '5433');
+	await save();
+	expect(writes().map((call) => call.body)).toEqual([
+		{
+			name: 'db-tunnel',
+			listen: { host: '0.0.0.0', port: 18099, way: [{ lb: ['ssh://ops@edge.example:22'] }] },
+			forward: { host: '127.0.0.1', port: 5433 }
+		}
+	]);
+});
+
+test('the editor links peers by channel: the listener under a virtual target or a warning, incoming rules under a virtual listen, nothing while the list is unknown', async () => {
+	rules.push(...structuredClone(virtualRulesFixture));
+	await render('#/rules/lan-entry');
+	expect(kind('target', 'virtual').checked).toBe(true);
+	expect(peers()).toEqual([['shared-exit', '#/rules/shared-exit']]);
+	expect(peerText()).toBe('Exit rule shared-exit');
+	expect(options('target-virtual-list')).toEqual(['exit']);
+	type('target-virtual', 'missing');
+	expect(peers()).toEqual([]);
+	expect(peerText()).toBe('No enabled rule listens on this channel.');
+	type('target-virtual', ' ');
+	expect(peerText()).toBe('');
+	// A draft that becomes a virtual listen never lists its own stale copy, even after a rename.
+	choose(kind('listen', 'virtual'));
+	expect(options('listen-virtual-list')).toEqual(['missing']);
+	type('listen-virtual', 'exit');
+	type('rule-name', 'lan');
+	expect(peers()).toEqual([]);
+	expect(peerText()).toBe('');
+
+	unmount(app!);
+	app = null;
+	target.remove();
+	await render('#/rules/shared-exit');
+	expect(peers()).toEqual([['lan-entry', '#/rules/lan-entry']]);
+	expect(peerText()).toBe('Incoming rules lan-entry');
+
+	unmount(app!);
+	app = null;
+	target.remove();
+	fail.set('GET /apis/configs/rules', 'boom');
+	await render('#/rules/orphan');
+	expect(form()).not.toBeNull();
+	expect(field('target-virtual').value).toBe('missing');
+	expect(peerText()).toBe('');
 });

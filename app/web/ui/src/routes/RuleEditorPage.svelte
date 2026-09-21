@@ -7,6 +7,7 @@
 	import ChainFlow from '../lib/components/rules/ChainFlow.svelte';
 	import HopEditor from '../lib/components/rules/HopEditor.svelte';
 	import UrlBuilderDialog from '../lib/components/rules/UrlBuilderDialog.svelte';
+	import VirtualPeers from '../lib/components/rules/VirtualPeers.svelte';
 	import Banner from '../lib/components/ui/Banner.svelte';
 	import Button from '../lib/components/ui/Button.svelte';
 	import Field from '../lib/components/ui/Field.svelte';
@@ -16,7 +17,14 @@
 	import { t } from '../lib/i18n.svelte';
 	import { router } from '../lib/router.svelte';
 	import { HOME_ROUTE, ruleRoute } from '../lib/routes';
-	import { chainSummary, EXIT_ROLES, hostPort, LISTEN_ROLES } from '../lib/rule';
+	import {
+		chainSummary,
+		EXIT_ROLES,
+		hostPort,
+		LISTEN_ROLES,
+		virtualAddress,
+		virtualChannels
+	} from '../lib/rule';
 	import {
 		draftFrom,
 		emptyDraft,
@@ -28,6 +36,7 @@
 	} from '../lib/ruleEditor';
 	import { status } from '../lib/status.svelte';
 	import { toasts } from '../lib/toast.svelte';
+	import { list, type Rule } from '../lib/types';
 
 	// null edits a new rule at #/new.
 	interface Props {
@@ -53,18 +62,32 @@
 	let builder = $state<ReturnType<typeof UrlBuilderDialog>>();
 	let building = false;
 	let controller: AbortController | null = null;
+	// All rules, for virtual peer links and channel suggestions; null while unknown.
+	let peerRules = $state.raw<Rule[] | null>(null);
+	let peerController: AbortController | null = null;
 
 	const dirty = $derived(ready && snapshot(draft) !== baseline);
 	const forwarding = $derived(draft.mode === 'forward');
+	const listenVirtual = $derived(draft.listen.kind === 'virtual');
+	const targetVirtual = $derived(forwarding && draft.target.kind === 'virtual');
 	const title = $derived(savedName ?? t('newRule'));
-	const listenLabel = $derived(hostPort(draft.listen.host.trim(), draft.listen.port.trim() || '0'));
-	const targetLabel = $derived(
-		draft.mode === 'forward' && draft.target.port.trim()
-			? hostPort(draft.target.host.trim(), draft.target.port.trim())
-			: ''
+	const listenLabel = $derived(
+		listenVirtual
+			? virtualAddress(draft.listen.virtual.trim())
+			: hostPort(draft.listen.host.trim(), draft.listen.port.trim() || '0')
 	);
-	const listenWay = $derived(wayOf(draft.listen.way));
-	const forwardWay = $derived(wayOf(draft.forward.way));
+	const targetLabel = $derived(
+		targetVirtual
+			? virtualAddress(draft.target.virtual.trim())
+			: forwarding && draft.target.port.trim()
+				? hostPort(draft.target.host.trim(), draft.target.port.trim())
+				: ''
+	);
+	const listenWay = $derived(listenVirtual ? [] : wayOf(draft.listen.way));
+	const forwardWay = $derived(targetVirtual ? [] : wayOf(draft.forward.way));
+	const self = $derived(savedName ?? '');
+	const listenChannels = $derived(virtualChannels(peerRules ?? [], 'listen', self));
+	const targetChannels = $derived(virtualChannels(peerRules ?? [], 'forward', self));
 	const notFound = $derived(
 		loadError instanceof ApiError && loadError.status === 400 && /not found/.test(loadError.message)
 	);
@@ -75,12 +98,27 @@
 		ready = true;
 	}
 
+	function loadPeers() {
+		peerController?.abort();
+		const own = new AbortController();
+		peerController = own;
+		configsApi.listRules(own.signal).then(
+			(value) => {
+				if (peerController === own) peerRules = list(value);
+			},
+			(reason: unknown) => {
+				if (peerController === own && !isAborted(reason)) toasts.error(errorMessage(reason));
+			}
+		);
+	}
+
 	function load() {
 		controller?.abort();
 		controller = null;
 		loadError = null;
 		saveError = null;
 		errors = {};
+		loadPeers();
 		if (savedName === null) {
 			adopt(emptyDraft());
 			return;
@@ -112,6 +150,8 @@
 			unregister();
 			controller?.abort();
 			controller = null;
+			peerController?.abort();
+			peerController = null;
 		};
 	});
 
@@ -161,6 +201,7 @@
 		saving = false;
 		markClean();
 		savedName = rule.name;
+		if (peerRules) peerRules = [...peerRules.filter((entry) => entry.name !== previous), rule];
 		if (applied) toasts.success(t('saved'));
 		void status.refresh();
 		const hash = ruleRoute(rule.name);
@@ -276,40 +317,85 @@
 
 		<fieldset class="band" disabled={busy.value}>
 			<legend class="band-title">{t('listen')}</legend>
-			<div class="grid gap-4 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-				<Field id="listen-host" label={t('host')}>
-					{#snippet children({ describedBy })}
-						<input
-							id="listen-host"
-							class="input font-mono text-[13px]"
-							type="text"
-							bind:value={draft.listen.host}
-							placeholder="127.0.0.1"
-							aria-describedby={describedBy}
-							spellcheck="false"
-						/>
-					{/snippet}
-				</Field>
-				<Field
-					id="listen-port"
-					label={t('port')}
-					error={errors.listenPort ? t(errors.listenPort) : null}
-				>
-					{#snippet children({ describedBy, invalid })}
-						<input
-							id="listen-port"
-							class="input font-mono text-[13px]"
-							type="text"
-							inputmode="numeric"
-							bind:value={draft.listen.port}
-							oninput={() => (errors.listenPort = undefined)}
-							required
-							aria-invalid={invalid || undefined}
-							aria-describedby={describedBy}
-						/>
-					{/snippet}
-				</Field>
-			</div>
+			<fieldset>
+				<legend class="field-label">{t('endpointKind')}</legend>
+				<div class="segment">
+					<label>
+						<input type="radio" name="listen-kind" value="address" bind:group={draft.listen.kind} />
+						{t('address')}
+					</label>
+					<label>
+						<input type="radio" name="listen-kind" value="virtual" bind:group={draft.listen.kind} />
+						{t('virtual')}
+					</label>
+				</div>
+			</fieldset>
+			{#if listenVirtual}
+				<div class="mt-4">
+					<Field
+						id="listen-virtual"
+						label={t('virtualChannel')}
+						error={errors.listenVirtual ? t(errors.listenVirtual) : null}
+					>
+						{#snippet children({ describedBy, invalid })}
+							<input
+								id="listen-virtual"
+								class="input font-mono text-[13px]"
+								type="text"
+								list="listen-virtual-list"
+								bind:value={draft.listen.virtual}
+								oninput={() => (errors.listenVirtual = undefined)}
+								required
+								aria-invalid={invalid || undefined}
+								aria-describedby={describedBy}
+								autocapitalize="off"
+								spellcheck="false"
+							/>
+							<datalist id="listen-virtual-list">
+								{#each listenChannels as channel (channel)}
+									<option value={channel}></option>
+								{/each}
+							</datalist>
+						{/snippet}
+					</Field>
+					<VirtualPeers side="listen" channel={draft.listen.virtual} rules={peerRules} {self} />
+				</div>
+			{:else}
+				<div class="mt-4 grid gap-4 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+					<Field id="listen-host" label={t('host')}>
+						{#snippet children({ describedBy })}
+							<input
+								id="listen-host"
+								class="input font-mono text-[13px]"
+								type="text"
+								bind:value={draft.listen.host}
+								placeholder="127.0.0.1"
+								aria-describedby={describedBy}
+								spellcheck="false"
+							/>
+						{/snippet}
+					</Field>
+					<Field
+						id="listen-port"
+						label={t('port')}
+						error={errors.listenPort ? t(errors.listenPort) : null}
+					>
+						{#snippet children({ describedBy, invalid })}
+							<input
+								id="listen-port"
+								class="input font-mono text-[13px]"
+								type="text"
+								inputmode="numeric"
+								bind:value={draft.listen.port}
+								oninput={() => (errors.listenPort = undefined)}
+								required
+								aria-invalid={invalid || undefined}
+								aria-describedby={describedBy}
+							/>
+						{/snippet}
+					</Field>
+				</div>
+			{/if}
 			{#if forwarding}
 				<p class="mt-3 text-xs text-fg-muted">{t('credentialsProxyOnly')}</p>
 			{:else}
@@ -340,16 +426,18 @@
 					</Field>
 				</div>
 			{/if}
-			<div class="mt-5">
-				<h3 class="mb-2 text-sm font-medium">{t('listenThrough')}</h3>
-				<HopEditor
-					bind:hops={draft.listen.way}
-					idPrefix="listen"
-					roles={LISTEN_ROLES}
-					hint="listenThroughHint"
-					build={openBuilder}
-				/>
-			</div>
+			{#if !listenVirtual}
+				<div class="mt-5">
+					<h3 class="mb-2 text-sm font-medium">{t('listenThrough')}</h3>
+					<HopEditor
+						bind:hops={draft.listen.way}
+						idPrefix="listen"
+						roles={LISTEN_ROLES}
+						hint="listenThroughHint"
+						build={openBuilder}
+					/>
+				</div>
+			{/if}
 		</fieldset>
 
 		<fieldset class="band" disabled={busy.value}>
@@ -368,6 +456,61 @@
 				</div>
 			</fieldset>
 			{#if forwarding}
+				<fieldset class="mt-4">
+					<legend class="field-label">{t('endpointKind')}</legend>
+					<div class="segment">
+						<label>
+							<input
+								type="radio"
+								name="target-kind"
+								value="address"
+								bind:group={draft.target.kind}
+							/>
+							{t('address')}
+						</label>
+						<label>
+							<input
+								type="radio"
+								name="target-kind"
+								value="virtual"
+								bind:group={draft.target.kind}
+							/>
+							{t('virtual')}
+						</label>
+					</div>
+				</fieldset>
+			{/if}
+			{#if targetVirtual}
+				<div class="mt-4">
+					<Field
+						id="target-virtual"
+						label={t('virtualChannel')}
+						error={errors.targetVirtual ? t(errors.targetVirtual) : null}
+					>
+						{#snippet children({ describedBy, invalid })}
+							<input
+								id="target-virtual"
+								class="input font-mono text-[13px]"
+								type="text"
+								list="target-virtual-list"
+								bind:value={draft.target.virtual}
+								oninput={() => (errors.targetVirtual = undefined)}
+								required
+								aria-invalid={invalid || undefined}
+								aria-describedby={describedBy}
+								autocapitalize="off"
+								spellcheck="false"
+							/>
+							<datalist id="target-virtual-list">
+								{#each targetChannels as channel (channel)}
+									<option value={channel}></option>
+								{/each}
+							</datalist>
+						{/snippet}
+					</Field>
+					<VirtualPeers side="forward" channel={draft.target.virtual} rules={peerRules} {self} />
+				</div>
+			{:else if forwarding}
 				<div class="mt-4 grid gap-4 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
 					<Field id="target-host" label={t('targetHost')} hint={t('onExitNode')}>
 						{#snippet children({ describedBy })}
@@ -403,19 +546,21 @@
 					</Field>
 				</div>
 			{/if}
-			<div class="mt-5">
-				<h3 class="mb-1 text-sm font-medium">{t('exitChain')}</h3>
-				<p class="mb-2 text-xs text-fg-muted" data-chain-summary>
-					{chainSummary(forwardWay.length, targetLabel)}
-				</p>
-				<HopEditor
-					bind:hops={draft.forward.way}
-					idPrefix="exit"
-					roles={EXIT_ROLES}
-					hint="hopsHint"
-					build={openBuilder}
-				/>
-			</div>
+			{#if !targetVirtual}
+				<div class="mt-5">
+					<h3 class="mb-1 text-sm font-medium">{t('exitChain')}</h3>
+					<p class="mb-2 text-xs text-fg-muted" data-chain-summary>
+						{chainSummary(forwardWay.length, targetLabel)}
+					</p>
+					<HopEditor
+						bind:hops={draft.forward.way}
+						idPrefix="exit"
+						roles={EXIT_ROLES}
+						hint="hopsHint"
+						build={openBuilder}
+					/>
+				</div>
+			{/if}
 		</fieldset>
 
 		<FormActions {dirty} disabled={busy.value || loading} {saving} sticky>
