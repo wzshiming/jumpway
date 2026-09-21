@@ -697,3 +697,78 @@ test('the URL builder prefills from the row, previews live, and Cancel or Escape
 	expect(document.activeElement).toBe(row);
 	expect(chain()).toContain('Hop 1 \u00b7 exit node ss://ss.example:8379');
 });
+
+test('the URL builder offers command and netcat hops with a single raw command field', async () => {
+	await render('#/rules/office');
+	const row = target.querySelector<HTMLInputElement>('input[id^="exit-url-"]')!;
+	const wand = button('Build\u2026', row.parentElement!)!;
+	click(wand);
+	await settle();
+	const dialog = target.querySelector<HTMLDialogElement>(
+		'dialog[open][aria-labelledby="url-builder-title"]'
+	)!;
+	const select = () => dialog.querySelector<HTMLSelectElement>('#url-builder-protocol')!;
+	const pick = (name: string) => {
+		select().value = name;
+		select().dispatchEvent(new Event('change', { bubbles: true }));
+		flushSync();
+	};
+	const command = () => dialog.querySelector<HTMLInputElement>('#url-builder-command')!;
+	const fieldIds = () =>
+		Array.from(
+			dialog.querySelectorAll<HTMLElement>('[data-builder-fields] :is(input, select)')
+		).map((element) => element.id);
+	const preview = () => dialog.querySelector('output')!.textContent!.trim();
+	const hint = () => dialog.querySelector('[role="status"]')?.textContent?.trim();
+
+	pick('command');
+	expect(fieldIds()).toEqual(['url-builder-command']);
+	expect(dialog.querySelector('label[for="url-builder-command"]')?.textContent).toBe('Command');
+	expect(command().placeholder).toBe('nc %h %p');
+	expect(command().value).toBe('');
+	expect(preview()).toBe('cmd:');
+	expect(button('Use URL', dialog)?.disabled).toBe(true);
+	expect(hint()).toBe('A command is required.');
+	type('url-builder-command', 'ssh -W %h:%p jump');
+	expect(preview()).toBe('cmd:ssh -W %h:%p jump');
+	expect(button('Use URL', dialog)?.disabled).toBe(false);
+	expect(hint()).toBe('');
+	dialog.querySelector('form')!.requestSubmit();
+	await settle();
+	expect(dialog.open).toBe(false);
+	expect(row.value).toBe('cmd:ssh -W %h:%p jump');
+
+	click(wand);
+	await settle();
+	expect(select().value).toBe('command');
+	expect(command().value).toBe('ssh -W %h:%p jump');
+
+	pick('netcat');
+	expect(fieldIds()).toEqual(['url-builder-command']);
+	expect(dialog.querySelector('label[for="url-builder-command"]')?.textContent).toBe(
+		'Execution prefix'
+	);
+	expect(command().placeholder).toBe('ssh jump');
+	expect(preview()).toBe('nc:');
+	expect(button('Use URL', dialog)?.disabled).toBe(false);
+	expect(hint()).toBe('');
+	type('url-builder-command', 'ssh jump');
+	expect(preview()).toBe('nc:ssh jump');
+	dialog.querySelector('form')!.requestSubmit();
+	await settle();
+	expect(row.value).toBe('nc:ssh jump');
+
+	click(wand);
+	await settle();
+	expect(select().value).toBe('netcat');
+	expect(command().value).toBe('ssh jump');
+	click(button('Cancel', dialog));
+	await settle();
+	expect(row.value).toBe('nc:ssh jump');
+
+	await save();
+	expect((writes()[0].body as Rule).forward.way).toEqual([
+		{ lb: ['nc:ssh jump'] },
+		{ lb: ['ssh://ops@bastion.example:22', 'ssh://ops@bastion-2.example:22'] }
+	]);
+});

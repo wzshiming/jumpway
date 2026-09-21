@@ -326,5 +326,35 @@
 				"value": "8379"
 			}
 		]
+	},
+	{
+		"name": "command",
+		"inputs": [
+			{
+				"kind": "span",
+				"value": "cmd:"
+			},
+			{
+				"name": "command",
+				"kind": "text",
+				"placeholder": "nc %h %p"
+			}
+		]
+	},
+	{
+		"name": "netcat",
+		"inputs": [
+			{
+				"kind": "span",
+				"value": "nc:"
+			},
+			{
+				"name": "command",
+				"kind": "text",
+				"label": "field.commandPrefix",
+				"option": true,
+				"placeholder": "ssh jump"
+			}
+		]
 	}
 ]
