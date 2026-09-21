@@ -57,7 +57,8 @@ func newHTTPServeConn(ctx context.Context, scheme, address string, conf *anyprox
 			auth[user.Username()] = password
 		}
 		server.Authentication = httpproxy.BasicAuthFunc(func(username, password string) bool {
-			return auth[username] == password
+			expected, ok := auth[username]
+			return ok && expected == password
 		})
 	}
 	server.Logger = conf.Logger
