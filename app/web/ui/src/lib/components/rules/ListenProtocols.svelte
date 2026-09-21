@@ -72,9 +72,22 @@
 </div>
 {#each listen.protocols as row, index (row.type)}
 	{#if row.enabled}
-		<fieldset class="mt-4 border-t border-line pt-2">
-			<legend class="pr-3 text-sm font-medium">{PROTOCOLS[index].label}</legend>
-			<div class="grid gap-4 sm:grid-cols-2">
+		<fieldset class="mt-4" aria-labelledby="protocol-{row.type}-heading">
+			<legend
+				class="flex w-full items-center justify-between gap-3 border-b border-line pb-2 text-sm font-medium"
+			>
+				<span id="protocol-{row.type}-heading">{PROTOCOLS[index].label}</span>
+				<label class="inline-flex h-8 shrink-0 items-center gap-2 font-normal">
+					<input
+						id="protocol-{row.type}-custom"
+						type="checkbox"
+						class="size-4 accent-accent"
+						bind:checked={row.custom}
+					/>
+					{t('customCredentials')}
+				</label>
+			</legend>
+			<div class="grid gap-4 sm:grid-cols-2" class:mt-3={row.custom || row.type === 'ss'}>
 				{#if row.type === 'ss'}
 					<Field
 						id="protocol-ss-cipher"
@@ -102,15 +115,6 @@
 						{/snippet}
 					</Field>
 				{/if}
-				<label class="inline-flex h-8 items-center gap-2 self-end text-sm">
-					<input
-						id="protocol-{row.type}-custom"
-						type="checkbox"
-						class="size-4 accent-accent"
-						bind:checked={row.custom}
-					/>
-					{t('customCredentials')}
-				</label>
 				{#if row.custom}
 					{#each PROTOCOLS[index].fields as name (name)}
 						{@const ssPassword = row.type === 'ss' && name === 'password'}

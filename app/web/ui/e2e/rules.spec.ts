@@ -1242,6 +1242,61 @@ test('listen protocols: one checked scheme is a single-protocol port, several sh
 	expect(api.writes).toHaveLength(4);
 });
 
+test('protocol credentials align below their controls on desktop and stack on phones', async ({
+	page,
+	api
+}) => {
+	api.rules.push(...structuredClone(protocolRulesFixture));
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await page.goto('/#/rules/mixed');
+	await expect(heading(page)).toHaveText('mixed');
+	const protocols = page.getByRole('group', { name: 'Protocols', exact: true });
+	for (const label of ['HTTP', 'SOCKS5', 'SOCKS4', 'SSH', 'Shadowsocks']) {
+		await protocols.getByRole('checkbox', { name: label, exact: true }).check();
+		await page
+			.getByRole('group', { name: label, exact: true })
+			.getByRole('checkbox', { name: 'Custom credentials' })
+			.check();
+	}
+	for (const width of [1280, 390]) {
+		await page.setViewportSize({ width, height: 844 });
+		const positions = await page.evaluate(() =>
+			['http', 'socks5', 'socks4', 'ssh', 'ss'].map((type) => {
+				const rect = (field: string) => {
+					const { x, y, width, height } = document
+						.getElementById(`protocol-${type}-${field}`)!
+						.getBoundingClientRect();
+					return { x, y, width, height };
+				};
+				return {
+					type,
+					control: rect('custom'),
+					first: rect(type === 'ss' ? 'cipher' : 'username'),
+					password: type === 'socks4' ? null : rect('password')
+				};
+			})
+		);
+		for (const { type, control, first, password } of positions) {
+			expect(first.y, `${type} fields below control at ${width}px`).toBeGreaterThan(
+				control.y + control.height
+			);
+			if (!password) continue;
+			expect(password.width).toBeCloseTo(first.width, 0);
+			if (width === 1280) {
+				expect(password.y, `${type} fields share a row`).toBeCloseTo(first.y, 0);
+				expect(password.x).toBeGreaterThan(first.x + first.width);
+			} else {
+				expect(password.x, `${type} fields share a column`).toBeCloseTo(first.x, 0);
+				expect(password.y).toBeGreaterThan(first.y + first.height);
+			}
+		}
+		for (const label of ['HTTP', 'Shadowsocks']) {
+			await page.getByRole('group', { name: label, exact: true }).scrollIntoViewIfNeeded();
+			await shoot(page, `protocol-fields-${width}-${label}`);
+		}
+	}
+});
+
 test.describe('screenshots', () => {
 	for (const [viewport, label] of [
 		[{ width: 1280, height: 800 }, 'desktop'],

@@ -992,9 +992,13 @@ const TYPES = ['http', 'socks5', 'socks4', 'ssh', 'ss'];
 const checkedTypes = () =>
 	TYPES.filter((type) => target.querySelector<HTMLInputElement>(`#protocol-${type}`)?.checked);
 const group = (name: string) =>
-	Array.from(form()!.querySelectorAll('fieldset')).find(
-		(element) => element.querySelector(':scope > legend')?.textContent?.trim() === name
-	);
+	Array.from(form()!.querySelectorAll('fieldset')).find((element) => {
+		const labelledBy = element.getAttribute('aria-labelledby');
+		const label = labelledBy
+			? document.getElementById(labelledBy)
+			: element.querySelector(':scope > legend');
+		return label?.textContent?.trim() === name;
+	});
 const bands = () =>
 	Array.from(form()!.querySelectorAll('.band > .band-title')).map((title) =>
 		title.textContent?.trim()
