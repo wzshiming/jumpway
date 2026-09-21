@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -1116,16 +1117,17 @@ func TestPrimaryAddressFallback(test *testing.T) {
 	app := &App{rules: []*ruleState{
 		{name: "remote", listenAddress: "0.0.0.0:10000", address: "0.0.0.0:10000", remote: true, running: true},
 		{name: "forward", listenAddress: "0.0.0.0:10002", address: "127.0.0.1:20002", target: "127.0.0.1:5432", running: true},
+		{name: "virtual", listenAddress: "virtual://x", address: "virtual://x", virtual: true, running: true},
 		{name: "local", listenAddress: "0.0.0.0:10001", address: "127.0.0.1:20001"},
 	}}
 	if address := app.primaryAddress(); address != "127.0.0.1:10001" {
 		test.Fatalf("fallback address = %q", address)
 	}
-	app.rules[2].running = true
+	app.rules[3].running = true
 	if address := app.primaryAddress(); address != "127.0.0.1:20001" {
 		test.Fatalf("running proxy address = %q", address)
 	}
-	app.rules = app.rules[:2]
+	app.rules = app.rules[:3]
 	if address := app.primaryAddress(); address != "" {
 		test.Fatalf("remote or forward address used as local proxy: %q", address)
 	}
@@ -1134,6 +1136,157 @@ func TestPrimaryAddressFallback(test *testing.T) {
 		test.Fatalf("remote or forward address used as local fallback: %q", address)
 	}
 	app.updateStatus()
+}
+
+func TestReloadVirtualEndpoints(test *testing.T) {
+	target := startMultiEchoServer(test)
+	conf := &config.Config{Rules: []config.Rule{
+		{Name: "entry", Listen: config.Listen{Host: "127.0.0.1"}, Forward: config.Forward{Virtual: "x"}},
+		{Name: "exit", Listen: config.Listen{Virtual: "x"}, Forward: config.Forward{Host: "127.0.0.1", Port: uint32(target.Addr().(*net.TCPAddr).Port)}},
+	}}
+	app := newTestApp(test, conf)
+	if err := app.Reload(); err != nil {
+		test.Fatal(err)
+	}
+	status := app.Status()
+	if len(status.Rules) != 2 || !status.Rules[0].Running || !status.Rules[1].Running || status.Rules[1].Remote {
+		test.Fatalf("unexpected status: %+v", status)
+	}
+	if status.Rules[0].Target != "virtual://x" || status.Rules[1].Address != "virtual://x" || status.Rules[1].Target != target.Addr().String() {
+		test.Fatalf("virtual endpoints not displayed: %+v", status.Rules)
+	}
+	connection, err := net.DialTimeout("tcp", status.Rules[0].Address, time.Second)
+	if err != nil {
+		test.Fatal(err)
+	}
+	defer connection.Close()
+	reader := bufio.NewReader(connection)
+	payload := "through virtual\n"
+	assertTunnelEcho(test, connection, reader, payload)
+	client := connection.LocalAddr().String()
+	snapshot := waitForSnapshot(test, app, func(snapshot metrics.Snapshot) bool {
+		if len(snapshot.Rules) != 2 || len(snapshot.Rules[0].Connections) != 1 || len(snapshot.Rules[1].Connections) != 1 {
+			return false
+		}
+		return snapshot.Rules[0].Connections[0].Stats.Down == int64(len(payload)) && snapshot.Rules[1].Connections[0].Stats.Down == int64(len(payload))
+	})
+	entry, exit := snapshot.Rules[0].Connections[0], snapshot.Rules[1].Connections[0]
+	if entry.Client != client || entry.Target != "virtual://x" || exit.Client != "virtual://x" || exit.Target != target.Addr().String() {
+		test.Fatalf("entry = %+v, exit = %+v, want client %q and target %q", entry, exit, client, target.Addr().String())
+	}
+	if len(snapshot.Rules[0].Targets) != 1 || snapshot.Rules[0].Targets[0].Address != "virtual://x" || snapshot.Rules[0].Targets[0].Stats.Total != 1 {
+		test.Fatalf("entry targets = %+v", snapshot.Rules[0].Targets)
+	}
+	conf.Rules[1].Disabled = true
+	if err := app.store.Save(conf); err != nil {
+		test.Fatal(err)
+	}
+	if err := app.Reload(); err != nil {
+		test.Fatal(err)
+	}
+	if status := app.Status(); len(status.Rules) != 1 || status.Rules[0].Name != "entry" || !status.Rules[0].Running {
+		test.Fatalf("status after disabling exit: %+v", status)
+	}
+	if size, err := reader.Read(make([]byte, 1)); size != 0 || err == nil {
+		test.Fatalf("Read after disabling exit = (%d, %v), want EOF or error", size, err)
+	} else if timeout, ok := err.(net.Error); ok && timeout.Timeout() {
+		test.Fatalf("disabling exit did not release the connection: %v", err)
+	}
+	conf.Rules[1].Disabled = false
+	if err := app.store.Save(conf); err != nil {
+		test.Fatal(err)
+	}
+	if err := app.Reload(); err != nil {
+		test.Fatal(err)
+	}
+	if status := app.Status(); len(status.Rules) != 2 || !status.Rules[1].Running || status.Rules[1].Address != "virtual://x" {
+		test.Fatalf("status after re-enabling exit: %+v", status)
+	}
+	again, err := net.DialTimeout("tcp", status.Rules[0].Address, time.Second)
+	if err != nil {
+		test.Fatal(err)
+	}
+	defer again.Close()
+	assertTunnelEcho(test, again, again, "after re-enable\n")
+}
+
+func TestReloadVirtualProxyExit(test *testing.T) {
+	target := startMultiEchoServer(test)
+	app := newTestApp(test, &config.Config{Rules: []config.Rule{
+		{Name: "entry", Listen: config.Listen{Host: "127.0.0.1"}, Forward: config.Forward{Virtual: "x"}},
+		{Name: "exit", Listen: config.Listen{Virtual: "x", Username: "alice", Password: "test-secret"}},
+	}})
+	if err := app.Reload(); err != nil {
+		test.Fatal(err)
+	}
+	status := app.Status()
+	if len(status.Rules) != 2 || !status.Rules[1].Running || status.Rules[1].Address != "virtual://x" || status.Rules[1].Target != "" {
+		test.Fatalf("unexpected status: %+v", status)
+	}
+	if address := app.primaryAddress(); address != "" {
+		test.Fatalf("virtual proxy listener offered as system proxy: %q", address)
+	}
+	if address := app.ruleAddress("exit"); address != "" {
+		test.Fatalf("virtual proxy listener exported: %q", address)
+	}
+	if entries := menuModel([]ruleState{*app.rules[1]}); entries[0].localProxy {
+		test.Fatalf("virtual proxy listener listed as local proxy: %+v", entries[0])
+	}
+	app.mu.Lock()
+	app.systemProxyRule = "exit"
+	app.mu.Unlock()
+	if address, _, removed := app.syncSystemProxySelection(); address != "" || removed != "exit" {
+		test.Fatalf("virtual proxy listener kept as system proxy: %q, removed %q", address, removed)
+	}
+	for _, scenario := range []struct {
+		name        string
+		credentials string
+		code        int
+	}{
+		{name: "auth-required", code: http.StatusProxyAuthRequired},
+		{name: "auth-accepted", credentials: "alice:test-secret", code: http.StatusOK},
+	} {
+		test.Run(scenario.name, func(test *testing.T) {
+			connection, err := net.DialTimeout("tcp", status.Rules[0].Address, time.Second)
+			if err != nil {
+				test.Fatal(err)
+			}
+			defer connection.Close()
+			if err := connection.SetDeadline(time.Now().Add(2 * time.Second)); err != nil {
+				test.Fatal(err)
+			}
+			request, err := http.NewRequest(http.MethodConnect, "http://"+target.Addr().String(), nil)
+			if err != nil {
+				test.Fatal(err)
+			}
+			if scenario.credentials != "" {
+				request.Header.Set("Proxy-Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(scenario.credentials)))
+			}
+			if err := request.Write(connection); err != nil {
+				test.Fatal(err)
+			}
+			reader := bufio.NewReader(connection)
+			response, err := http.ReadResponse(reader, request)
+			if err != nil {
+				test.Fatal(err)
+			}
+			if response.StatusCode != scenario.code {
+				test.Fatalf("CONNECT response = %s, want %d", response.Status, scenario.code)
+			}
+			if scenario.code != http.StatusOK {
+				return
+			}
+			payload := "proxied through virtual\n"
+			assertTunnelEcho(test, connection, reader, payload)
+			snapshot := waitForSnapshot(test, app, func(snapshot metrics.Snapshot) bool {
+				return len(snapshot.Rules) == 2 && len(snapshot.Rules[1].Connections) == 1 && snapshot.Rules[1].Connections[0].Stats.Down == int64(len(payload))
+			})
+			live := snapshot.Rules[1].Connections[0]
+			if live.Client != "virtual://x" || live.Target != target.Addr().String() || live.Via != "" {
+				test.Fatalf("exit connection = %+v, want client virtual://x and target %q", live, target.Addr().String())
+			}
+		})
+	}
 }
 
 func newTestApp(test *testing.T, conf *config.Config) *App {

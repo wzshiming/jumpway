@@ -1,6 +1,11 @@
 import { flushSync, mount, unmount } from 'svelte';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { rulesFixture, snapshotFixture, statusFixture } from '../../e2e/fixtures/api';
+import {
+	rulesFixture,
+	snapshotFixture,
+	statusFixture,
+	virtualRulesFixture
+} from '../../e2e/fixtures/api';
 import App from '../App.svelte';
 import { SAVED_PREFIX } from '../lib/api';
 import { router } from '../lib/router.svelte';
@@ -648,3 +653,51 @@ test.each([
 		).toEqual(rules.map((rule) => !rule.disabled));
 	}
 );
+
+const compact = (element: Element | null | undefined) =>
+	element?.textContent?.replace(/\s+/g, ' ').trim() ?? null;
+const peersOf = (name: string) =>
+	Array.from(card(name).querySelectorAll('[data-virtual-peers] a')).map((link) => [
+		link.textContent?.trim(),
+		link.getAttribute('href')
+	]);
+
+test('virtual cards label channels as virtual:// and link peers by channel; a dangling target warns; disabling the exit makes its entries dangling', async () => {
+	rules.push(...structuredClone(virtualRulesFixture));
+	await render();
+	expect(names()).toEqual([
+		'office',
+		'mirror',
+		'db-tunnel',
+		'lab',
+		'shared-exit',
+		'lan-entry',
+		'orphan'
+	]);
+	const dds = (name: string) => Array.from(card(name).querySelectorAll('dl dd'));
+	expect(compact(card('shared-exit').querySelector('header p'))).toBe('Proxy');
+	expect(dds('shared-exit')[0].textContent).toContain('virtual://exit');
+	expect(compact(dds('shared-exit')[0].querySelector('[data-virtual-peers]'))).toBe(
+		'Incoming rules lan-entry'
+	);
+	expect(peersOf('shared-exit')).toEqual([['lan-entry', '#/rules/lan-entry']]);
+	expect(compact(card('lan-entry').querySelector('header p'))).toBe('Port forward');
+	expect(dds('lan-entry')[1].textContent).toContain('virtual://exit');
+	expect(peersOf('lan-entry')).toEqual([['shared-exit', '#/rules/shared-exit']]);
+	expect(peersOf('orphan')).toEqual([]);
+	expect(compact(card('orphan').querySelector('[data-virtual-peers]'))).toBe(
+		'No enabled rule listens on this channel.'
+	);
+	for (const name of ['office', 'mirror', 'db-tunnel', 'lab']) {
+		expect(card(name).querySelector('[data-virtual-peers]')).toBeNull();
+	}
+
+	click(toggle('shared-exit'));
+	await settle();
+	expect(rules.find((rule) => rule.name === 'shared-exit')?.disabled).toBe(true);
+	expect(compact(card('lan-entry').querySelector('[data-virtual-peers]'))).toBe(
+		'No enabled rule listens on this channel.'
+	);
+	// The incoming side lists enabled entries whatever the listener's own state.
+	expect(peersOf('shared-exit')).toEqual([['lan-entry', '#/rules/lan-entry']]);
+});

@@ -2,7 +2,13 @@ import { t, type MessageKey } from './i18n.svelte';
 import type { Rule } from './types';
 
 // forward.port 0 or absent means proxy mode: clients pick their own target.
-export const isForward = (rule: Rule): boolean => (rule.forward.port ?? 0) > 0;
+export const isForward = (rule: Rule): boolean =>
+	(rule.forward.port ?? 0) > 0 || !!rule.forward.virtual;
+
+export const virtualAddress = (channel: string): string => 'virtual://' + channel;
+
+// Mirrors the backend channel rule: non-empty, no whitespace, no '/'; case-sensitive.
+export const isVirtualChannel = (channel: string): boolean => /^[^\s/]+$/.test(channel);
 
 // Mirrors config.Address.String(): an empty host is bound on 127.0.0.1. Text ports come from the editor.
 export function hostPort(host: string | undefined, port: number | string | undefined): string {
@@ -12,9 +18,44 @@ export function hostPort(host: string | undefined, port: number | string | undef
 }
 
 export const forwardTarget = (rule: Rule): string =>
-	isForward(rule) ? hostPort(rule.forward.host, rule.forward.port) : '';
+	rule.forward.virtual
+		? virtualAddress(rule.forward.virtual)
+		: isForward(rule)
+			? hostPort(rule.forward.host, rule.forward.port)
+			: '';
 
-export const listenAddress = (rule: Rule): string => hostPort(rule.listen.host, rule.listen.port);
+export const listenAddress = (rule: Rule): string =>
+	rule.listen.virtual
+		? virtualAddress(rule.listen.virtual)
+		: hostPort(rule.listen.host, rule.listen.port);
+
+export type VirtualSide = 'listen' | 'forward';
+
+const counterpart = (side: VirtualSide): VirtualSide => (side === 'listen' ? 'forward' : 'listen');
+
+// Enabled rules on the other end of a channel; self is the SAVED name so a renamed draft never
+// sees its stale copy as a peer. Many entries may feed one exit.
+export const virtualPeers = (
+	rules: readonly Rule[],
+	side: VirtualSide,
+	channel: string,
+	self = ''
+): Rule[] =>
+	channel
+		? rules.filter(
+				(rule) =>
+					!rule.disabled && rule.name !== self && rule[counterpart(side)].virtual === channel
+			)
+		: [];
+
+export const virtualChannels = (rules: readonly Rule[], side: VirtualSide, self = ''): string[] => [
+	...new Set(
+		rules.flatMap((rule) => {
+			const channel = rule[counterpart(side)].virtual;
+			return channel && rule.name !== self ? [channel] : [];
+		})
+	)
+];
 
 const SEPARATOR = ' \u00b7 ';
 

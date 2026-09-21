@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/pkg/browser"
 	bridgeconfig "github.com/wzshiming/bridge/config"
@@ -49,16 +50,20 @@ type Rule struct {
 	Forward  Forward `yaml:"forward,omitempty" json:"forward"`
 }
 
-// Listen is the entry: Host:Port is bound by the first hop of Way, or by this machine when Way is empty.
+// Listen is the entry: Host:Port is bound by the first hop of Way, or by this machine when Way is empty; Virtual names an in-process channel instead.
 type Listen struct {
 	Host     string              `yaml:"host,omitempty" json:"host"`
 	Port     uint32              `yaml:"port" json:"port"`
+	Virtual  string              `yaml:"virtual,omitempty" json:"virtual,omitempty"`
 	Way      []bridgeconfig.Node `yaml:"way,omitempty" json:"way,omitempty"`
 	Username string              `yaml:"username,omitempty" json:"username,omitempty"`
 	Password string              `yaml:"password,omitempty" json:"password,omitempty"`
 }
 
 func (l Listen) Address() string {
+	if l.Virtual != "" {
+		return VirtualScheme + l.Virtual
+	}
 	return (Address{Host: l.Host, Port: l.Port}).String()
 }
 
@@ -76,23 +81,30 @@ func (l Listen) User() *url.Userinfo {
 	return url.User(l.Username)
 }
 
-// Forward is the exit: connections are dialed through Way (empty = from this machine) to Host:Port, or to the proxy client's own target when Port is 0.
+// Forward is the exit: connections are dialed through Way (empty = from this machine) to Host:Port, to the in-process channel Virtual, or to the proxy client's own target when both are empty.
 type Forward struct {
-	Host string              `yaml:"host,omitempty" json:"host,omitempty"`
-	Port uint32              `yaml:"port,omitempty" json:"port,omitempty"`
-	Way  []bridgeconfig.Node `yaml:"way,omitempty" json:"way,omitempty"`
+	Host    string              `yaml:"host,omitempty" json:"host,omitempty"`
+	Port    uint32              `yaml:"port,omitempty" json:"port,omitempty"`
+	Virtual string              `yaml:"virtual,omitempty" json:"virtual,omitempty"`
+	Way     []bridgeconfig.Node `yaml:"way,omitempty" json:"way,omitempty"`
 }
 
 // IsProxy reports whether the rule serves proxy protocols instead of forwarding to a fixed target.
-func (f Forward) IsProxy() bool { return f.Port == 0 }
+func (f Forward) IsProxy() bool { return f.Port == 0 && f.Virtual == "" }
 
 // Target is the fixed destination, empty in proxy mode; an empty Host means 127.0.0.1 on the exit node.
 func (f Forward) Target() string {
+	if f.Virtual != "" {
+		return VirtualScheme + f.Virtual
+	}
 	if f.IsProxy() {
 		return ""
 	}
 	return (Address{Host: f.Host, Port: f.Port}).String()
 }
+
+// VirtualScheme prefixes the display form of an in-process channel endpoint.
+const VirtualScheme = "virtual://"
 
 type NoProxy struct {
 	List     []string `yaml:"list" json:"list"`
@@ -235,13 +247,22 @@ func Validate(conf *Config) error {
 		if !rule.Forward.IsProxy() && rule.Listen.Username != "" {
 			return fmt.Errorf("rules[%d].listen.username is only used by proxy rules", ruleIndex)
 		}
+		if err := validateVirtual(fmt.Sprintf("rules[%d].listen", ruleIndex), rule.Listen.Virtual, rule.Listen.Host, rule.Listen.Port, rule.Listen.Way); err != nil {
+			return err
+		}
+		if err := validateVirtual(fmt.Sprintf("rules[%d].forward", ruleIndex), rule.Forward.Virtual, rule.Forward.Host, rule.Forward.Port, rule.Forward.Way); err != nil {
+			return err
+		}
+		if rule.Listen.Virtual != "" && rule.Listen.Virtual == rule.Forward.Virtual {
+			return fmt.Errorf("rules[%d].forward.virtual %q loops back to its own listener", ruleIndex, rule.Forward.Virtual)
+		}
 		if err := validateWay(fmt.Sprintf("rules[%d].listen.way", ruleIndex), rule.Listen.Way); err != nil {
 			return err
 		}
 		if err := validateWay(fmt.Sprintf("rules[%d].forward.way", ruleIndex), rule.Forward.Way); err != nil {
 			return err
 		}
-		if rule.Disabled || rule.Listen.Remote() || rule.Listen.Port == 0 {
+		if rule.Disabled || rule.Listen.Remote() || (rule.Listen.Port == 0 && rule.Listen.Virtual == "") {
 			continue
 		}
 		address := rule.Listen.Address()
@@ -252,6 +273,25 @@ func Validate(conf *Config) error {
 			return fmt.Errorf("rules[%d].listen address %s is already used by web_ui", ruleIndex, address)
 		}
 		addresses[address] = rule.Name
+	}
+	return nil
+}
+
+func validateVirtual(prefix, virtual, host string, port uint32, way []bridgeconfig.Node) error {
+	if virtual == "" {
+		return nil
+	}
+	if strings.ContainsFunc(virtual, unicode.IsSpace) || strings.Contains(virtual, "/") {
+		return fmt.Errorf("%s.virtual %q must not contain whitespace or \"/\"", prefix, virtual)
+	}
+	if host != "" {
+		return fmt.Errorf("%s.virtual must not be combined with host", prefix)
+	}
+	if port != 0 {
+		return fmt.Errorf("%s.virtual must not be combined with port", prefix)
+	}
+	if len(way) != 0 {
+		return fmt.Errorf("%s.virtual must not be combined with way", prefix)
 	}
 	return nil
 }

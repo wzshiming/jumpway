@@ -4,6 +4,7 @@
 	import IconTrash from '~icons/lucide/trash-2';
 	import { tooltip } from '../../lib/actions/tooltip.svelte';
 	import DirectionArrow from '../../lib/components/stats/DirectionArrow.svelte';
+	import VirtualPeers from '../../lib/components/rules/VirtualPeers.svelte';
 	import HelpTip from '../../lib/components/ui/HelpTip.svelte';
 	import IconButton from '../../lib/components/ui/IconButton.svelte';
 	import StatusChip, { type ChipState } from '../../lib/components/ui/StatusChip.svelte';
@@ -18,6 +19,8 @@
 
 	interface Props {
 		rule: Rule;
+		// Every configured rule, for virtual peer links; null while unknown.
+		rules: readonly Rule[] | null;
 		runtime: RuleStatus | null;
 		stats: Stats | null;
 		// A write or a delete question for this rule is in flight; its switch and Delete wait.
@@ -26,7 +29,7 @@
 		onDelete: () => void;
 	}
 
-	let { rule, runtime, stats, pending, onToggle, onDelete }: Props = $props();
+	let { rule, rules, runtime, stats, pending, onToggle, onDelete }: Props = $props();
 
 	const enabled = $derived(!rule.disabled);
 	let input = $state<HTMLInputElement | null>(null);
@@ -102,12 +105,22 @@
 			{t('listen')}
 			<HelpTip concept={t('listen')} text={t('help.listen')} />
 		</dt>
-		<dd class="font-mono text-[13px] break-all">{address}</dd>
+		<dd class="font-mono text-[13px] break-all">
+			{address}
+			{#if rule.listen.virtual}
+				<VirtualPeers side="listen" channel={rule.listen.virtual} {rules} self={rule.name} />
+			{/if}
+		</dd>
 		<dt class="flex items-center gap-1 text-fg-muted">
 			{t('target')}
 			<HelpTip concept={t('target')} text={t('help.target')} />
 		</dt>
-		<dd class="font-mono text-[13px] break-all">{target || DASH}</dd>
+		<dd class="font-mono text-[13px] break-all">
+			{target || DASH}
+			{#if rule.forward.virtual}
+				<VirtualPeers side="forward" channel={rule.forward.virtual} {rules} self={rule.name} />
+			{/if}
+		</dd>
 		<dt class="flex items-center gap-1 text-fg-muted">
 			{t('exitChain')}
 			<HelpTip concept={t('exitChain')} text={t('help.exitChain')} />

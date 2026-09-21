@@ -1,6 +1,13 @@
 import { flushSync, mount, unmount, tick } from 'svelte';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { hostsTotals, rulesFixture, snapshotFixture, statusFixture } from '../../e2e/fixtures/api';
+import {
+	hostsTotals,
+	rulesFixture,
+	snapshotFixture,
+	statsOf,
+	statusFixture,
+	virtualRulesFixture
+} from '../../e2e/fixtures/api';
 import App from '../App.svelte';
 import { formatDateTime } from '../lib/format';
 import { stats } from '../lib/stats.svelte';
@@ -1537,4 +1544,56 @@ test('at most 200 of many connections are rendered, with a note saying so', asyn
 	expect(list[0].dataset.connection).toBe('1249');
 	expect(compact(target.querySelector('[data-connection-count]'))).toBe('251 connections');
 	expect(target.querySelector('main')?.textContent).toContain('Showing 200 of 251');
+});
+
+test('virtual rows label channels as virtual:// and link peers from the loaded rule list; without that list the association stays unknown', async () => {
+	rules.push(...structuredClone(virtualRulesFixture));
+	await render('#/stats');
+	const peers = (row: Element) =>
+		Array.from(row.querySelectorAll('[data-virtual-peers] a')).map((link) => [
+			link.textContent?.trim(),
+			link.getAttribute('href')
+		]);
+	const list = rows();
+	expect(list.map((row) => row.dataset.rule)).toEqual([
+		'office',
+		'mirror',
+		'db-tunnel',
+		'lab',
+		'shared-exit',
+		'lan-entry',
+		'orphan'
+	]);
+	const [exit, entry, orphan] = list.slice(4);
+	expect(compact(exit.querySelector('[data-mode]'))).toBe('Proxy');
+	expect(compact(exit.querySelector('[data-address]'))).toBe('virtual://exit');
+	expect(compact(exit.querySelector('[data-virtual-peers]'))).toBe('Incoming rules lan-entry');
+	expect(peers(exit)).toEqual([['lan-entry', '#/rules/lan-entry']]);
+	expect(compact(entry.querySelector('[data-mode]'))).toBe('Port forward');
+	expect(compact(entry.querySelector('[data-address]'))).toBe(
+		'0.0.0.0:18101 \u2192 virtual://exit'
+	);
+	expect(peers(entry)).toEqual([['shared-exit', '#/rules/shared-exit']]);
+	expect(compact(orphan.querySelector('[data-virtual-peers]'))).toBe(
+		'No enabled rule listens on this channel.'
+	);
+	expect(list[0].querySelector('[data-virtual-peers]')).toBeNull();
+	expect(exit.querySelectorAll('button a, a button')).toHaveLength(0);
+
+	unmount(app!);
+	app = null;
+	target.remove();
+	snapshot.rules!.push({
+		name: 'orphan',
+		stats: statsOf({}),
+		listen: null,
+		forward: null,
+		targets: null,
+		connections: null,
+		targets_evicted: 0
+	});
+	fail.set('GET /apis/configs/rules', 'boom');
+	await render('#/stats');
+	expect(rows().map((row) => row.dataset.rule)).toContain('orphan');
+	expect(target.querySelector('main [data-virtual-peers]')).toBeNull();
 });

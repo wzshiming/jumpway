@@ -301,6 +301,88 @@ func TestValidate(t *testing.T) {
 			}},
 			wantError: `rules[1].listen address [::1]:9000 is already used by rule "a"`,
 		},
+		{
+			name: "virtual_pair",
+			conf: &Config{Rules: []Rule{
+				{Name: "entry", Listen: Listen{Port: 1080}, Forward: Forward{Virtual: "x"}},
+				{Name: "exit", Listen: Listen{Virtual: "x", Username: "user", Password: "secret"}},
+			}},
+		},
+		{
+			name: "dangling_virtual_forward",
+			conf: &Config{Rules: []Rule{{Name: "a", Listen: Listen{Port: 1080}, Forward: Forward{Virtual: "nowhere"}}}},
+		},
+		{
+			name:      "virtual_listen_with_host",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Virtual: "x", Host: "127.0.0.1"}}}},
+			wantError: "rules[0].listen.virtual must not be combined with host",
+		},
+		{
+			name:      "virtual_listen_with_port",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Virtual: "x", Port: 1080}}}},
+			wantError: "rules[0].listen.virtual must not be combined with port",
+		},
+		{
+			name:      "virtual_listen_with_way",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Virtual: "x", Way: []bridgeconfig.Node{{LB: []string{"ssh://user@host:22"}}}}}}},
+			wantError: "rules[0].listen.virtual must not be combined with way",
+		},
+		{
+			name:      "virtual_forward_with_host",
+			conf:      &Config{Rules: []Rule{{Name: "a", Forward: Forward{Virtual: "x", Host: "10.0.0.5"}}}},
+			wantError: "rules[0].forward.virtual must not be combined with host",
+		},
+		{
+			name:      "virtual_forward_with_port",
+			conf:      &Config{Rules: []Rule{{Name: "a", Forward: Forward{Virtual: "x", Port: 5432}}}},
+			wantError: "rules[0].forward.virtual must not be combined with port",
+		},
+		{
+			name:      "virtual_forward_with_way",
+			conf:      &Config{Rules: []Rule{{Name: "a", Forward: Forward{Virtual: "x", Way: []bridgeconfig.Node{{LB: []string{"socks5://host:1080"}}}}}}},
+			wantError: "rules[0].forward.virtual must not be combined with way",
+		},
+		{
+			name:      "virtual_forward_with_username",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Port: 1080, Username: "user"}, Forward: Forward{Virtual: "x"}}}},
+			wantError: "rules[0].listen.username is only used by proxy rules",
+		},
+		{
+			name:      "virtual_listen_blank",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Virtual: " "}}}},
+			wantError: `rules[0].listen.virtual " " must not contain whitespace or "/"`,
+		},
+		{
+			name:      "virtual_listen_whitespace",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Virtual: "a\tb"}}}},
+			wantError: `rules[0].listen.virtual "a\tb" must not contain whitespace or "/"`,
+		},
+		{
+			name:      "virtual_forward_slash",
+			conf:      &Config{Rules: []Rule{{Name: "a", Forward: Forward{Virtual: "a/b"}}}},
+			wantError: `rules[0].forward.virtual "a/b" must not contain whitespace or "/"`,
+		},
+		{
+			name:      "virtual_self_loop",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Virtual: "x"}, Forward: Forward{Virtual: "x"}}}},
+			wantError: `rules[0].forward.virtual "x" loops back to its own listener`,
+		},
+		{
+			name: "duplicate_virtual_listen",
+			conf: &Config{Rules: []Rule{
+				{Name: "a", Listen: Listen{Virtual: "x"}},
+				{Name: "b", Listen: Listen{Virtual: "x"}},
+			}},
+			wantError: `rules[1].listen address virtual://x is already used by rule "a"`,
+		},
+		{
+			name: "disabled_duplicate_virtual_listen",
+			conf: &Config{Rules: []Rule{
+				{Name: "a", Disabled: true, Listen: Listen{Virtual: "x"}},
+				{Name: "b", Listen: Listen{Virtual: "x"}},
+				{Name: "c", Disabled: true, Listen: Listen{Virtual: "x"}},
+			}},
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -346,6 +428,7 @@ func TestForwardTarget(t *testing.T) {
 		{name: "ipv6", forward: Forward{Host: "::1", Port: 5432}, want: "[::1]:5432"},
 		{name: "proxy"},
 		{name: "proxy_ignores_host", forward: Forward{Host: "10.0.0.5"}},
+		{name: "virtual", forward: Forward{Virtual: "x"}, want: "virtual://x"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			if got := test.forward.Target(); got != test.want {
@@ -364,12 +447,54 @@ func TestForwardIsProxy(t *testing.T) {
 		{name: "direct_proxy", want: true},
 		{name: "chained_proxy", forward: Forward{Way: []bridgeconfig.Node{{LB: []string{"socks5://host:1080"}}}}, want: true},
 		{name: "port_forward", forward: Forward{Port: 5432}},
+		{name: "virtual_target", forward: Forward{Virtual: "x"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			if got := test.forward.IsProxy(); got != test.want {
 				t.Fatalf("IsProxy() = %v, want %v", got, test.want)
 			}
 		})
+	}
+}
+
+func TestVirtualSchema(t *testing.T) {
+	rule := Rule{Name: "a", Listen: Listen{Virtual: "in"}, Forward: Forward{Virtual: "out"}}
+	yamlOut, err := yaml.Marshal(rule)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantYAML := "name: a\nlisten:\n    port: 0\n    virtual: in\nforward:\n    virtual: out\n"
+	if string(yamlOut) != wantYAML {
+		t.Fatalf("yaml = %q, want %q", yamlOut, wantYAML)
+	}
+	var fromYAML Rule
+	if err := yaml.Unmarshal([]byte("name: a\nlisten:\n  virtual: in\nforward:\n  virtual: out\n"), &fromYAML); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(fromYAML, rule) {
+		t.Fatalf("yaml roundtrip = %#v, want %#v", fromYAML, rule)
+	}
+	jsonOut, err := json.Marshal(rule)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantJSON := `{"name":"a","listen":{"host":"","port":0,"virtual":"in"},"forward":{"virtual":"out"}}`
+	if string(jsonOut) != wantJSON {
+		t.Fatalf("json = %s, want %s", jsonOut, wantJSON)
+	}
+	var fromJSON Rule
+	if err := json.Unmarshal([]byte(wantJSON), &fromJSON); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(fromJSON, rule) {
+		t.Fatalf("json roundtrip = %#v, want %#v", fromJSON, rule)
+	}
+	plain, err := json.Marshal(Rule{Name: "b", Listen: Listen{Port: 1080}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `{"name":"b","listen":{"host":"","port":1080},"forward":{}}`; string(plain) != want {
+		t.Fatalf("plain json = %s, want %s", plain, want)
 	}
 }
 
@@ -396,6 +521,9 @@ func TestListenAddress(t *testing.T) {
 				t.Fatalf("Address() = %q, want %q", got, test.want)
 			}
 		})
+	}
+	if got := (Listen{Virtual: "x"}).Address(); got != "virtual://x" {
+		t.Fatalf("virtual Address() = %q, want %q", got, "virtual://x")
 	}
 }
 

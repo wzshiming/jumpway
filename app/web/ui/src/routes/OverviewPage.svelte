@@ -240,6 +240,7 @@
 			{#each rules as rule (rule.name)}
 				<RuleCard
 					{rule}
+					{rules}
 					runtime={runtimeOf(rule.name)}
 					stats={statsOf(rule.name)}
 					pending={pending.has(rule.name)}

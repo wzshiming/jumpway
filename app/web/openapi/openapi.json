@@ -652,6 +652,9 @@
       "type": "integer",
       "format": "uint32"
      },
+     "virtual": {
+      "type": "string"
+     },
      "way": {
       "type": "array",
       "items": {
@@ -659,7 +662,7 @@
       }
      }
     },
-    "description": "Forward is the exit: connections are dialed through Way (empty = from this machine) to Host:Port, or to the proxy client's own target when Port is 0.\n"
+    "description": "Forward is the exit: connections are dialed through Way (empty = from this machine) to Host:Port, to the in-process channel Virtual, or to the proxy client's own target when both are empty.\n"
    },
    "Hop": {
     "required": [
@@ -713,6 +716,9 @@
      "username": {
       "type": "string"
      },
+     "virtual": {
+      "type": "string"
+     },
      "way": {
       "type": "array",
       "items": {
@@ -720,7 +726,7 @@
       }
      }
     },
-    "description": "Listen is the entry: Host:Port is bound by the first hop of Way, or by this machine when Way is empty.\n"
+    "description": "Listen is the entry: Host:Port is bound by the first hop of Way, or by this machine when Way is empty; Virtual names an in-process channel instead.\n"
    },
    "NoProxy": {
     "required": [
@@ -860,7 +866,7 @@
         "$ref": "#/components/schemas/Forward"
        }
       ],
-      "description": "Forward is the exit: connections are dialed through Way (empty = from this machine) to Host:Port, or to the proxy client's own target when Port is 0.\n"
+      "description": "Forward is the exit: connections are dialed through Way (empty = from this machine) to Host:Port, to the in-process channel Virtual, or to the proxy client's own target when both are empty.\n"
      },
      "listen": {
       "allOf": [
@@ -868,7 +874,7 @@
         "$ref": "#/components/schemas/Listen"
        }
       ],
-      "description": "Listen is the entry: Host:Port is bound by the first hop of Way, or by this machine when Way is empty.\n"
+      "description": "Listen is the entry: Host:Port is bound by the first hop of Way, or by this machine when Way is empty; Virtual names an in-process channel instead.\n"
      },
      "name": {
       "type": "string"
@@ -893,7 +899,7 @@
         "$ref": "#/components/schemas/Forward"
        }
       ],
-      "description": "Forward is the exit: connections are dialed through Way (empty = from this machine) to Host:Port, or to the proxy client's own target when Port is 0.\n"
+      "description": "Forward is the exit: connections are dialed through Way (empty = from this machine) to Host:Port, to the in-process channel Virtual, or to the proxy client's own target when both are empty.\n"
      },
      "listen": {
       "allOf": [
@@ -901,7 +907,7 @@
         "$ref": "#/components/schemas/Listen"
        }
       ],
-      "description": "Listen is the entry: Host:Port is bound by the first hop of Way, or by this machine when Way is empty.\n"
+      "description": "Listen is the entry: Host:Port is bound by the first hop of Way, or by this machine when Way is empty; Virtual names an in-process channel instead.\n"
      },
      "name": {
       "type": "string"

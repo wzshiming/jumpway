@@ -808,6 +808,165 @@ test('the card footer keeps its three 32px actions and long rates inside the car
 	expect(api.writes).toEqual([]);
 });
 
+test('virtual endpoints: a channel pairs an exit listener with an entry; cards and stats link the peers and warn once the exit is disabled or gone', async ({
+	page,
+	api
+}) => {
+	const listen = page.getByRole('group', { name: 'Listen', exact: true });
+	const exit = page.getByRole('group', { name: 'Exit', exact: true });
+	const peers = page.locator('[data-virtual-peers]');
+
+	await page.goto('/#/new');
+	await page.getByLabel('Rule name').fill('shared-exit');
+	// Arrow keys move the segment like any radio group.
+	await listen.getByRole('radio', { name: 'Address' }).focus();
+	await page.keyboard.press('ArrowRight');
+	await expect(listen.getByRole('radio', { name: 'Virtual' })).toBeChecked();
+	await expect(page.getByLabel('Host', { exact: true })).toHaveCount(0);
+	await expect(page.getByLabel('Port', { exact: true })).toHaveCount(0);
+	await expect(page.getByText('Listen through')).toHaveCount(0);
+	await listen.getByLabel('Channel').fill('exit');
+	await page.getByLabel('Username').fill('demo');
+	await page.getByLabel('Password', { exact: true }).fill('placeholder');
+	expect(await chainStages(page)).toEqual([
+		'Clients',
+		'This machine virtual://exit',
+		'Direct',
+		'Target target'
+	]);
+	await expect(peers).toHaveCount(0);
+	await page.getByRole('button', { name: 'Save & Apply' }).click();
+	await expect(page).toHaveURL(/#\/rules\/shared-exit$/);
+	await expect(listen.getByRole('radio', { name: 'Virtual' })).toBeChecked();
+	await expect(listen.getByLabel('Channel')).toHaveValue('exit');
+	await expect(unsaved(page)).toHaveCount(0);
+
+	await page.goto('/#/new');
+	await page.getByLabel('Rule name').fill('lan-entry');
+	await page.getByLabel('Port', { exact: true }).fill('18101');
+	await page.getByRole('radio', { name: 'Port forward' }).check();
+	await exit.getByRole('radio', { name: 'Virtual' }).check();
+	await expect(page.getByLabel('Target host')).toHaveCount(0);
+	await expect(exitEditor(page)).toHaveCount(0);
+	await exit.getByLabel('Channel').fill('missing');
+	await expect(peers).toHaveText('No enabled rule listens on this channel.');
+	await exit.getByLabel('Channel').fill('exit');
+	await expect(peers).toContainText('Exit rule');
+	await expect(peers.getByRole('link', { name: 'shared-exit' })).toHaveAttribute(
+		'href',
+		'#/rules/shared-exit'
+	);
+	expect(await chainStages(page)).toEqual([
+		'Clients',
+		'This machine 127.0.0.1:18101',
+		'Direct',
+		'Target virtual://exit'
+	]);
+	await page.keyboard.press('ControlOrMeta+s');
+	await expect(page).toHaveURL(/#\/rules\/lan-entry$/);
+	await expect(page.getByLabel('Rule name')).toHaveValue('lan-entry');
+	await expect(peers.getByRole('link', { name: 'shared-exit' })).toBeVisible();
+	expect(api.writes).toEqual([
+		{
+			method: 'POST',
+			path: '/apis/configs/rules',
+			body: {
+				name: 'shared-exit',
+				listen: { host: '', port: 0, virtual: 'exit', username: 'demo', password: 'placeholder' },
+				forward: {}
+			}
+		},
+		{
+			method: 'POST',
+			path: '/apis/configs/rules',
+			body: {
+				name: 'lan-entry',
+				listen: { host: '127.0.0.1', port: 18101 },
+				forward: { virtual: 'exit' }
+			}
+		}
+	]);
+
+	// The exit editor now lists its incoming entry.
+	await page.goto('/#/rules/shared-exit');
+	await expect(peers).toContainText('Incoming rules');
+	await expect(peers.getByRole('link', { name: 'lan-entry' })).toHaveAttribute(
+		'href',
+		'#/rules/lan-entry'
+	);
+
+	const exitCard = cards(page).filter({
+		has: page.locator('header a', { hasText: 'shared-exit' })
+	});
+	const entryCard = cards(page).filter({ has: page.locator('header a', { hasText: 'lan-entry' }) });
+	for (const viewport of [
+		{ width: 1280, height: 800 },
+		{ width: 375, height: 812 }
+	]) {
+		await page.setViewportSize(viewport);
+		await page.goto(`/?w=${viewport.width}#/`);
+		await expect(cards(page)).toHaveCount(6);
+		await expect(exitCard).toContainText('Proxy');
+		await expect(exitCard).toContainText('virtual://exit');
+		await expect(exitCard.locator('[data-state]')).toHaveText('Running');
+		await expect(exitCard.locator('[data-virtual-peers]')).toContainText('Incoming rules');
+		await expect(
+			exitCard.locator('[data-virtual-peers]').getByRole('link', { name: 'lan-entry' })
+		).toHaveAttribute('href', '#/rules/lan-entry');
+		await expect(entryCard).toContainText('Port forward');
+		await expect(entryCard).toContainText('127.0.0.1:18101');
+		await expect(entryCard).toContainText('virtual://exit');
+		await expect(
+			entryCard.locator('[data-virtual-peers]').getByRole('link', { name: 'shared-exit' })
+		).toHaveAttribute('href', '#/rules/shared-exit');
+		await page.goto('/#/stats');
+		await page
+			.locator('main article[data-rule="lan-entry"] [data-virtual-peers]')
+			.getByRole('link', { name: 'shared-exit' })
+			.click({ timeout: 5000 });
+		await expect(page).toHaveURL(/#\/rules\/shared-exit$/);
+		await expect(page.getByLabel('Rule name')).toHaveValue('shared-exit');
+		await expect(peers.getByRole('link', { name: 'lan-entry' })).toBeVisible();
+		await page.goto('/#/stats');
+		await page
+			.locator('main article[data-rule="shared-exit"] [data-virtual-peers]')
+			.getByRole('link', { name: 'lan-entry' })
+			.click({ timeout: 5000 });
+		await expect(page).toHaveURL(/#\/rules\/lan-entry$/);
+		await expect(page.getByLabel('Rule name')).toHaveValue('lan-entry');
+		await expect(peers.getByRole('link', { name: 'shared-exit' })).toBeVisible();
+	}
+
+	// Disabling the exit leaves the entry dangling; deleting it keeps it so.
+	await page.goto('/#/');
+	await exitCard.getByRole('switch', { name: 'Enabled' }).click();
+	await expect(exitCard.locator('[data-state]')).toHaveText('Disabled');
+	await expect(entryCard.locator('[data-virtual-peers]')).toHaveText(
+		'No enabled rule listens on this channel.'
+	);
+	await exitCard.getByRole('button', { name: 'Delete' }).click();
+	await confirmDialog(page).getByRole('button', { name: 'Delete' }).click();
+	await expect(cards(page)).toHaveCount(5);
+	await expect(entryCard.locator('[data-virtual-peers]')).toHaveText(
+		'No enabled rule listens on this channel.'
+	);
+
+	await page.goto('/#/stats');
+	const row = page.locator('main article[data-rule="lan-entry"]');
+	await expect(row.locator('[data-mode]')).toHaveText('Port forward');
+	await expect(row.locator('[data-address]')).toHaveText(
+		/127\.0\.0\.1:18101\s*→\s*virtual:\/\/exit/
+	);
+	await expect(row.locator('[data-virtual-peers]')).toHaveText(
+		'No enabled rule listens on this channel.'
+	);
+
+	await page.goto('/#/rules/lan-entry');
+	await expect(exit.getByRole('radio', { name: 'Virtual' })).toBeChecked();
+	await expect(exit.getByLabel('Channel')).toHaveValue('exit');
+	await expect(peers).toHaveText('No enabled rule listens on this channel.');
+});
+
 test.describe('screenshots', () => {
 	const shoot = async (page: Page, name: string) => {
 		const path = test.info().outputPath(name + '.png');

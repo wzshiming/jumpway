@@ -8,7 +8,9 @@ import {
 	isForward,
 	LISTEN_ROLES,
 	listenAddress,
-	stageTitle
+	stageTitle,
+	virtualChannels,
+	virtualPeers
 } from './rule';
 import type { Rule } from './types';
 
@@ -50,6 +52,61 @@ describe('rule helpers', () => {
 
 	test('listenAddress joins the configured listen host and port', () => {
 		expect(listenAddress(rule({}, { host: '0.0.0.0', port: 18099 }))).toBe('0.0.0.0:18099');
+	});
+});
+
+describe('virtual endpoints', () => {
+	test('a virtual forward is port-forward mode and formats as virtual://channel', () => {
+		const virtual = rule({ virtual: 'exit' });
+		expect(isForward(virtual)).toBe(true);
+		expect(forwardTarget(virtual)).toBe('virtual://exit');
+	});
+
+	test('a virtual listen formats as virtual://channel instead of host:port', () => {
+		expect(listenAddress(rule({}, { host: '', port: 0, virtual: 'exit' }))).toBe('virtual://exit');
+	});
+});
+
+describe('virtual peers', () => {
+	const rules: Rule[] = [
+		{ name: 'shared-exit', listen: { host: '', port: 0, virtual: 'exit' }, forward: {} },
+		{ name: 'lan-entry', listen: { host: '0.0.0.0', port: 18100 }, forward: { virtual: 'exit' } },
+		{
+			name: 'wifi-entry',
+			listen: { host: '127.0.0.1', port: 18101 },
+			forward: { virtual: 'exit' }
+		},
+		{
+			name: 'off',
+			disabled: true,
+			listen: { host: '127.0.0.1', port: 18102 },
+			forward: { virtual: 'exit' }
+		},
+		{ name: 'orphan', listen: { host: '127.0.0.1', port: 18103 }, forward: { virtual: 'missing' } }
+	];
+	const names = (peers: Rule[]) => peers.map((peer) => peer.name);
+
+	test('a listen channel is fed by every enabled rule forwarding to it, matched by channel not name', () => {
+		expect(names(virtualPeers(rules, 'listen', 'exit', 'shared-exit'))).toEqual([
+			'lan-entry',
+			'wifi-entry'
+		]);
+	});
+
+	test('a target channel resolves to its enabled listener; a dangling channel has none', () => {
+		expect(names(virtualPeers(rules, 'forward', 'exit', 'lan-entry'))).toEqual(['shared-exit']);
+		expect(virtualPeers(rules, 'forward', 'missing', 'orphan')).toEqual([]);
+		expect(virtualPeers(rules, 'forward', '', 'orphan')).toEqual([]);
+	});
+
+	test('self is excluded by its saved name, so a renamed draft never sees its stale copy', () => {
+		expect(names(virtualPeers(rules, 'listen', 'exit', 'lan-entry'))).toEqual(['wifi-entry']);
+	});
+
+	test('channel suggestions are the counterpart channels of other rules, deduplicated', () => {
+		expect(virtualChannels(rules, 'listen', 'shared-exit')).toEqual(['exit', 'missing']);
+		expect(virtualChannels(rules, 'forward', 'lan-entry')).toEqual(['exit']);
+		expect(virtualChannels(rules, 'forward', 'shared-exit')).toEqual([]);
 	});
 });
 

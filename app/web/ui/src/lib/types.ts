@@ -14,18 +14,21 @@ export interface Address {
 	port: number;
 }
 
+// virtual names an in-app channel instead of a socket; the server then reports host '' and port 0.
 export interface Listen {
 	host: string;
 	port: number;
+	virtual?: string;
 	way?: Nullable<WayNode[]>;
 	username?: string;
 	password?: string;
 }
 
-// port 0 or absent means proxy mode: clients pick their own target.
+// port 0 or absent means proxy mode: clients pick their own target; virtual is always a forward.
 export interface Forward {
 	host?: string;
 	port?: number;
+	virtual?: string;
 	way?: Nullable<WayNode[]>;
 }
 

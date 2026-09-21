@@ -4,6 +4,7 @@
 	import { tooltip } from '../lib/actions/tooltip.svelte';
 	import { configsApi, errorMessage, isAborted } from '../lib/api';
 	import ChainFlow, { type HopStage } from '../lib/components/rules/ChainFlow.svelte';
+	import VirtualPeers from '../lib/components/rules/VirtualPeers.svelte';
 	import Disclosure from '../lib/components/stats/Disclosure.svelte';
 	import StatsToolbar from '../lib/components/stats/StatsToolbar.svelte';
 	import TrafficDetail from '../lib/components/stats/TrafficDetail.svelte';
@@ -274,6 +275,22 @@
 								<span class="block text-xs text-fg-muted">&rarr; {target}</span>
 							{/if}
 						</p>
+						{#if row.rule?.listen.virtual}
+							<VirtualPeers
+								side="listen"
+								channel={row.rule.listen.virtual}
+								{rules}
+								self={row.name}
+							/>
+						{/if}
+						{#if row.rule?.forward.virtual}
+							<VirtualPeers
+								side="forward"
+								channel={row.rule.forward.virtual}
+								{rules}
+								self={row.name}
+							/>
+						{/if}
 					{/snippet}
 					{#snippet stats()}
 						<TrafficDetail

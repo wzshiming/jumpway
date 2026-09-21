@@ -90,6 +90,10 @@ that choice; language and theme remain available from Preferences.
     - Hops are proxy URLs, one or more per hop for load balancing; `Build…`
       assembles one from the protocol, host, port and credentials. The chain is
       drawn above the form from the clients to the target.
+    - Either side may instead name an in-process channel with `virtual`
+      (shown as `virtual://<channel>`, exclusive with host, port and the chain on
+      that side): a rule whose `forward.virtual` matches another enabled rule's
+      `listen.virtual` hands its connections to that rule without a socket.
 - `Global Settings`: the Web UI address (this page and the REST API) and the hosts,
   environment variables and files that bypass proxy rules, each saved on its own
 - `Configuration File`: edit the YAML file directly

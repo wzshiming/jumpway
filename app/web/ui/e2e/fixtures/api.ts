@@ -70,6 +70,14 @@ export const rulesFixture: Rule[] = [
 	}
 ];
 
+// Virtual endpoints, kept apart so the four-rule counts above stay valid: many entries share
+// one exit channel; orphan forwards to a channel nobody listens on (allowed, dangling).
+export const virtualRulesFixture: Rule[] = [
+	{ name: 'shared-exit', listen: { host: '', port: 0, virtual: 'exit' }, forward: {} },
+	{ name: 'lan-entry', listen: { host: '0.0.0.0', port: 18101 }, forward: { virtual: 'exit' } },
+	{ name: 'orphan', listen: { host: '127.0.0.1', port: 18102 }, forward: { virtual: 'missing' } }
+];
+
 const zero: Stats = {
 	up: 0,
 	down: 0,

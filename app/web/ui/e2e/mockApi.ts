@@ -82,13 +82,18 @@ function resetSnapshot(snapshot: Snapshot, now: string): void {
 	}
 }
 
+// Like the status API: virtual endpoints report virtual://channel and never count as remote.
 const runtimeOf = (rule: Rule): RuleStatus => ({
 	name: rule.name,
-	address: (rule.listen.host || '127.0.0.1') + ':' + rule.listen.port,
-	target: rule.forward.port
-		? (rule.forward.host || '127.0.0.1') + ':' + rule.forward.port
-		: undefined,
-	remote: Array.isArray(rule.listen.way) && rule.listen.way.length > 0,
+	address: rule.listen.virtual
+		? 'virtual://' + rule.listen.virtual
+		: (rule.listen.host || '127.0.0.1') + ':' + rule.listen.port,
+	target: rule.forward.virtual
+		? 'virtual://' + rule.forward.virtual
+		: rule.forward.port
+			? (rule.forward.host || '127.0.0.1') + ':' + rule.forward.port
+			: undefined,
+	remote: !rule.listen.virtual && Array.isArray(rule.listen.way) && rule.listen.way.length > 0,
 	running: !rule.disabled
 });
 

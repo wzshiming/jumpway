@@ -96,6 +96,7 @@ func TestBuildMenuNoLocalProxy(test *testing.T) {
 	for _, rules := range [][]*ruleState{nil, {
 		{name: "remote", remote: true},
 		{name: "forward", target: "127.0.0.1:5432"},
+		{name: "virtual", address: "virtual://x", virtual: true, running: true},
 	}} {
 		app := &App{rules: rules}
 		app.buildMenu()
@@ -187,7 +188,7 @@ func TestSystemProxySelectionReload(test *testing.T) {
 	if address != "" || !changed || removed != "alpha" || app.systemProxyRule != "" || app.Mode != i18n.ManualProxy() {
 		test.Fatalf("removed selection = %q, %v, %q", address, changed, removed)
 	}
-	for _, rule := range []*ruleState{{name: "beta", remote: true}, {name: "beta", target: "127.0.0.1:5432"}} {
+	for _, rule := range []*ruleState{{name: "beta", remote: true}, {name: "beta", target: "127.0.0.1:5432"}, {name: "beta", address: "virtual://x", virtual: true, running: true}} {
 		app.rules, app.systemProxyRule = []*ruleState{rule}, "beta"
 		if address, _, removed := app.syncSystemProxySelection(); address != "" || removed != "beta" || app.systemProxyRule != "" {
 			test.Fatal("non-local proxy remained selected")
