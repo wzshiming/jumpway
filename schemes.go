@@ -5,7 +5,6 @@ import (
 	"net"
 
 	"github.com/wzshiming/anyproxy"
-	_ "github.com/wzshiming/anyproxy/proxies/httpproxy"
 	socks4adapter "github.com/wzshiming/anyproxy/proxies/socks4"
 	socks5adapter "github.com/wzshiming/anyproxy/proxies/socks5"
 	sshproxyadapter "github.com/wzshiming/anyproxy/proxies/sshproxy"
@@ -28,13 +27,6 @@ type serveConnFunc func(net.Conn)
 
 func (serve serveConnFunc) ServeConn(conn net.Conn) {
 	serve(conn)
-}
-
-func baseContext(template, fallback context.Context) context.Context {
-	if template != nil {
-		return template
-	}
-	return fallback
 }
 
 var httpPatterns = append(pattern.Pattern[pattern.HTTP], pattern.Pattern[pattern.HTTP2]...)
@@ -75,10 +67,10 @@ func newSOCKS5ServeConn(ctx context.Context, scheme, address string, conf *anypr
 		return nil, nil, err
 	}
 	template := host.(*socks5.SimpleServer)
-	base := baseContext(template.Context, ctx)
 	return serveConnFunc(func(conn net.Conn) {
+		// SOCKS servers embed a mutex, so the template is never copied whole.
 		server := socks5.Server{
-			Context:                   WithClientAddr(base, conn.RemoteAddr()),
+			Context:                   WithClientAddr(ctx, conn.RemoteAddr()),
 			Authentication:            template.Authentication,
 			ProxyDial:                 template.ProxyDial,
 			ProxyListen:               template.ProxyListen,
@@ -101,10 +93,9 @@ func newSOCKS4ServeConn(ctx context.Context, scheme, address string, conf *anypr
 		return nil, nil, err
 	}
 	template := host.(*socks4.SimpleServer)
-	base := baseContext(template.Context, ctx)
 	return serveConnFunc(func(conn net.Conn) {
 		server := socks4.Server{
-			Context:                 WithClientAddr(base, conn.RemoteAddr()),
+			Context:                 WithClientAddr(ctx, conn.RemoteAddr()),
 			Authentication:          template.Authentication,
 			ProxyDial:               template.ProxyDial,
 			ProxyListenBind:         template.ProxyListenBind,
@@ -123,10 +114,9 @@ func newSSHServeConn(ctx context.Context, scheme, address string, conf *anyproxy
 		return nil, nil, err
 	}
 	template := host.(*sshproxy.SimpleServer)
-	base := baseContext(template.Context, ctx)
 	return serveConnFunc(func(conn net.Conn) {
 		server := template.Server
-		server.Context = WithClientAddr(base, conn.RemoteAddr())
+		server.Context = WithClientAddr(ctx, conn.RemoteAddr())
 		server.ServeConn(conn)
 	}), patterns, nil
 }
