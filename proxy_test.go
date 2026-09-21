@@ -258,6 +258,11 @@ func TestRunProxyAuth(t *testing.T) {
 				escaped := url.UserPassword("alice@example.com", "s3cr3t:@/?#%")
 				checkProxy(t, scheme, escaped, escaped, http.StatusOK)
 			})
+			if scheme == "http" {
+				t.Run("unknown_user_empty_password", func(t *testing.T) {
+					checkProxy(t, scheme, user, url.UserPassword("mallory", ""), http.StatusProxyAuthRequired)
+				})
+			}
 		})
 	}
 }
