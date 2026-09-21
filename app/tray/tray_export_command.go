@@ -3,7 +3,6 @@ package tray
 import (
 	"errors"
 	"fmt"
-	"net"
 
 	"github.com/atotto/clipboard"
 	"github.com/gogpu/systray"
@@ -11,55 +10,62 @@ import (
 	"github.com/wzshiming/jumpway/log"
 )
 
+type exportKind struct {
+	label   string
+	command func(address string) string
+}
+
+var exportKinds = []exportKind{
+	{label: "Shell", command: exportShell},
+	{label: "Shell git", command: exportShellGit},
+	{label: "Cmd", command: exportCmd},
+	{label: "Cmd git", command: exportCmdGit},
+	{label: "PowerShell", command: exportPowerShell},
+	{label: "PowerShell git", command: exportPowerShellGit},
+}
+
+var writeClipboard = clipboard.WriteAll
+
 func (a *App) addExportCommands(menu *systray.Menu, rule ruleMenuEntry) *systray.MenuItem {
 	sub := systray.NewMenu()
-	sub.Add("Shell", func() { a.do(func() { a.exportCommandShell(a.ruleAddress(rule.name)) }) })
-	sub.Add("Cmd", func() { a.do(func() { a.exportCommandCmd(a.ruleAddress(rule.name)) }) })
-	sub.Add("PowerShell", func() { a.do(func() { a.exportCommandPowerShell(a.ruleAddress(rule.name)) }) })
-	sub.Add("Shell git", func() { a.do(func() { a.exportCommandShellGit(a.ruleAddress(rule.name)) }) })
+	for _, kind := range exportKinds {
+		sub.Add(kind.label, func() { a.do(func() { a.exportCommand(kind, rule.name) }) })
+	}
 	return menu.AddSubmenu(rule.label, sub)
 }
 
-func (a *App) exportCommandShell(address string) {
+func (a *App) exportCommand(kind exportKind, name string) {
+	address := a.ruleAddress(name)
 	if address == "" {
 		log.Error(errors.New(i18n.NoLocalRule()), i18n.ExportCommand())
 		return
 	}
-	command := fmt.Sprintf("export http_proxy=http://%s https_proxy=http://%s; ", address, address)
-	a.writeClipboard(command)
-}
-
-func (a *App) exportCommandCmd(address string) {
-	if address == "" {
-		log.Error(errors.New(i18n.NoLocalRule()), i18n.ExportCommand())
-		return
-	}
-	command := fmt.Sprintf("set http_proxy=http://%s && set https_proxy=http://%s", address, address)
-	a.writeClipboard(command)
-}
-
-func (a *App) exportCommandPowerShell(address string) {
-	if address == "" {
-		log.Error(errors.New(i18n.NoLocalRule()), i18n.ExportCommand())
-		return
-	}
-	command := fmt.Sprintf("$env:http_proxy='http://%s'; $env:https_proxy='http://%s'; ", address, address)
-	a.writeClipboard(command)
-}
-
-func (a *App) exportCommandShellGit(address string) {
-	if address == "" {
-		log.Error(errors.New(i18n.NoLocalRule()), i18n.ExportCommand())
-		return
-	}
-	host, port, _ := net.SplitHostPort(address)
-	command := fmt.Sprintf("export GIT_SSH_COMMAND='ssh -o ProxyCommand=\"nc -x %s:%s %%h %%p\"' http_proxy=http://%s https_proxy=http://%s; ", host, port, address, address)
-	a.writeClipboard(command)
-}
-
-func (a *App) writeClipboard(command string) {
-	err := clipboard.WriteAll(command)
+	err := writeClipboard(kind.command(address))
 	if err != nil {
 		log.Error(err, i18n.WriteClipboard())
 	}
+}
+
+func exportShell(address string) string {
+	return fmt.Sprintf("export http_proxy=http://%s https_proxy=http://%s; ", address, address)
+}
+
+func exportShellGit(address string) string {
+	return fmt.Sprintf(`export GIT_SSH_COMMAND='ssh -o ProxyCommand="nc -x %s %%h %%p"' http_proxy=http://%s https_proxy=http://%s; `, address, address, address)
+}
+
+func exportCmd(address string) string {
+	return fmt.Sprintf(`set "http_proxy=http://%s" && set "https_proxy=http://%s"`, address, address)
+}
+
+func exportCmdGit(address string) string {
+	return fmt.Sprintf(`set "GIT_SSH_COMMAND=ssh -o ProxyCommand='connect -S %s %%h %%p'" && set "http_proxy=http://%s" && set "https_proxy=http://%s"`, address, address, address)
+}
+
+func exportPowerShell(address string) string {
+	return fmt.Sprintf("$env:http_proxy='http://%s'; $env:https_proxy='http://%s'; ", address, address)
+}
+
+func exportPowerShellGit(address string) string {
+	return fmt.Sprintf(`$env:GIT_SSH_COMMAND='ssh -o ProxyCommand="connect -S %s %%h %%p"'; $env:http_proxy='http://%s'; $env:https_proxy='http://%s'; `, address, address, address)
 }

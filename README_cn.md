@@ -17,8 +17,11 @@
     - [x] 系统代理
     - [x] 导出终端代理命令到剪切板
         - [x] Shell
+        - [x] Shell git（`nc`）
         - [x] Cmd
+        - [x] Cmd git（Git for Windows 自带的 `ssh` 和 `connect.exe`）
         - [x] PowerShell
+        - [x] PowerShell git（Git for Windows 自带的 `ssh` 和 `connect.exe`）
 - [x] 图形界面配置代理（网页配置，见下文）
     - [x] 配置多级代理
     - [ ] 支持从 `~/.ssh/config` 获取 SSH 代理
