@@ -14,8 +14,10 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -30,8 +32,11 @@ import (
 	"github.com/wzshiming/jumpway/app/web/services/configs"
 	"github.com/wzshiming/jumpway/app/web/services/stats"
 	"github.com/wzshiming/jumpway/config"
+	"github.com/wzshiming/jumpway/i18n"
 	"github.com/wzshiming/jumpway/metrics"
 	"github.com/wzshiming/shadowsocks"
+	"github.com/wzshiming/socks4"
+	"github.com/wzshiming/socks5"
 )
 
 func TestReloadWebUIWithoutRules(test *testing.T) {
@@ -1125,21 +1130,22 @@ func TestStopCancelsMetrics(test *testing.T) {
 
 func TestPrimaryAddressFallback(test *testing.T) {
 	app := &App{rules: []*ruleState{
-		{name: "remote", listenAddress: "0.0.0.0:10000", address: "0.0.0.0:10000", remote: true, running: true},
+		{name: "remote", listenAddress: "0.0.0.0:10000", address: "0.0.0.0:10000", remote: true, http: true, running: true},
 		{name: "forward", listenAddress: "0.0.0.0:10002", address: "127.0.0.1:20002", target: "127.0.0.1:5432", running: true},
-		{name: "virtual", listenAddress: "virtual://x", address: "virtual://x", virtual: true, running: true},
-		{name: "local", listenAddress: "0.0.0.0:10001", address: "127.0.0.1:20001"},
+		{name: "virtual", listenAddress: "virtual://x", address: "virtual://x", virtual: true, http: true, running: true},
+		{name: "socks", listenAddress: "0.0.0.0:10003", address: "127.0.0.1:20003", running: true},
+		{name: "local", listenAddress: "0.0.0.0:10001", address: "127.0.0.1:20001", http: true},
 	}}
 	if address := app.primaryAddress(); address != "127.0.0.1:10001" {
 		test.Fatalf("fallback address = %q", address)
 	}
-	app.rules[3].running = true
+	app.rules[4].running = true
 	if address := app.primaryAddress(); address != "127.0.0.1:20001" {
 		test.Fatalf("running proxy address = %q", address)
 	}
-	app.rules = app.rules[:3]
+	app.rules = app.rules[:4]
 	if address := app.primaryAddress(); address != "" {
-		test.Fatalf("remote or forward address used as local proxy: %q", address)
+		test.Fatalf("remote, forward or non-HTTP address used as local proxy: %q", address)
 	}
 	app.rules[1].running = false
 	if address := app.primaryAddress(); address != "" {
@@ -1297,6 +1303,136 @@ func TestReloadVirtualProxyExit(test *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReloadProtocolSelection(test *testing.T) {
+	var mu sync.Mutex
+	var calls []string
+	previous := setSystemProxy
+	setSystemProxy = func(address string) {
+		mu.Lock()
+		defer mu.Unlock()
+		calls = append(calls, address)
+	}
+	test.Cleanup(func() { setSystemProxy = previous })
+	conf := &config.Config{Rules: []config.Rule{
+		{Name: "multi", Listen: config.Listen{Host: "127.0.0.1", Password: "shared", Protocols: []config.Protocol{
+			{Type: "http", Username: "alice"},
+			{Type: "socks5", Username: "bob", Password: "bob-secret"},
+		}}},
+		{Name: "socks", Listen: config.Listen{Host: "127.0.0.1", Protocols: []config.Protocol{{Type: "socks5"}}}},
+	}}
+	app := newTestApp(test, conf)
+	if err := app.Reload(); err != nil {
+		test.Fatal(err)
+	}
+	status := app.Status()
+	if len(status.Rules) != 2 || !status.Rules[0].Running || !status.Rules[1].Running {
+		test.Fatalf("unexpected status: %+v", status)
+	}
+	multi, socks := status.Rules[0].Address, status.Rules[1].Address
+	target := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		io.WriteString(writer, "target")
+	}))
+	test.Cleanup(target.Close)
+	alice, bob := url.UserPassword("alice", "shared"), url.UserPassword("bob", "bob-secret")
+	for _, scenario := range []struct {
+		name  string
+		proxy *url.URL
+		code  int
+	}{
+		{name: "http_alice", proxy: &url.URL{Scheme: "http", Host: multi, User: alice}, code: http.StatusOK},
+		{name: "http_bob", proxy: &url.URL{Scheme: "http", Host: multi, User: bob}, code: http.StatusProxyAuthRequired},
+		{name: "http_anonymous", proxy: &url.URL{Scheme: "http", Host: multi}, code: http.StatusProxyAuthRequired},
+		{name: "socks5_bob", proxy: &url.URL{Scheme: "socks5", Host: multi, User: bob}, code: http.StatusOK},
+		{name: "socks5_alice", proxy: &url.URL{Scheme: "socks5", Host: multi, User: alice}},
+		{name: "socks4_not_selected", proxy: &url.URL{Scheme: "socks4", Host: multi, User: url.User("alice")}},
+		{name: "socks_rule_rejects_http", proxy: &url.URL{Scheme: "http", Host: socks}},
+		{name: "socks_rule_socks5", proxy: &url.URL{Scheme: "socks5", Host: socks}, code: http.StatusOK},
+	} {
+		test.Run(scenario.name, func(test *testing.T) {
+			if code, err := requestThrough(test, scenario.proxy, target.URL); code != scenario.code || (err == nil) != (scenario.code != 0) {
+				test.Fatalf("status = %d, err = %v; want status %d", code, err, scenario.code)
+			}
+		})
+	}
+	if address := app.primaryAddress(); address != multi {
+		test.Fatalf("primary address = %q, want the HTTP-serving rule %q", address, multi)
+	}
+	if app.ruleAddress("multi") != multi || app.ruleAddress("socks") != "" {
+		test.Fatalf("export addresses = %q / %q, want %q and none", app.ruleAddress("multi"), app.ruleAddress("socks"), multi)
+	}
+	if entries := menuModel([]ruleState{*app.rules[0], *app.rules[1]}); !entries[0].localProxy || entries[1].localProxy {
+		test.Fatalf("SOCKS5-only rule offered as system proxy: %+v", entries)
+	}
+	app.selectSystemProxy("socks")
+	app.selectSystemProxy("multi")
+	if !reflect.DeepEqual(calls, []string{"", multi}) || app.systemProxyRule != "multi" {
+		test.Fatalf("selection calls = %q, rule = %q", calls, app.systemProxyRule)
+	}
+	conf.Rules[0].Listen.Protocols = conf.Rules[0].Listen.Protocols[1:]
+	if err := app.store.Save(conf); err != nil {
+		test.Fatal(err)
+	}
+	if err := app.Reload(); err != nil {
+		test.Fatal(err)
+	}
+	app.restoreSystemProxy()
+	if !reflect.DeepEqual(calls, []string{"", multi, ""}) || app.systemProxyRule != "" || app.Mode != i18n.ManualProxy() {
+		test.Fatalf("dropping HTTP kept the system proxy: calls = %q, rule = %q", calls, app.systemProxyRule)
+	}
+	if app.ruleAddress("multi") != "" || app.primaryAddress() != "" {
+		test.Fatal("SOCKS5-only rule still exported or primary after reload")
+	}
+	multi = app.Status().Rules[0].Address
+	if code, err := requestThrough(test, &url.URL{Scheme: "http", Host: multi, User: alice}, target.URL); err == nil {
+		test.Fatalf("HTTP still served after dropping it: status %d", code)
+	}
+	if code, err := requestThrough(test, &url.URL{Scheme: "socks5", Host: multi, User: bob}, target.URL); err != nil || code != http.StatusOK {
+		test.Fatalf("SOCKS5 after reload = %d, %v", code, err)
+	}
+}
+
+// requestThrough fetches target through proxyURL; a refused proxy yields an error that is never a timeout.
+func requestThrough(test *testing.T, proxyURL *url.URL, target string) (int, error) {
+	test.Helper()
+	dial := func(ctx context.Context, network, address string) (net.Conn, error) {
+		connection, err := (&net.Dialer{}).DialContext(ctx, network, address)
+		if err != nil {
+			return nil, err
+		}
+		return connection, connection.SetDeadline(time.Now().Add(2 * time.Second))
+	}
+	transport := &http.Transport{Proxy: http.ProxyURL(proxyURL), DialContext: dial, DisableKeepAlives: true}
+	switch proxyURL.Scheme {
+	case "socks5":
+		proxy, err := socks5.NewDialer(proxyURL.String())
+		if err != nil {
+			test.Fatal(err)
+		}
+		proxy.ProxyDial = dial
+		transport.Proxy, transport.DialContext = nil, proxy.DialContext
+	case "socks4":
+		proxy, err := socks4.NewDialer(proxyURL.String())
+		if err != nil {
+			test.Fatal(err)
+		}
+		proxy.ProxyDial = dial
+		transport.Proxy, transport.DialContext = nil, proxy.DialContext
+	}
+	defer transport.CloseIdleConnections()
+	client := &http.Client{Transport: transport, Timeout: 3 * time.Second}
+	response, err := client.Get(target)
+	if err != nil {
+		var networkError net.Error
+		if errors.As(err, &networkError) && networkError.Timeout() {
+			test.Fatalf("request through %s timed out instead of being refused: %v", proxyURL.Redacted(), err)
+		}
+		return 0, err
+	}
+	io.Copy(io.Discard, response.Body)
+	response.Body.Close()
+	return response.StatusCode, nil
 }
 
 func newTestApp(test *testing.T, conf *config.Config) *App {

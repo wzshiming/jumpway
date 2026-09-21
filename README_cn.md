@@ -71,14 +71,17 @@
   （向文件写入 `disabled` 并应用），铅笔和图表图标分别打开规则编辑器与流量统计，
   垃圾桶图标在确认后删除规则。`新建规则` 与规则名打开编辑器。一条规则由**入口**（`listen`）和
   **出口**（`forward`）组成：
-    - `listen`：客户端连接的主机与端口，可选代理凭据。设置 `cipher` 后，同一端口
-      还会提供 Shadowsocks（仅 TCP），使用同一个 `password`；仅有 cipher 不能认证
-      HTTP、SOCKS 或 SSH 客户端，它们仍需要 `username`。`经由监听` 留空表示在本机
+    - `listen`：客户端连接的主机与端口，可选代理凭据。`protocols` 列出该端口提供的
+      代理协议（`http`、`socks5`、`socks4`、`ssh`、`ss`），每项可单独设置 `username`、
+      `password`，`ss` 还可设置 `cipher`；条目中留空的字段继承共享的 `username`/`password`
+      （`ss` 也继承 `cipher`）。不写 `protocols` 时端口提供 HTTP、SOCKS5、SOCKS4 和 SSH，
+      设置 `cipher` 时再加 Shadowsocks。Shadowsocks（仅 TCP）以 cipher 与 password 认证，
+      SOCKS4 只校验用户名；仅有共享 password 不能认证 HTTP、SOCKS5 或 SSH 客户端，
+      它们仍需要 `username`。`经由监听` 留空表示在本机
       开放端口；否则由第一跳在它那一侧绑定端口（`ssh://` 跳板使用 SSH 远程转发，
       远端 `sshd` 默认只绑定回环地址，除非启用 `GatewayPorts`），最后一跳由本机
       拨号。
-    - `forward`：`代理` 模式下由客户端自行选择目标（入口上同时提供 HTTP、SOCKS4、
-      SOCKS5 和 SSH 代理，设置 `cipher` 时还有 Shadowsocks）；`端口转发` 模式下每条连接
+    - `forward`：`代理` 模式下由客户端通过入口提供的任一协议自行选择目标；`端口转发` 模式下每条连接
       都被转到目标主机与端口，目标从出口节点访问（主机留空表示出口节点上的 `127.0.0.1`）。
       `出口链路` 由本机拨号：跳板 1 是出口节点，最后一跳最先被拨号；留空表示本机直连。
     - 跳板是代理 URL，每跳可填多条用于负载均衡；`拼装…` 按协议、主机、端口和凭据
@@ -111,7 +114,12 @@ rules:
       port: 1080
       username: alice
       password: secret
-      cipher: aes-256-gcm    # 同时以同一密码提供 Shadowsocks
+      protocols:             # 只提供这些；不写则提供 HTTP、SOCKS5、SOCKS4 和 SSH
+        - type: http
+        - type: socks5
+          username: bob      # 继承共享的 password
+        - type: ss
+          cipher: aes-256-gcm
       way:
         - lb:
             - ssh://alice@vps.example:22?identity_file=~/.ssh/id_ed25519

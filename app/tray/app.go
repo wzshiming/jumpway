@@ -68,9 +68,15 @@ type ruleState struct {
 	target        string
 	remote        bool
 	virtual       bool
+	http          bool
 	running       bool
 	attempt       int
 	err           error
+}
+
+// localProxy reports whether the rule is an HTTP proxy on this machine, usable as the system proxy.
+func (r ruleState) localProxy() bool {
+	return !r.remote && !r.virtual && r.target == "" && r.http
 }
 
 var _ configs.Runtime = (*App)(nil)
@@ -183,7 +189,7 @@ func (a *App) primaryAddress() string {
 	defer a.mu.Unlock()
 	var fallback string
 	for _, rule := range a.rules {
-		if rule.remote || rule.virtual || rule.target != "" {
+		if !rule.localProxy() {
 			continue
 		}
 		if rule.running {

@@ -525,6 +525,80 @@ func TestCreateVirtualRule(t *testing.T) {
 	}
 }
 
+func TestRuleProtocolsRoundTrip(t *testing.T) {
+	handler, fake, store, _ := setupConfigAPI(t)
+	const body = `{"name":"multi","listen":{"port":9000,"password":"shared","protocols":[{"type":"http","username":"alice"},{"type":"socks5","username":"bob","password":"bob-secret"},{"type":"ss","cipher":"aes-256-gcm"}]}}`
+	requestAPI(t, handler, http.MethodPost, "/apis/configs/rules", body, http.StatusOK)
+	want := []config.Protocol{{Type: "http", Username: "alice"}, {Type: "socks5", Username: "bob", Password: "bob-secret"}, {Type: "ss", Cipher: "aes-256-gcm"}}
+	response := requestAPI(t, handler, http.MethodGet, "/apis/configs/rules/multi", "", http.StatusOK)
+	var rule config.Rule
+	if err := json.Unmarshal(response.Body.Bytes(), &rule); err != nil {
+		t.Fatal(err)
+	}
+	if rule.Listen.Password != "shared" || !reflect.DeepEqual(rule.Listen.Protocols, want) {
+		t.Fatalf("listen = %#v, want shared password and %#v", rule.Listen, want)
+	}
+	if want := `"protocols":[{"type":"http","username":"alice"},{"type":"socks5","username":"bob","password":"bob-secret"},{"type":"ss","cipher":"aes-256-gcm"}]`; !strings.Contains(response.Body.String(), want) {
+		t.Fatalf("rule = %s, want %s", response.Body.String(), want)
+	}
+	conf, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(conf.Rules) != 2 || !reflect.DeepEqual(conf.Rules[1], rule) {
+		t.Fatalf("saved rule = %#v, want %#v", conf.Rules[1], rule)
+	}
+	requestAPI(t, handler, http.MethodPut, "/apis/configs/rules/multi", `{"name":"multi","listen":{"port":9000,"protocols":[{"type":"socks4","username":"carol"}]}}`, http.StatusOK)
+	response = requestAPI(t, handler, http.MethodGet, "/apis/configs/rules/multi", "", http.StatusOK)
+	if want := `{"name":"multi","listen":{"host":"","port":9000,"protocols":[{"type":"socks4","username":"carol"}]},"forward":{}}`; strings.TrimSpace(response.Body.String()) != want {
+		t.Fatalf("updated rule = %s, want %s", response.Body.String(), want)
+	}
+	if fake.reloads != 2 {
+		t.Fatalf("reloads = %d, want 2", fake.reloads)
+	}
+	if rules := listRulesAPI(t, handler); len(rules) != 2 || rules[0].Listen.Protocols != nil {
+		t.Fatalf("rules = %#v, want rule a without protocols", rules)
+	}
+}
+
+func TestRawConfigProtocols(t *testing.T) {
+	handler, fake, store, _ := setupConfigAPI(t)
+	const yaml = "rules:\n" +
+		"  - name: multi\n" +
+		"    listen:\n" +
+		"      port: 9000\n" +
+		"      username: alice\n" +
+		"      password: shared\n" +
+		"      protocols:\n" +
+		"        - type: http\n" +
+		"        - type: ss\n" +
+		"          cipher: aes-256-gcm\n" +
+		"          password: ss-secret\n"
+	data, err := json.Marshal(map[string]string{"yaml": yaml})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requestAPI(t, handler, http.MethodPut, "/apis/configs/raw", string(data), http.StatusOK)
+	if fake.reloads != 1 {
+		t.Fatalf("reloads = %d, want 1", fake.reloads)
+	}
+	assertConfigYAML(t, store, yaml)
+	response := requestAPI(t, handler, http.MethodGet, "/apis/configs/rules/multi", "", http.StatusOK)
+	var rule config.Rule
+	if err := json.Unmarshal(response.Body.Bytes(), &rule); err != nil {
+		t.Fatal(err)
+	}
+	want := []config.Protocol{{Type: "http"}, {Type: "ss", Password: "ss-secret", Cipher: "aes-256-gcm"}}
+	if rule.Listen.Username != "alice" || rule.Listen.Password != "shared" || !reflect.DeepEqual(rule.Listen.Protocols, want) {
+		t.Fatalf("listen = %#v, want shared credentials and %#v", rule.Listen, want)
+	}
+	response = requestAPI(t, handler, http.MethodPut, "/apis/configs/raw", `{"yaml":"rules:\n  - name: a\n    listen:\n      protocols:\n        - type: ss\n"}`, http.StatusBadRequest)
+	if !strings.Contains(response.Body.String(), "rules[0].listen.protocols[0].cipher is empty") || fake.reloads != 1 {
+		t.Fatalf("body = %q, reloads = %d; want cipher error without reload", response.Body.String(), fake.reloads)
+	}
+	assertConfigYAML(t, store, yaml)
+}
+
 func TestCreateFirstRule(t *testing.T) {
 	handler, fake, store, _ := setupConfigAPI(t)
 	if err := store.SaveRaw([]byte("web_ui:\n  host: 127.0.0.1\n  port: 1088\n")); err != nil {
@@ -570,6 +644,8 @@ func TestRuleMutationInvalid(t *testing.T) {
 		{name: "virtual_self_loop", method: http.MethodPost, target: "/rules", body: `{"name":"b","listen":{"virtual":"x"},"forward":{"virtual":"x"}}`, wantError: `rules[1].forward.virtual "x" loops back to its own listener`},
 		{name: "port_forward_with_username", method: http.MethodPost, target: "/rules", body: `{"name":"db","listen":{"port":15432,"username":"user"},"forward":{"host":"10.0.0.5","port":5432}}`, wantError: "rules[1].listen.username is only used by proxy rules"},
 		{name: "password_without_username", method: http.MethodPost, target: "/rules", body: `{"name":"b","listen":{"password":"secret"}}`, wantError: "rules[1].listen.password is set but username is empty"},
+		{name: "unknown_protocol", method: http.MethodPost, target: "/rules", body: `{"name":"b","listen":{"protocols":[{"type":"http"},{"type":"quic"}]}}`, wantError: `rules[1].listen.protocols[1].type "quic" is unknown`},
+		{name: "protocol_password_without_username", method: http.MethodPut, target: "/rules/a", body: `{"listen":{"protocols":[{"type":"socks5","password":"secret"}]}}`, wantError: "rules[0].listen.protocols[0].password is set but username is empty"},
 		{name: "web_ui_collision", method: http.MethodPost, target: "/rules", body: `{"name":"b","listen":{"port":1088}}`, wantError: "rules[1].listen address 127.0.0.1:1088 is already used by web_ui"},
 		{name: "rule_collision", method: http.MethodPost, target: "/rules", body: `{"name":"b","listen":{"port":1087}}`, wantError: `rules[1].listen address 127.0.0.1:1087 is already used by rule "a"`},
 		{name: "unknown_update", method: http.MethodPut, target: "/rules/zzz", body: `{"name":"b"}`, wantError: `rule "zzz" not found`},

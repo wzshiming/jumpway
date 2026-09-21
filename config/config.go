@@ -54,14 +54,34 @@ type Rule struct {
 
 // Listen is the entry: Host:Port is bound by the first hop of Way, or by this machine when Way is empty; Virtual names an in-process channel instead.
 type Listen struct {
-	Host     string              `yaml:"host,omitempty" json:"host"`
-	Port     uint32              `yaml:"port" json:"port"`
-	Virtual  string              `yaml:"virtual,omitempty" json:"virtual,omitempty"`
-	Way      []bridgeconfig.Node `yaml:"way,omitempty" json:"way,omitempty"`
-	Username string              `yaml:"username,omitempty" json:"username,omitempty"`
-	Password string              `yaml:"password,omitempty" json:"password,omitempty"`
-	Cipher   string              `yaml:"cipher,omitempty" json:"cipher,omitempty"`
+	Host      string              `yaml:"host,omitempty" json:"host"`
+	Port      uint32              `yaml:"port" json:"port"`
+	Virtual   string              `yaml:"virtual,omitempty" json:"virtual,omitempty"`
+	Way       []bridgeconfig.Node `yaml:"way,omitempty" json:"way,omitempty"`
+	Username  string              `yaml:"username,omitempty" json:"username,omitempty"`
+	Password  string              `yaml:"password,omitempty" json:"password,omitempty"`
+	Cipher    string              `yaml:"cipher,omitempty" json:"cipher,omitempty"`
+	Protocols []Protocol          `yaml:"protocols,omitempty" json:"protocols,omitempty"`
 }
+
+// Protocol is one proxy scheme served on the entry; empty credentials inherit the shared Listen ones.
+type Protocol struct {
+	Type     string `yaml:"type" json:"type"`
+	Username string `yaml:"username,omitempty" json:"username,omitempty"`
+	Password string `yaml:"password,omitempty" json:"password,omitempty"`
+	Cipher   string `yaml:"cipher,omitempty" json:"cipher,omitempty"`
+}
+
+const (
+	ProtocolHTTP        = "http"
+	ProtocolSOCKS5      = "socks5"
+	ProtocolSOCKS4      = "socks4"
+	ProtocolSSH         = "ssh"
+	ProtocolShadowsocks = "ss"
+)
+
+// DefaultProtocols is served when Protocols is empty, plus Shadowsocks when Cipher is set.
+var DefaultProtocols = []string{ProtocolHTTP, ProtocolSOCKS5, ProtocolSOCKS4, ProtocolSSH}
 
 func (l Listen) Address() string {
 	if l.Virtual != "" {
@@ -74,22 +94,48 @@ func (l Listen) Remote() bool {
 	return len(l.Way) > 0
 }
 
-func (l Listen) User() *url.Userinfo {
-	if l.Username == "" {
-		return nil
+// Schemes is the served protocol list with shared credentials filled in; the receiver's slices are left untouched.
+func (l Listen) Schemes() []Protocol {
+	protocols := l.Protocols
+	if len(protocols) == 0 {
+		protocols = make([]Protocol, 0, len(DefaultProtocols)+1)
+		for _, typ := range DefaultProtocols {
+			protocols = append(protocols, Protocol{Type: typ})
+		}
+		if l.Cipher != "" {
+			protocols = append(protocols, Protocol{Type: ProtocolShadowsocks})
+		}
 	}
-	if l.Password != "" {
-		return url.UserPassword(l.Username, l.Password)
+	schemes := make([]Protocol, len(protocols))
+	for index, protocol := range protocols {
+		if protocol.Username == "" {
+			protocol.Username = l.Username
+		}
+		if protocol.Password == "" {
+			protocol.Password = l.Password
+		}
+		if protocol.Type == ProtocolShadowsocks && protocol.Cipher == "" {
+			protocol.Cipher = l.Cipher
+		}
+		schemes[index] = protocol
 	}
-	return url.User(l.Username)
+	return schemes
 }
 
-// Shadowsocks is the cipher:password pair served as ss:// on the entry, nil when no cipher is set.
-func (l Listen) Shadowsocks() *url.Userinfo {
-	if l.Cipher == "" {
+// User is the proxy URL userinfo: cipher:password for ss, username only for socks4, nil when unauthenticated.
+func (p Protocol) User() *url.Userinfo {
+	switch {
+	case p.Type == ProtocolShadowsocks:
+		if p.Cipher == "" {
+			return nil
+		}
+		return url.UserPassword(p.Cipher, p.Password)
+	case p.Username == "":
 		return nil
+	case p.Password == "" || p.Type == ProtocolSOCKS4:
+		return url.User(p.Username)
 	}
-	return url.UserPassword(l.Cipher, l.Password)
+	return url.UserPassword(p.Username, p.Password)
 }
 
 // Forward is the exit: connections are dialed through Way (empty = from this machine) to Host:Port, to the in-process channel Virtual, or to the proxy client's own target when both are empty.
@@ -249,23 +295,8 @@ func Validate(conf *Config) error {
 		if rule.Forward.Host != "" && rule.Forward.IsProxy() {
 			return fmt.Errorf("rules[%d].forward.host is set but port is 0", ruleIndex)
 		}
-		if rule.Listen.Cipher != "" && rule.Listen.Password == "" {
-			return fmt.Errorf("rules[%d].listen.cipher is set but password is empty", ruleIndex)
-		}
-		if rule.Listen.Password != "" && rule.Listen.Username == "" && rule.Listen.Cipher == "" {
-			return fmt.Errorf("rules[%d].listen.password is set but username is empty", ruleIndex)
-		}
-		if strings.Contains(rule.Listen.Username, ":") {
-			return fmt.Errorf("rules[%d].listen.username %q must not contain \":\"", ruleIndex, rule.Listen.Username)
-		}
-		if !rule.Forward.IsProxy() && rule.Listen.Username != "" {
-			return fmt.Errorf("rules[%d].listen.username is only used by proxy rules", ruleIndex)
-		}
-		if !rule.Forward.IsProxy() && rule.Listen.Cipher != "" {
-			return fmt.Errorf("rules[%d].listen.cipher is only used by proxy rules", ruleIndex)
-		}
-		if rule.Listen.Cipher != "" && !shadowsocks.IsCipher(rule.Listen.Cipher) {
-			return fmt.Errorf("rules[%d].listen.cipher %q is unsupported", ruleIndex, rule.Listen.Cipher)
+		if err := validateListenAuth(fmt.Sprintf("rules[%d].listen", ruleIndex), rule.Listen, rule.Forward.IsProxy()); err != nil {
+			return err
 		}
 		if err := validateVirtual(fmt.Sprintf("rules[%d].listen", ruleIndex), rule.Listen.Virtual, rule.Listen.Host, rule.Listen.Port, rule.Listen.Way); err != nil {
 			return err
@@ -293,6 +324,83 @@ func Validate(conf *Config) error {
 			return fmt.Errorf("rules[%d].listen address %s is already used by web_ui", ruleIndex, address)
 		}
 		addresses[address] = rule.Name
+	}
+	return nil
+}
+
+func validateListenAuth(prefix string, listen Listen, proxy bool) error {
+	if strings.Contains(listen.Username, ":") {
+		return fmt.Errorf("%s.username %q must not contain \":\"", prefix, listen.Username)
+	}
+	if listen.Cipher != "" && !shadowsocks.IsCipher(listen.Cipher) {
+		return fmt.Errorf("%s.cipher %q is unsupported", prefix, listen.Cipher)
+	}
+	if !proxy {
+		switch {
+		case listen.Username != "":
+			return fmt.Errorf("%s.username is only used by proxy rules", prefix)
+		case listen.Cipher != "":
+			return fmt.Errorf("%s.cipher is only used by proxy rules", prefix)
+		case len(listen.Protocols) != 0:
+			return fmt.Errorf("%s.protocols is only used by proxy rules", prefix)
+		}
+	}
+	explicit := len(listen.Protocols) != 0
+	// The shared password may serve ss alone, leaving the other schemes unauthenticated as before.
+	sharedForSS := !explicit && listen.Cipher != ""
+	types := make(map[string]bool, len(listen.Protocols))
+	for index, protocol := range listen.Protocols {
+		field := fmt.Sprintf("%s.protocols[%d]", prefix, index)
+		switch protocol.Type {
+		case ProtocolHTTP, ProtocolSOCKS5, ProtocolSOCKS4, ProtocolSSH, ProtocolShadowsocks:
+		default:
+			return fmt.Errorf("%s.type %q is unknown", field, protocol.Type)
+		}
+		if types[protocol.Type] {
+			return fmt.Errorf("%s.type %q is duplicated", field, protocol.Type)
+		}
+		types[protocol.Type] = true
+		if strings.Contains(protocol.Username, ":") {
+			return fmt.Errorf("%s.username %q must not contain \":\"", field, protocol.Username)
+		}
+		if protocol.Cipher != "" && protocol.Type != ProtocolShadowsocks {
+			return fmt.Errorf("%s.cipher is only used by ss", field)
+		}
+		if protocol.Cipher != "" && !shadowsocks.IsCipher(protocol.Cipher) {
+			return fmt.Errorf("%s.cipher %q is unsupported", field, protocol.Cipher)
+		}
+		if protocol.Type == ProtocolShadowsocks && protocol.Password == "" {
+			sharedForSS = true
+		}
+	}
+	if explicit && listen.Cipher != "" && !types[ProtocolShadowsocks] {
+		return fmt.Errorf("%s.cipher is set but protocols has no ss", prefix)
+	}
+	for index, scheme := range listen.Schemes() {
+		var raw Protocol
+		if explicit {
+			raw = listen.Protocols[index]
+		}
+		field := fmt.Sprintf("%s.protocols[%d]", prefix, index)
+		if scheme.Type == ProtocolShadowsocks {
+			switch {
+			case scheme.Cipher == "":
+				return fmt.Errorf("%s.cipher is empty", field)
+			case scheme.Password != "":
+			case raw.Cipher != "":
+				return fmt.Errorf("%s.cipher is set but password is empty", field)
+			default:
+				return fmt.Errorf("%s.cipher is set but password is empty", prefix)
+			}
+			continue
+		}
+		switch {
+		case scheme.Password == "" || scheme.Username != "":
+		case raw.Password != "":
+			return fmt.Errorf("%s.password is set but username is empty", field)
+		case !sharedForSS:
+			return fmt.Errorf("%s.password is set but username is empty", prefix)
+		}
 	}
 	return nil
 }

@@ -14,7 +14,16 @@ import (
 // VirtualNetwork is the Addr.Network of in-process channel endpoints.
 const VirtualNetwork = "virtual"
 
-func RunProxy(ctx context.Context, listener net.Listener, dialer bridge.Dialer, user, ss *url.Userinfo) error {
+// Scheme is one proxy protocol served on a listener: its URL scheme and credentials, nil for unauthenticated.
+type Scheme struct {
+	Type string
+	User *url.Userinfo
+}
+
+func RunProxy(ctx context.Context, listener net.Listener, dialer bridge.Dialer, schemes []Scheme) error {
+	if len(schemes) == 0 {
+		return errors.New("no proxy protocols to serve")
+	}
 	addr := listener.Addr()
 	if addr == nil {
 		return errors.New("listener has no address")
@@ -24,18 +33,13 @@ func RunProxy(ctx context.Context, listener net.Listener, dialer bridge.Dialer, 
 		// anyproxy keys protocol servers by host:port, which a channel name is not.
 		address = "virtual.invalid:0"
 	}
-	proxyAddress := address
-	if user != nil {
-		proxyAddress = user.String() + "@" + address
-	}
-	proxies := []string{
-		"http://" + proxyAddress,
-		"socks5://" + proxyAddress,
-		"socks4://" + proxyAddress,
-		"ssh://" + proxyAddress,
-	}
-	if ss != nil {
-		proxies = append(proxies, "ss://"+ss.String()+"@"+address)
+	proxies := make([]string, 0, len(schemes))
+	for _, scheme := range schemes {
+		proxyAddress := address
+		if scheme.User != nil {
+			proxyAddress = scheme.User.String() + "@" + address
+		}
+		proxies = append(proxies, scheme.Type+"://"+proxyAddress)
 	}
 	proxy, err := anyproxy.NewAnyProxy(ctx, proxies, &anyproxy.Config{
 		Dialer:    dialer,
