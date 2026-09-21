@@ -1,10 +1,13 @@
 import type { Locator, Page } from '@playwright/test';
-import { rulesFixture } from './fixtures/api.ts';
+import { protocolRulesFixture, rulesFixture } from './fixtures/api.ts';
 import { expect, test } from './fixtures/test.ts';
 import { count, type MockApi } from './mockApi.ts';
 
 // Rule cards on the overview, editor, hop editor, URL builder and the dirty-leave guards, in real
 // Chrome against the stateful mock (writes recorded, failures injectable).
+
+// What a legacy proxy rule serves; the editor always spells it out.
+const LEGACY = [{ type: 'http' }, { type: 'socks5' }, { type: 'socks4' }, { type: 'ssh' }];
 
 const heading = (page: Page) => page.getByRole('heading', { level: 1 });
 const cards = (page: Page) => page.getByRole('main').getByRole('article');
@@ -172,7 +175,13 @@ test('create from the overview, rename in the editor, then manage the new card f
 			path: '/apis/configs/rules',
 			body: {
 				name: 'lab/2',
-				listen: { host: '127.0.0.1', port: 18101, username: 'demo', password: 'placeholder' },
+				listen: {
+					host: '127.0.0.1',
+					port: 18101,
+					username: 'demo',
+					password: 'placeholder',
+					protocols: LEGACY
+				},
 				forward: {}
 			}
 		}
@@ -392,7 +401,13 @@ test('mode switches hide credentials and reveal the target; the body follows the
 	await expect.poll(() => api.writes.length).toBe(2);
 	expect(api.writes[1].body).toEqual({
 		name: 'lab',
-		listen: { host: '127.0.0.1', port: 18100, username: 'demo', password: 'placeholder' },
+		listen: {
+			host: '127.0.0.1',
+			port: 18100,
+			username: 'demo',
+			password: 'placeholder',
+			protocols: LEGACY
+		},
 		forward: {}
 	});
 });
@@ -812,6 +827,7 @@ test('virtual endpoints: a channel pairs an exit listener with an entry; cards a
 	page,
 	api
 }) => {
+	const general = page.getByRole('group', { name: 'General', exact: true });
 	const listen = page.getByRole('group', { name: 'Listen', exact: true });
 	const exit = page.getByRole('group', { name: 'Exit', exact: true });
 	const peers = page.locator('[data-virtual-peers]');
@@ -819,9 +835,9 @@ test('virtual endpoints: a channel pairs an exit listener with an entry; cards a
 	await page.goto('/#/new');
 	await page.getByLabel('Rule name').fill('shared-exit');
 	// Arrow keys move the segment like any radio group.
-	await listen.getByRole('radio', { name: 'Address' }).focus();
+	await general.getByRole('radio', { name: 'Address' }).focus();
 	await page.keyboard.press('ArrowRight');
-	await expect(listen.getByRole('radio', { name: 'Virtual' })).toBeChecked();
+	await expect(general.getByRole('radio', { name: 'Virtual' })).toBeChecked();
 	await expect(page.getByLabel('Host', { exact: true })).toHaveCount(0);
 	await expect(page.getByLabel('Port', { exact: true })).toHaveCount(0);
 	await expect(page.getByText('Listen through')).toHaveCount(0);
@@ -837,7 +853,7 @@ test('virtual endpoints: a channel pairs an exit listener with an entry; cards a
 	await expect(peers).toHaveCount(0);
 	await page.getByRole('button', { name: 'Save & Apply' }).click();
 	await expect(page).toHaveURL(/#\/rules\/shared-exit$/);
-	await expect(listen.getByRole('radio', { name: 'Virtual' })).toBeChecked();
+	await expect(general.getByRole('radio', { name: 'Virtual' })).toBeChecked();
 	await expect(listen.getByLabel('Channel')).toHaveValue('exit');
 	await expect(unsaved(page)).toHaveCount(0);
 
@@ -872,7 +888,14 @@ test('virtual endpoints: a channel pairs an exit listener with an entry; cards a
 			path: '/apis/configs/rules',
 			body: {
 				name: 'shared-exit',
-				listen: { host: '', port: 0, virtual: 'exit', username: 'demo', password: 'placeholder' },
+				listen: {
+					host: '',
+					port: 0,
+					virtual: 'exit',
+					username: 'demo',
+					password: 'placeholder',
+					protocols: LEGACY
+				},
 				forward: {}
 			}
 		},
@@ -995,25 +1018,25 @@ const shoot = async (page: Page, name: string) => {
 	);
 };
 
-test('Shadowsocks: the cipher select saves beside a password without username, reopens selected, hides in forward mode and fits a phone', async ({
+test('Shadowsocks: checking it adds a row with a default cipher; the entry saves beside the shared password, reopens checked, hides in forward mode and fits a phone', async ({
 	page,
 	api
 }) => {
-	const cipher = () => page.getByLabel('Shadowsocks cipher');
+	const ss = page.getByRole('group', { name: 'Shadowsocks', exact: true });
+	const cipher = () => ss.getByLabel('Cipher');
 	await page.setViewportSize({ width: 1280, height: 800 });
 	await page.goto('/#/new');
 	await expect(heading(page)).toHaveText('New rule');
-	await expect(cipher()).toHaveValue('');
-	await expect(cipher().locator('option').first()).toHaveText('Off');
+	await expect(page.getByRole('checkbox', { name: 'Shadowsocks' })).not.toBeChecked();
+	await expect(ss).toHaveCount(0);
+	await page.getByRole('checkbox', { name: 'Shadowsocks' }).check();
+	await expect(cipher()).toHaveValue('aes-256-gcm');
+	await expect(cipher().locator('option').first()).toHaveText('aes-128-gcm');
 	await expect(cipher().locator('option', { hasText: 'aes-256-gcm' })).toHaveCount(1);
 	await page.getByLabel('Rule name').fill('ss');
 	await page.getByLabel('Port', { exact: true }).fill('18200');
 	await page.getByLabel('Password', { exact: true }).fill('placeholder');
-	await cipher().selectOption('aes-256-gcm');
 	await expect(unsaved(page)).toBeVisible();
-	await expect(
-		page.getByText('Serves Shadowsocks on the same port, sharing the password.')
-	).toBeVisible();
 	await shoot(page, 'desktop-editor-cipher');
 	await page.keyboard.press('ControlOrMeta+s');
 	await expect(page).toHaveURL(/#\/rules\/ss$/);
@@ -1024,19 +1047,26 @@ test('Shadowsocks: the cipher select saves beside a password without username, r
 			path: '/apis/configs/rules',
 			body: {
 				name: 'ss',
-				listen: { host: '127.0.0.1', port: 18200, password: 'placeholder', cipher: 'aes-256-gcm' },
+				listen: {
+					host: '127.0.0.1',
+					port: 18200,
+					password: 'placeholder',
+					protocols: [...LEGACY, { type: 'ss', cipher: 'aes-256-gcm' }]
+				},
 				forward: {}
 			}
 		}
 	]);
 
-	// A fresh load reads the saved cipher back into the select.
+	// A fresh load reads the saved entry back into the row.
 	await page.reload();
 	await expect(heading(page)).toHaveText('ss');
+	await expect(page.getByRole('checkbox', { name: 'Shadowsocks' })).toBeChecked();
 	await expect(cipher()).toHaveValue('aes-256-gcm');
 	await expect(page.getByLabel('Username')).toHaveValue('');
 	await page.getByRole('radio', { name: 'Port forward' }).check();
-	await expect(cipher()).toHaveCount(0);
+	await expect(ss).toHaveCount(0);
+	await expect(page.getByRole('checkbox', { name: 'Shadowsocks' })).toHaveCount(0);
 	await page.getByRole('radio', { name: 'Proxy' }).check();
 	await expect(cipher()).toHaveValue('aes-256-gcm');
 
@@ -1048,10 +1078,168 @@ test('Shadowsocks: the cipher select saves beside a password without username, r
 	await shoot(page, 'mobile-editor-cipher');
 
 	await page.goto('/?lang=zh#/rules/ss');
-	await expect(page.getByLabel('Shadowsocks 加密方式')).toHaveValue('aes-256-gcm');
-	await expect(page.getByLabel('Shadowsocks 加密方式').locator('option').first()).toHaveText(
-		'关闭'
-	);
+	await expect(ss.getByLabel('加密方式')).toHaveValue('aes-256-gcm');
+	await expect(ss.getByRole('checkbox', { name: '单独凭据' })).not.toBeChecked();
+});
+
+test('listen protocols: one checked scheme is a single-protocol port, several share the credentials unless a row is custom; the top band and rows fit both geometries in en and zh', async ({
+	page,
+	api
+}) => {
+	api.rules.push(...structuredClone(protocolRulesFixture));
+	const general = page.getByRole('group', { name: 'General', exact: true });
+	const protocols = page.getByRole('group', { name: 'Protocols', exact: true });
+	const row = (name: string) => page.getByRole('group', { name, exact: true });
+	const checked = () =>
+		protocols
+			.getByRole('checkbox')
+			.evaluateAll((boxes) =>
+				boxes
+					.filter((box) => (box as HTMLInputElement).checked)
+					.map((box) => box.closest('label')!.textContent!.trim())
+			);
+
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await page.goto('/#/rules/lab');
+	await expect(heading(page)).toHaveText('lab');
+	// General carries name, switch, mode and listen type; the chain follows, then Listen and Exit.
+	await expect(form(page).locator('.band > .band-title')).toHaveText([
+		'General',
+		'Chain',
+		'Listen',
+		'Exit'
+	]);
+	await expect(general.getByLabel('Rule name')).toHaveValue('lab');
+	await expect(general.getByRole('switch', { name: 'Enabled' })).not.toBeChecked();
+	await expect(general.getByRole('radio', { name: 'Proxy' })).toBeChecked();
+	await expect(general.getByRole('radio', { name: 'Address' })).toBeChecked();
+	await expect(protocols.locator('label')).toHaveText([
+		'HTTP',
+		'SOCKS5',
+		'SOCKS4',
+		'SSH',
+		'Shadowsocks'
+	]);
+	expect(await checked()).toEqual(['HTTP', 'SOCKS5', 'SOCKS4', 'SSH']);
+	await expect(row('HTTP').getByRole('checkbox', { name: 'Custom credentials' })).not.toBeChecked();
+	await expect(row('HTTP').getByLabel('Username')).toHaveCount(0);
+
+	// Keyboard: Space toggles a protocol like any checkbox; one left checked is a single-protocol port.
+	await protocols.getByRole('checkbox', { name: 'HTTP' }).focus();
+	await page.keyboard.press('Space');
+	await protocols.getByRole('checkbox', { name: 'SOCKS4' }).uncheck();
+	await protocols.getByRole('checkbox', { name: 'SSH' }).uncheck();
+	expect(await checked()).toEqual(['SOCKS5']);
+	await expect(row('HTTP')).toHaveCount(0);
+	await expect(row('SOCKS5')).toHaveCount(1);
+	await page.keyboard.press('ControlOrMeta+s');
+	await expect(unsaved(page)).toHaveCount(0);
+	expect(api.writes.at(-1)!.body).toMatchObject({
+		listen: {
+			username: 'demo',
+			password: 'placeholder',
+			protocols: [{ type: 'socks5' }]
+		}
+	});
+
+	// Several schemes: SOCKS5 keeps the shared credentials, Shadowsocks gets its own password.
+	await protocols.getByRole('checkbox', { name: 'HTTP' }).check();
+	await protocols.getByRole('checkbox', { name: 'Shadowsocks' }).check();
+	await row('Shadowsocks').getByRole('checkbox', { name: 'Custom credentials' }).check();
+	await expect(row('Shadowsocks').getByLabel('Password')).toHaveAttribute('type', 'password');
+	await row('Shadowsocks').getByLabel('Password').fill('ss-secret');
+	await row('Shadowsocks').getByLabel('Cipher').selectOption('chacha20-ietf-poly1305');
+	await expect(page.getByLabel('Password', { exact: true })).toHaveCount(2);
+	await shoot(page, 'desktop-editor-protocols-en');
+	await page.keyboard.press('ControlOrMeta+s');
+	await expect(unsaved(page)).toHaveCount(0);
+	expect(api.writes.at(-1)!.body).toMatchObject({
+		listen: {
+			username: 'demo',
+			password: 'placeholder',
+			protocols: [
+				{ type: 'http' },
+				{ type: 'socks5' },
+				{ type: 'ss', password: 'ss-secret', cipher: 'chacha20-ietf-poly1305' }
+			]
+		}
+	});
+	expect(await page.content()).not.toContain('placeholder="placeholder"');
+
+	// Reopened from the mock, the same rows and fields come back.
+	await page.reload();
+	await expect(heading(page)).toHaveText('lab');
+	expect(await checked()).toEqual(['HTTP', 'SOCKS5', 'Shadowsocks']);
+	await expect(
+		row('Shadowsocks').getByRole('checkbox', { name: 'Custom credentials' })
+	).toBeChecked();
+	await expect(row('Shadowsocks').getByLabel('Password')).toHaveValue('ss-secret');
+	await expect(row('Shadowsocks').getByLabel('Cipher')).toHaveValue('chacha20-ietf-poly1305');
+	await expect(
+		row('SOCKS5').getByRole('checkbox', { name: 'Custom credentials' })
+	).not.toBeChecked();
+
+	// Unchecking a scheme or switching to forward keeps the draft; the body omits what is off.
+	await protocols.getByRole('checkbox', { name: 'Shadowsocks' }).uncheck();
+	await expect(row('Shadowsocks')).toHaveCount(0);
+	await page.getByRole('radio', { name: 'Port forward' }).check();
+	await expect(protocols).toHaveCount(0);
+	await page.getByLabel('Target port').fill('5432');
+	await page.keyboard.press('ControlOrMeta+s');
+	await expect(unsaved(page)).toHaveCount(0);
+	expect(api.writes.at(-1)!.body).toEqual({
+		name: 'lab',
+		disabled: true,
+		listen: { host: '127.0.0.1', port: 18100 },
+		forward: { port: 5432 }
+	});
+	await page.getByRole('radio', { name: 'Proxy' }).check();
+	expect(await checked()).toEqual(['HTTP', 'SOCKS5']);
+	await protocols.getByRole('checkbox', { name: 'Shadowsocks' }).check();
+	await expect(row('Shadowsocks').getByLabel('Password')).toHaveValue('ss-secret');
+	await page.keyboard.press('ControlOrMeta+s');
+	await expect(unsaved(page)).toHaveCount(0);
+	expect(api.writes.at(-1)!.body).toMatchObject({
+		listen: {
+			protocols: [
+				{ type: 'http' },
+				{ type: 'socks5' },
+				{ type: 'ss', password: 'ss-secret', cipher: 'chacha20-ietf-poly1305' }
+			]
+		}
+	});
+
+	// An explicit stored list reopens as is: one scheme with its own credentials.
+	await page.goto('/#/rules/ss-only');
+	await expect(heading(page)).toHaveText('ss-only');
+	expect(await checked()).toEqual(['Shadowsocks']);
+	await expect(row('Shadowsocks').getByLabel('Password')).toHaveValue('placeholder');
+	await expect(row('Shadowsocks').getByLabel('Cipher')).toHaveValue('chacha20-ietf-poly1305');
+
+	// Mixed rule in Chinese on a phone with the SOCKS5 custom row open: labels, no overflow.
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.goto('/?lang=zh#/rules/mixed');
+	await expect(heading(page)).toHaveText('mixed');
+	const zhGeneral = page.getByRole('group', { name: '基本信息', exact: true });
+	await expect(zhGeneral.getByRole('radio', { name: '代理' })).toBeChecked();
+	await expect(zhGeneral.getByRole('radio', { name: '地址' })).toBeChecked();
+	await expect(page.getByRole('group', { name: '协议', exact: true }).locator('label')).toHaveText([
+		'HTTP',
+		'SOCKS5',
+		'SOCKS4',
+		'SSH',
+		'Shadowsocks'
+	]);
+	await expect(row('SOCKS5').getByRole('checkbox', { name: '单独凭据' })).toBeChecked();
+	await expect(row('SOCKS5').getByLabel('用户名')).toHaveValue('socks-user');
+	await expect(row('SOCKS5').getByLabel('密码')).toHaveValue('socks-pass');
+	await expect(row('HTTP').getByRole('checkbox', { name: '单独凭据' })).not.toBeChecked();
+	await row('SOCKS5').getByLabel('密码').scrollIntoViewIfNeeded();
+	await shoot(page, 'mobile-editor-protocols-zh');
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await row('SOCKS5').getByLabel('密码').scrollIntoViewIfNeeded();
+	await shoot(page, 'desktop-editor-protocols-zh');
+	expect(api.writes).toHaveLength(4);
 });
 
 test.describe('screenshots', () => {

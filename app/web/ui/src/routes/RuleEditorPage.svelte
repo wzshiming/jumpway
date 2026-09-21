@@ -6,6 +6,7 @@
 	import { busy } from '../lib/busy.svelte';
 	import ChainFlow from '../lib/components/rules/ChainFlow.svelte';
 	import HopEditor from '../lib/components/rules/HopEditor.svelte';
+	import ListenProtocols from '../lib/components/rules/ListenProtocols.svelte';
 	import UrlBuilderDialog from '../lib/components/rules/UrlBuilderDialog.svelte';
 	import VirtualPeers from '../lib/components/rules/VirtualPeers.svelte';
 	import Banner from '../lib/components/ui/Banner.svelte';
@@ -37,7 +38,6 @@
 	import { status } from '../lib/status.svelte';
 	import { toasts } from '../lib/toast.svelte';
 	import { list, type Rule } from '../lib/types';
-	import { fieldsOf, layoutFor } from '../lib/urlBuilder';
 
 	// null edits a new rule at #/new.
 	interface Props {
@@ -45,9 +45,6 @@
 	}
 
 	let { name }: Props = $props();
-
-	const ciphers =
-		fieldsOf(layoutFor('shadowsocks')!).find((input) => input.name === 'encrypto')?.items ?? [];
 
 	// The name the backend knows the rule by; set once a new rule is first saved so a retry is a PUT.
 	// App remounts this page per route name, so only the initial prop matters.
@@ -284,14 +281,9 @@
 			<Banner kind="error" title={t('requestFailed')} message={saveError} />
 		{/if}
 
-		<section class="band pt-0" aria-labelledby="chain-heading">
-			<h2 id="chain-heading" class="band-title">{t('chain')}</h2>
-			<ChainFlow {listenWay} {forwardWay} target={targetLabel} address={listenLabel} />
-		</section>
-
-		<fieldset class="band" disabled={busy.value}>
+		<fieldset class="band pt-0" disabled={busy.value}>
 			<legend class="band-title">{t('general')}</legend>
-			<div class="grid items-end gap-4 sm:grid-cols-[minmax(0,1fr)_auto]">
+			<div class="grid items-end gap-4 sm:grid-cols-[minmax(0,1fr)_auto_auto_auto]">
 				<Field id="rule-name" label={t('rule')} error={errors.name ? t(errors.name) : null}>
 					{#snippet children({ describedBy, invalid })}
 						<input
@@ -316,26 +308,54 @@
 					/>
 					{t('enabled')}
 				</label>
+				<fieldset>
+					<legend class="field-label">{t('mode')}</legend>
+					<div class="segment">
+						<label>
+							<input type="radio" name="mode" value="proxy" bind:group={draft.mode} />
+							{t('proxy')}
+						</label>
+						<label>
+							<input type="radio" name="mode" value="forward" bind:group={draft.mode} />
+							{t('portForward')}
+						</label>
+					</div>
+				</fieldset>
+				<fieldset>
+					<legend class="field-label">{t('endpointKind')}</legend>
+					<div class="segment">
+						<label>
+							<input
+								type="radio"
+								name="listen-kind"
+								value="address"
+								bind:group={draft.listen.kind}
+							/>
+							{t('address')}
+						</label>
+						<label>
+							<input
+								type="radio"
+								name="listen-kind"
+								value="virtual"
+								bind:group={draft.listen.kind}
+							/>
+							{t('virtual')}
+						</label>
+					</div>
+				</fieldset>
 			</div>
 		</fieldset>
 
+		<section class="band" aria-labelledby="chain-heading">
+			<h2 id="chain-heading" class="band-title">{t('chain')}</h2>
+			<ChainFlow {listenWay} {forwardWay} target={targetLabel} address={listenLabel} />
+		</section>
+
 		<fieldset class="band" disabled={busy.value}>
 			<legend class="band-title">{t('listen')}</legend>
-			<fieldset>
-				<legend class="field-label">{t('endpointKind')}</legend>
-				<div class="segment">
-					<label>
-						<input type="radio" name="listen-kind" value="address" bind:group={draft.listen.kind} />
-						{t('address')}
-					</label>
-					<label>
-						<input type="radio" name="listen-kind" value="virtual" bind:group={draft.listen.kind} />
-						{t('virtual')}
-					</label>
-				</div>
-			</fieldset>
 			{#if listenVirtual}
-				<div class="mt-4">
+				<div>
 					<Field
 						id="listen-virtual"
 						label={t('virtualChannel')}
@@ -365,7 +385,7 @@
 					<VirtualPeers side="listen" channel={draft.listen.virtual} rules={peerRules} {self} />
 				</div>
 			{:else}
-				<div class="mt-4 grid gap-4 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+				<div class="grid gap-4 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
 					<Field id="listen-host" label={t('host')}>
 						{#snippet children({ describedBy })}
 							<input
@@ -403,50 +423,7 @@
 			{#if forwarding}
 				<p class="mt-3 text-xs text-fg-muted">{t('credentialsProxyOnly')}</p>
 			{:else}
-				<div class="mt-4 grid gap-4 sm:grid-cols-2">
-					<Field id="listen-username" label={t('username')} optional hint={t('credentialsHint')}>
-						{#snippet children({ describedBy })}
-							<input
-								id="listen-username"
-								class="input"
-								type="text"
-								bind:value={draft.listen.username}
-								aria-describedby={describedBy}
-								spellcheck="false"
-							/>
-						{/snippet}
-					</Field>
-					<Field id="listen-password" label={t('password')} optional>
-						{#snippet children({ describedBy })}
-							<input
-								id="listen-password"
-								class="input"
-								type="password"
-								bind:value={draft.listen.password}
-								aria-describedby={describedBy}
-								autocomplete="new-password"
-							/>
-						{/snippet}
-					</Field>
-					<Field id="listen-cipher" label={t('cipher')} hint={t('cipherHint')}>
-						{#snippet children({ describedBy })}
-							<select
-								id="listen-cipher"
-								class="input"
-								bind:value={draft.listen.cipher}
-								aria-describedby={describedBy}
-							>
-								<option value="">{t('cipherOff')}</option>
-								{#if draft.listen.cipher && !ciphers.includes(draft.listen.cipher)}
-									<option value={draft.listen.cipher}>{draft.listen.cipher}</option>
-								{/if}
-								{#each ciphers as item (item)}
-									<option value={item}>{item}</option>
-								{/each}
-							</select>
-						{/snippet}
-					</Field>
-				</div>
+				<ListenProtocols bind:listen={draft.listen} bind:errors />
 			{/if}
 			{#if !listenVirtual}
 				<div class="mt-5">
@@ -464,21 +441,8 @@
 
 		<fieldset class="band" disabled={busy.value}>
 			<legend class="band-title">{t('exit')}</legend>
-			<fieldset>
-				<legend class="field-label">{t('mode')}</legend>
-				<div class="segment">
-					<label>
-						<input type="radio" name="mode" value="proxy" bind:group={draft.mode} />
-						{t('proxy')}
-					</label>
-					<label>
-						<input type="radio" name="mode" value="forward" bind:group={draft.mode} />
-						{t('portForward')}
-					</label>
-				</div>
-			</fieldset>
 			{#if forwarding}
-				<fieldset class="mt-4">
+				<fieldset>
 					<legend class="field-label">{t('endpointKind')}</legend>
 					<div class="segment">
 						<label>
@@ -569,7 +533,7 @@
 				</div>
 			{/if}
 			{#if !targetVirtual}
-				<div class="mt-5">
+				<div class:mt-5={forwarding}>
 					<h3 class="mb-1 text-sm font-medium">{t('exitChain')}</h3>
 					<p class="mb-2 text-xs text-fg-muted" data-chain-summary>
 						{chainSummary(forwardWay.length, targetLabel)}

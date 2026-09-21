@@ -1,6 +1,7 @@
 import { flushSync, mount, unmount } from 'svelte';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import {
+	protocolRulesFixture,
 	rulesFixture,
 	snapshotFixture,
 	statusFixture,
@@ -9,10 +10,18 @@ import {
 import App from '../App.svelte';
 import { SAVED_PREFIX } from '../lib/api';
 import { toasts } from '../lib/toast.svelte';
-import type { Rule } from '../lib/types';
+import type { Protocol, Rule } from '../lib/types';
 import { fieldsOf, layoutFor } from '../lib/urlBuilder';
 
 // The whole app mounted in jsdom against a method-aware in-memory /apis stub.
+
+// What a legacy proxy rule serves; the editor always spells it out.
+const LEGACY: Protocol[] = [
+	{ type: 'http' },
+	{ type: 'socks5' },
+	{ type: 'socks4' },
+	{ type: 'ssh' }
+];
 
 interface Call {
 	method: string;
@@ -234,7 +243,13 @@ test('editing a loaded rule marks it dirty; Ctrl+S sends the serialized rule and
 			url: '/apis/configs/rules/office',
 			body: {
 				name: 'office',
-				listen: { host: '127.0.0.1', port: 18097, username: 'demo', password: 'placeholder' },
+				listen: {
+					host: '127.0.0.1',
+					port: 18097,
+					username: 'demo',
+					password: 'placeholder',
+					protocols: LEGACY
+				},
 				forward: {
 					way: [
 						{ lb: ['socks5://demo:placeholder@hop-a.example:1080'] },
@@ -876,7 +891,14 @@ test('channels must be valid before a request; the credentials of a virtual prox
 	expect(writes().map((call) => call.body)).toEqual([
 		{
 			name: 'exit',
-			listen: { host: '', port: 0, virtual: 'exit', username: 'demo', password: 'placeholder' },
+			listen: {
+				host: '',
+				port: 0,
+				virtual: 'exit',
+				username: 'demo',
+				password: 'placeholder',
+				protocols: LEGACY
+			},
 			forward: {}
 		}
 	]);
@@ -948,39 +970,101 @@ test('the editor links peers by channel: the listener under a virtual target or 
 	expect(peerText()).toBe('');
 });
 
-// Shadowsocks: the cipher select shares the credentials block and the password.
+// Listen protocols: a checkbox per scheme, shared credentials, one custom row per checked scheme.
 const select = (id: string, value: string) => {
 	const element = field(id);
 	element.value = value;
 	element.dispatchEvent(new Event('change', { bubbles: true }));
 	flushSync();
 };
-const cipher = () => target.querySelector<HTMLSelectElement>('#listen-cipher');
+const toggle = (id: string, checked: boolean) => {
+	const element = field(id);
+	element.checked = checked;
+	element.dispatchEvent(new Event('change', { bubbles: true }));
+	flushSync();
+};
 const mode = (value: 'proxy' | 'forward') =>
 	target.querySelector<HTMLInputElement>(`input[name="mode"][value="${value}"]`)!;
 const CIPHERS = fieldsOf(layoutFor('shadowsocks')!).find(
 	(input) => input.name === 'encrypto'
 )!.items!;
+const TYPES = ['http', 'socks5', 'socks4', 'ssh', 'ss'];
+const checkedTypes = () =>
+	TYPES.filter((type) => target.querySelector<HTMLInputElement>(`#protocol-${type}`)?.checked);
+const group = (name: string) =>
+	Array.from(form()!.querySelectorAll('fieldset')).find(
+		(element) => element.querySelector(':scope > legend')?.textContent?.trim() === name
+	);
+const bands = () =>
+	Array.from(form()!.querySelectorAll('.band > .band-title')).map((title) =>
+		title.textContent?.trim()
+	);
+const reopen = async (hash: string) => {
+	unmount(app!);
+	app = null;
+	target.remove();
+	await render(hash);
+};
 
-test("the Shadowsocks cipher is a labelled select next to the credentials: Off by default with the builder's ciphers, sent beside the password, dropped again by Off", async () => {
+test('the editor stacks General, Chain, Listen and Exit; General holds name, switch, mode and the listen type; the target type stays in Exit', async () => {
+	await render('#/rules/office');
+	expect(bands()).toEqual(['General', 'Chain', 'Listen', 'Exit']);
+	const general = group('General')!;
+	expect(
+		Array.from(general.querySelectorAll('input')).map(
+			(input) => input.id || (input.name ? `${input.name}=${input.value}` : input.type)
+		)
+	).toEqual([
+		'rule-name',
+		'checkbox',
+		'mode=proxy',
+		'mode=forward',
+		'listen-kind=address',
+		'listen-kind=virtual'
+	]);
+	expect(general.querySelector('input[role="switch"]')).not.toBeNull();
+	expect(
+		Array.from(general.querySelectorAll('legend, label[for="rule-name"]')).map((node) =>
+			node.textContent?.trim()
+		)
+	).toEqual(['General', 'Rule name', 'Mode', 'Type']);
+	expect(group('Listen')!.querySelector('input[type="radio"]')).toBeNull();
+	expect(group('Exit')!.querySelector('input[type="radio"]')).toBeNull();
+	choose(mode('forward'));
+	expect(group('Exit')!.querySelectorAll('input[name="target-kind"]')).toHaveLength(2);
+	expect(general.querySelectorAll('input[name="listen-kind"]')).toHaveLength(2);
+	choose(kind('listen', 'virtual'));
+	expect(group('Listen')!.querySelector('#listen-virtual')).not.toBeNull();
+	expect(group('Listen')!.querySelector('#listen-port')).toBeNull();
+});
+
+test('a legacy rule checks HTTP, SOCKS5, SOCKS4 and SSH; checking Shadowsocks adds its row with a default cipher; the body lists exactly the checked ones and reopens so', async () => {
 	await render('#/rules/lab');
-	expect(cipher()?.tagName).toBe('SELECT');
-	expect(cipher()?.className).toBe('input');
-	expect(form()!.querySelector('label[for="listen-cipher"]')?.textContent).toBe(
-		'Shadowsocks cipher'
-	);
-	expect(cipher()?.value).toBe('');
-	expect(options('listen-cipher')).toEqual(['', ...CIPHERS]);
-	expect(cipher()?.options[0].textContent).toBe('Off');
-	expect(target.querySelector('#listen-cipher-hint')?.textContent).toBe(
-		'Serves Shadowsocks on the same port, sharing the password.'
-	);
-	expect(cipher()?.getAttribute('aria-describedby')).toBe('listen-cipher-hint');
+	expect(checkedTypes()).toEqual(['http', 'socks5', 'socks4', 'ssh']);
+	expect(
+		Array.from(group('Protocols')!.querySelectorAll('label')).map((label) =>
+			label.textContent?.trim()
+		)
+	).toEqual(['HTTP', 'SOCKS5', 'SOCKS4', 'SSH', 'Shadowsocks']);
+	expect(group('HTTP')).not.toBeUndefined();
+	expect(group('SSH')).not.toBeUndefined();
+	expect(group('Shadowsocks')).toBeUndefined();
+	expect(field('protocol-http-custom').checked).toBe(false);
+	expect(target.querySelector('#protocol-http-username')).toBeNull();
 	expect(badge()).toBeNull();
 
-	select('listen-cipher', 'aes-256-gcm');
+	toggle('protocol-ss', true);
 	expect(badge()).toBe('Unsaved changes');
-	type('listen-username', '');
+	const cipher = () => target.querySelector<HTMLSelectElement>('#protocol-ss-cipher');
+	expect(group('Shadowsocks')!.contains(cipher())).toBe(true);
+	expect(cipher()?.className).toBe('input');
+	expect(form()!.querySelector('label[for="protocol-ss-cipher"]')?.textContent).toBe('Cipher');
+	expect(cipher()?.value).toBe('aes-256-gcm');
+	expect(options('protocol-ss-cipher')).toEqual(CIPHERS);
+	for (const type of ['http', 'socks5', 'socks4', 'ssh']) toggle(`protocol-${type}`, false);
+	expect(checkedTypes()).toEqual(['ss']);
+	expect(group('HTTP')).toBeUndefined();
+	select('protocol-ss-cipher', 'chacha20-ietf-poly1305');
 	await save();
 	expect(writes()).toEqual([
 		{
@@ -989,58 +1073,164 @@ test("the Shadowsocks cipher is a labelled select next to the credentials: Off b
 			body: {
 				name: 'lab',
 				disabled: true,
-				listen: { host: '127.0.0.1', port: 18100, password: 'placeholder', cipher: 'aes-256-gcm' },
+				listen: {
+					host: '127.0.0.1',
+					port: 18100,
+					username: 'demo',
+					password: 'placeholder',
+					protocols: [{ type: 'ss', cipher: 'chacha20-ietf-poly1305' }]
+				},
 				forward: {}
 			}
 		}
 	]);
 	expect(badge()).toBeNull();
-	expect(cipher()?.value).toBe('aes-256-gcm');
 
-	select('listen-cipher', '');
-	expect(badge()).toBe('Unsaved changes');
-	await save();
-	expect((writes()[1].body as Rule).listen).toEqual({
-		host: '127.0.0.1',
-		port: 18100,
-		password: 'placeholder'
-	});
+	await reopen('#/rules/lab');
+	expect(checkedTypes()).toEqual(['ss']);
+	expect(cipher()?.value).toBe('chacha20-ietf-poly1305');
+	expect(field('protocol-ss-custom').checked).toBe(false);
+	expect(badge()).toBeNull();
 });
 
-test('a saved cipher reopens selected; forward mode hides and omits it while the draft survives the round trip', async () => {
-	rules.find((rule) => rule.name === 'lab')!.listen.cipher = 'aes-256-gcm';
-	await render('#/rules/lab');
-	expect(cipher()?.value).toBe('aes-256-gcm');
-	expect(cipher()?.options[cipher()!.selectedIndex].textContent).toBe('aes-256-gcm');
+test('custom credentials live under the protocol legend: SOCKS4 takes a username only, empty fields inherit, and unchecking custom or the scheme keeps the typed draft but sends nothing', async () => {
+	rules.push(...structuredClone(protocolRulesFixture));
+	await render('#/rules/mixed');
+	expect(checkedTypes()).toEqual(['http', 'socks5']);
+	expect(inputs()).toMatchObject({
+		'listen-username': 'demo',
+		'listen-password': 'placeholder',
+		'protocol-http-custom': false,
+		'protocol-socks5-custom': true,
+		'protocol-socks5-username': 'socks-user',
+		'protocol-socks5-password': 'socks-pass'
+	});
+	expect(field('protocol-socks5-password').type).toBe('password');
+	expect(group('SOCKS5')!.querySelector('label[for="protocol-socks5-password"]')?.textContent).toBe(
+		'Password'
+	);
+	expect(form()!.querySelectorAll('label[for$="-password"]')).toHaveLength(2);
+	expect(target.querySelector('#protocol-http-username')).toBeNull();
 
-	choose(mode('forward'));
-	expect(cipher()).toBeNull();
-	type('target-port', '5432');
+	toggle('protocol-socks4', true);
+	toggle('protocol-socks4-custom', true);
+	expect(group('SOCKS4')!.querySelector('#protocol-socks4-username')).not.toBeNull();
+	expect(target.querySelector('#protocol-socks4-password')).toBeNull();
+	type('protocol-socks4-username', 'legacy-user');
+	toggle('protocol-http-custom', true);
+	type('protocol-http-username', 'web');
+	toggle('protocol-http-custom', false);
+	expect(target.querySelector('#protocol-http-username')).toBeNull();
+	toggle('protocol-socks5', false);
+	expect(group('SOCKS5')).toBeUndefined();
 	await save();
-	expect((writes()[0].body as Rule).listen).toEqual({ host: '127.0.0.1', port: 18100 });
-	choose(mode('proxy'));
-	expect(cipher()?.value).toBe('aes-256-gcm');
-	expect(field('listen-password').value).toBe('placeholder');
-	await save();
-	expect((writes()[1].body as Rule).listen).toEqual({
+	expect((writes()[0].body as Rule).listen).toEqual({
 		host: '127.0.0.1',
-		port: 18100,
+		port: 18201,
 		username: 'demo',
 		password: 'placeholder',
-		cipher: 'aes-256-gcm'
+		protocols: [{ type: 'http' }, { type: 'socks4', username: 'legacy-user' }]
 	});
+
+	toggle('protocol-socks5', true);
+	expect(field('protocol-socks5-username').value).toBe('socks-user');
+	toggle('protocol-http-custom', true);
+	expect(field('protocol-http-username').value).toBe('web');
+	choose(mode('forward'));
+	expect(target.querySelector('#protocol-http')).toBeNull();
+	expect(target.querySelector('#listen-username')).toBeNull();
+	type('target-port', '5432');
+	await save();
+	expect((writes()[1].body as Rule).listen).toEqual({ host: '127.0.0.1', port: 18201 });
+	choose(mode('proxy'));
+	expect(checkedTypes()).toEqual(['http', 'socks5', 'socks4']);
+	expect(field('protocol-http-username').value).toBe('web');
+	expect(field('protocol-socks5-password').value).toBe('socks-pass');
 });
 
-test('a cipher alias the backend accepts is shown as its own option and saved back unchanged', async () => {
+test('#/new refuses an empty protocol selection and a Shadowsocks row without an effective password, focusing and labelling the field to fix', async () => {
+	await render('#/new');
+	type('rule-name', 'p');
+	for (const type of ['http', 'socks5', 'socks4', 'ssh']) toggle(`protocol-${type}`, false);
+	await save();
+	expect(writes()).toEqual([]);
+	expect(field('protocol-http').getAttribute('aria-invalid')).toBe('true');
+	expect(document.activeElement).toBe(field('protocol-http'));
+	expect(target.querySelector('#protocols-error')?.textContent).toBe(
+		'Select at least one protocol.'
+	);
+	expect(field('protocol-http').getAttribute('aria-describedby')).toBe('protocols-error');
+	toggle('protocol-ss', true);
+	expect(target.querySelector('#protocols-error')).toBeNull();
+	expect(field('protocol-http').hasAttribute('aria-invalid')).toBe(false);
+
+	await save();
+	expect(writes()).toEqual([]);
+	expect(field('listen-password').getAttribute('aria-invalid')).toBe('true');
+	expect(document.activeElement).toBe(field('listen-password'));
+	expect(target.querySelector('#listen-password-error')?.textContent).toBe(
+		'Shadowsocks needs a password.'
+	);
+	// The error follows the effective field: a custom row answers for its own password.
+	toggle('protocol-ss-custom', true);
+	expect(target.querySelector('#listen-password-error')).toBeNull();
+	expect(target.querySelector('#protocol-ss-password-error')?.textContent).toBe(
+		'Shadowsocks needs a password.'
+	);
+	type('protocol-ss-password', 'own');
+	expect(target.querySelector('#protocol-ss-password-error')).toBeNull();
+	await save();
+	expect(writes()).toEqual([
+		{
+			method: 'POST',
+			url: '/apis/configs/rules',
+			body: {
+				name: 'p',
+				listen: {
+					host: '127.0.0.1',
+					port: 0,
+					protocols: [{ type: 'ss', password: 'own', cipher: 'aes-256-gcm' }]
+				},
+				forward: {}
+			}
+		}
+	]);
+	expect(location.hash).toBe('#/rules/p');
+	expect(field('protocol-ss-password').value).toBe('own');
+});
+
+test('a legacy flat cipher reopens as a checked Shadowsocks row, an alias as its own option; saving moves the cipher into the ss entry and forward mode hides but keeps it', async () => {
 	rules.find((rule) => rule.name === 'lab')!.listen.cipher = 'AES_256_GCM';
 	await render('#/rules/lab');
-	expect(cipher()?.value).toBe('AES_256_GCM');
-	expect(cipher()?.selectedOptions[0]?.textContent).toBe('AES_256_GCM');
-	expect(options('listen-cipher')).toEqual(['', 'AES_256_GCM', ...CIPHERS]);
+	expect(checkedTypes()).toEqual(['http', 'socks5', 'socks4', 'ssh', 'ss']);
+	const cipher = () => target.querySelector<HTMLSelectElement>('#protocol-ss-cipher')!;
+	expect(cipher().value).toBe('AES_256_GCM');
+	expect(cipher().selectedOptions[0]?.textContent).toBe('AES_256_GCM');
+	expect(options('protocol-ss-cipher')).toEqual(['AES_256_GCM', ...CIPHERS]);
 	expect(badge()).toBeNull();
 	type('listen-port', '18110');
 	await save();
-	expect((writes()[0].body as Rule).listen).toMatchObject({ port: 18110, cipher: 'AES_256_GCM' });
-	select('listen-cipher', 'aes-128-gcm');
-	expect(options('listen-cipher')).toEqual(['', ...CIPHERS]);
+	expect((writes()[0].body as Rule).listen).toEqual({
+		host: '127.0.0.1',
+		port: 18110,
+		username: 'demo',
+		password: 'placeholder',
+		protocols: [...LEGACY, { type: 'ss', cipher: 'AES_256_GCM' }]
+	});
+	select('protocol-ss-cipher', 'aes-128-gcm');
+	expect(options('protocol-ss-cipher')).toEqual(CIPHERS);
+
+	choose(mode('forward'));
+	expect(target.querySelector('#protocol-ss-cipher')).toBeNull();
+	type('target-port', '5432');
+	await save();
+	expect((writes()[1].body as Rule).listen).toEqual({ host: '127.0.0.1', port: 18110 });
+	choose(mode('proxy'));
+	expect(cipher().value).toBe('aes-128-gcm');
+	expect(field('listen-password').value).toBe('placeholder');
+	await save();
+	expect((writes()[2].body as Rule).listen.protocols).toEqual([
+		...LEGACY,
+		{ type: 'ss', cipher: 'aes-128-gcm' }
+	]);
 });

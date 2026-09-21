@@ -1,12 +1,31 @@
 import { describe, expect, test } from 'vitest';
 import { rulesFixture } from '../../e2e/fixtures/api';
-import { draftFrom, emptyDraft, newHop, readRule, snapshot, type RuleDraft } from './ruleEditor';
-import type { Rule } from './types';
+import {
+	draftFrom,
+	emptyDraft,
+	newHop,
+	PROTOCOLS,
+	readRule,
+	snapshot,
+	type ProtocolDraft,
+	type RuleDraft
+} from './ruleEditor';
+import type { Protocol, Rule } from './types';
 
 const [office, mirror, dbTunnel, lab] = rulesFixture;
 
 const urlsOf = (draft: RuleDraft, side: 'listen' | 'forward') =>
 	draft[side].way.map((hop) => hop.urls.map((url) => url.value));
+
+// What a legacy rule without protocols serves; readRule always spells it out.
+const LEGACY: Protocol[] = [
+	{ type: 'http' },
+	{ type: 'socks5' },
+	{ type: 'socks4' },
+	{ type: 'ssh' }
+];
+const row = (draft: RuleDraft, type: string): ProtocolDraft =>
+	draft.listen.protocols.find((entry) => entry.type === type)!;
 
 describe('draftFrom', () => {
 	test('deep-copies a proxy rule into editable strings with unique ids per hop and URL', () => {
@@ -72,10 +91,11 @@ describe('draftFrom', () => {
 			name: '',
 			enabled: true,
 			mode: 'proxy',
-			listen: { host: '127.0.0.1', port: '0', username: '', password: '', cipher: '', way: [] },
+			listen: { host: '127.0.0.1', port: '0', username: '', password: '', way: [] },
 			target: { kind: 'address', host: '', port: '', virtual: '' },
 			forward: { way: [] }
 		});
+		expect(draft.listen).not.toHaveProperty('cipher');
 	});
 });
 
@@ -96,7 +116,11 @@ describe('readRule', () => {
 		draft.listen.port = '18097';
 		expect(readRule(draft)).toEqual({
 			ok: true,
-			rule: { name: 'office', listen: { host: '0.0.0.0', port: 18097 }, forward: {} }
+			rule: {
+				name: 'office',
+				listen: { host: '0.0.0.0', port: 18097, protocols: LEGACY },
+				forward: {}
+			}
 		});
 	});
 
@@ -109,12 +133,18 @@ describe('readRule', () => {
 			host: '127.0.0.1',
 			port: 0,
 			username: 'demo',
-			password: ' p@ss '
+			password: ' p@ss ',
+			protocols: LEGACY
 		});
 		const passwordOnly = valid((draft) => {
 			draft.listen.password = 'secret';
 		});
-		expect(passwordOnly.listen).toEqual({ host: '127.0.0.1', port: 0, password: 'secret' });
+		expect(passwordOnly.listen).toEqual({
+			host: '127.0.0.1',
+			port: 0,
+			password: 'secret',
+			protocols: LEGACY
+		});
 		const forward = valid((draft) => {
 			draft.listen.username = 'demo';
 			draft.listen.password = 'placeholder';
@@ -233,7 +263,14 @@ describe('snapshot', () => {
 describe('virtual endpoints', () => {
 	const sharedExit: Rule = {
 		name: 'shared-exit',
-		listen: { host: '', port: 0, virtual: 'exit', username: 'demo', password: 'placeholder' },
+		listen: {
+			host: '',
+			port: 0,
+			virtual: 'exit',
+			username: 'demo',
+			password: 'placeholder',
+			protocols: LEGACY
+		},
 		forward: { way: [{ lb: ['ssh://ops@bastion.example:22'] }] }
 	};
 	const lanEntry: Rule = {
@@ -288,7 +325,8 @@ describe('virtual endpoints', () => {
 			port: 0,
 			virtual: 'exit',
 			username: 'demo',
-			password: 'placeholder'
+			password: 'placeholder',
+			protocols: LEGACY
 		});
 		expect(rule.forward).toEqual({ way: [{ lb: ['ssh://ops@bastion.example:22'] }] });
 	});
@@ -341,46 +379,214 @@ describe('virtual endpoints', () => {
 	});
 });
 
-describe('shadowsocks cipher', () => {
-	const shadowsocks: Rule = {
-		name: 'ss',
-		listen: { host: '0.0.0.0', port: 18200, password: 'placeholder', cipher: 'aes-256-gcm' },
-		forward: {}
-	};
+describe('listen protocols', () => {
 	const read = (draft: RuleDraft) => {
 		const result = readRule(draft);
 		if (!result.ok) throw new Error('unexpected errors ' + JSON.stringify(result.errors));
 		return result.rule;
 	};
+	const errorsOf = (draft: RuleDraft) => {
+		const result = readRule(draft);
+		return result.ok ? {} : result.errors;
+	};
+	const enabledTypes = (draft: RuleDraft) =>
+		draft.listen.protocols.filter((entry) => entry.enabled).map((entry) => entry.type);
+	const proxy = (listen: Partial<Rule['listen']>): Rule => ({
+		name: 'r',
+		listen: { host: '127.0.0.1', port: 18200, ...listen },
+		forward: {}
+	});
 
-	test('draftFrom copies the cipher as text; rules without one and the empty draft leave it blank', () => {
-		expect(draftFrom(shadowsocks).listen).toMatchObject({
+	test('PROTOCOLS is the fixed row order with the credential fields each scheme takes', () => {
+		expect(PROTOCOLS.map((entry) => [entry.type, entry.label, [...entry.fields]])).toEqual([
+			['http', 'HTTP', ['username', 'password']],
+			['socks5', 'SOCKS5', ['username', 'password']],
+			['socks4', 'SOCKS4', ['username']],
+			['ssh', 'SSH', ['username', 'password']],
+			['ss', 'Shadowsocks', ['password']]
+		]);
+	});
+
+	test('a rule without protocols drafts the legacy four enabled and Shadowsocks off with a default cipher', () => {
+		for (const rule of [office, lab, proxy({ protocols: [] }), proxy({ protocols: null })]) {
+			const draft = draftFrom(rule);
+			expect(draft.listen.protocols.map((entry) => entry.type)).toEqual(
+				PROTOCOLS.map((entry) => entry.type)
+			);
+			expect(enabledTypes(draft)).toEqual(['http', 'socks5', 'socks4', 'ssh']);
+			for (const entry of draft.listen.protocols) {
+				expect(entry).toMatchObject({ custom: false, username: '', password: '' });
+			}
+			expect(row(draft, 'ss').cipher).toBe('aes-256-gcm');
+			expect(row(draft, 'http').cipher).toBe('');
+		}
+		expect(enabledTypes(emptyDraft())).toEqual(['http', 'socks5', 'socks4', 'ssh']);
+	});
+
+	test('a legacy flat cipher enables the Shadowsocks row and lands in it, keeping the shared password', () => {
+		const draft = draftFrom(proxy({ password: 'placeholder', cipher: 'aes-128-gcm' }));
+		expect(enabledTypes(draft)).toEqual(['http', 'socks5', 'socks4', 'ssh', 'ss']);
+		expect(row(draft, 'ss')).toEqual({
+			type: 'ss',
+			enabled: true,
+			custom: false,
 			username: '',
-			password: 'placeholder',
-			cipher: 'aes-256-gcm'
+			password: '',
+			cipher: 'aes-128-gcm'
 		});
-		expect(draftFrom(lab).listen.cipher).toBe('');
-		expect(emptyDraft().listen.cipher).toBe('');
+		expect(draft.listen).toMatchObject({ username: '', password: 'placeholder' });
+		expect(draft.listen).not.toHaveProperty('cipher');
+		// An alias the backend accepts is kept as text rather than dropped.
+		expect(row(draftFrom(proxy({ password: 'p', cipher: 'AES_256_GCM' })), 'ss').cipher).toBe(
+			'AES_256_GCM'
+		);
 	});
 
-	test('a proxy rule sends the cipher next to the shared password and round-trips; an empty one is omitted', () => {
-		const draft = draftFrom(shadowsocks);
-		expect(read(draft)).toEqual(shadowsocks);
-		expect(snapshot(draftFrom(read(draft)))).toBe(snapshot(draft));
-		draft.listen.cipher = '';
-		expect(read(draft).listen).toEqual({ host: '0.0.0.0', port: 18200, password: 'placeholder' });
-		// Aliases the backend accepts are passed through untouched rather than dropped.
-		draft.listen.cipher = 'AES_256_GCM';
-		expect(read(draft).listen.cipher).toBe('AES_256_GCM');
+	test('an explicit list enables exactly its entries; own credentials mark the row custom, an ss cipher may still come from the flat field', () => {
+		const draft = draftFrom(
+			proxy({
+				username: 'demo',
+				password: 'placeholder',
+				cipher: 'aes-128-gcm',
+				protocols: [
+					{ type: 'ss', password: 'own' },
+					{ type: 'socks4', username: 'legacy-user' },
+					{ type: 'http' }
+				]
+			})
+		);
+		expect(enabledTypes(draft)).toEqual(['http', 'socks4', 'ss']);
+		expect(row(draft, 'http')).toMatchObject({ custom: false, username: '', password: '' });
+		expect(row(draft, 'socks4')).toMatchObject({ custom: true, username: 'legacy-user' });
+		expect(row(draft, 'ss')).toMatchObject({
+			custom: true,
+			password: 'own',
+			cipher: 'aes-128-gcm'
+		});
+		expect(row(draft, 'socks5')).toMatchObject({ enabled: false, custom: false });
+		const explicit = draftFrom(
+			proxy({ protocols: [{ type: 'ss', password: 'own', cipher: 'chacha20-ietf-poly1305' }] })
+		);
+		expect(enabledTypes(explicit)).toEqual(['ss']);
+		expect(row(explicit, 'ss').cipher).toBe('chacha20-ietf-poly1305');
 	});
 
-	test('a forward rule omits the hidden cipher like the other credentials; the draft keeps it', () => {
-		const draft = draftFrom(shadowsocks);
+	test('a proxy rule always spells out its enabled protocols; one checked row is a single-protocol port', () => {
+		const draft = emptyDraft();
+		draft.name = 'r';
+		expect(read(draft).listen.protocols).toEqual(LEGACY);
+		for (const entry of draft.listen.protocols) entry.enabled = entry.type === 'socks5';
+		expect(read(draft).listen).toEqual({
+			host: '127.0.0.1',
+			port: 0,
+			protocols: [{ type: 'socks5' }]
+		});
+	});
+
+	test('custom rows send only their non-empty fields; inheriting rows send the bare type even when they hold text', () => {
+		const draft = emptyDraft();
+		draft.name = 'r';
+		draft.listen.username = 'demo';
+		draft.listen.password = 'placeholder';
+		Object.assign(row(draft, 'http'), { custom: true, username: 'web', password: 'web-pass' });
+		Object.assign(row(draft, 'socks5'), { custom: true, username: 'only-user' });
+		Object.assign(row(draft, 'socks4'), { custom: false, username: 'typed', password: 'typed' });
+		expect(read(draft).listen).toEqual({
+			host: '127.0.0.1',
+			port: 0,
+			username: 'demo',
+			password: 'placeholder',
+			protocols: [
+				{ type: 'http', username: 'web', password: 'web-pass' },
+				{ type: 'socks5', username: 'only-user' },
+				{ type: 'socks4' },
+				{ type: 'ssh' }
+			]
+		});
+	});
+
+	test('Shadowsocks sends its cipher in its own entry, never a flat listen.cipher, with the shared or its own password', () => {
+		const draft = emptyDraft();
+		draft.name = 'r';
+		draft.listen.password = 'placeholder';
+		row(draft, 'ss').enabled = true;
+		const shared = read(draft).listen;
+		expect(shared).not.toHaveProperty('cipher');
+		expect(shared).toMatchObject({
+			password: 'placeholder',
+			protocols: [...LEGACY, { type: 'ss', cipher: 'aes-256-gcm' }]
+		});
+		Object.assign(row(draft, 'ss'), { custom: true, password: 'own', cipher: 'AES_256_GCM' });
+		expect(read(draft).listen.protocols?.at(-1)).toEqual({
+			type: 'ss',
+			password: 'own',
+			cipher: 'AES_256_GCM'
+		});
+	});
+
+	test('a legacy password-and-cipher rule migrates to an explicit list that reads back to the same draft', () => {
+		const legacy = proxy({ password: 'placeholder', cipher: 'aes-256-gcm' });
+		const draft = draftFrom(legacy);
+		const rule = read(draft);
+		expect(rule.listen).toEqual({
+			host: '127.0.0.1',
+			port: 18200,
+			password: 'placeholder',
+			protocols: [...LEGACY, { type: 'ss', cipher: 'aes-256-gcm' }]
+		});
+		expect(snapshot(draftFrom(rule))).toBe(snapshot(draft));
+		const explicit = proxy({
+			username: 'demo',
+			password: 'placeholder',
+			protocols: [
+				{ type: 'socks4', username: 'legacy-user', password: 'kept' },
+				{ type: 'ss', password: 'own', cipher: 'aes-128-gcm' }
+			]
+		});
+		// Stored fields the form does not expose (a SOCKS4 password) survive the round trip.
+		expect(read(draftFrom(explicit))).toEqual(explicit);
+	});
+
+	test('a forward rule omits protocols and credentials while the rows keep their drafts', () => {
+		const draft = draftFrom(proxy({ password: 'placeholder', cipher: 'aes-256-gcm' }));
+		Object.assign(row(draft, 'http'), { custom: true, username: 'web' });
 		draft.mode = 'forward';
 		draft.target.port = '5432';
-		expect(read(draft).listen).toEqual({ host: '0.0.0.0', port: 18200 });
-		expect(draft.listen.cipher).toBe('aes-256-gcm');
+		expect(read(draft).listen).toEqual({ host: '127.0.0.1', port: 18200 });
 		draft.mode = 'proxy';
-		expect(read(draft)).toEqual(shadowsocks);
+		expect(read(draft).listen.protocols).toEqual([
+			{ type: 'http', username: 'web' },
+			{ type: 'socks5' },
+			{ type: 'socks4' },
+			{ type: 'ssh' },
+			{ type: 'ss', cipher: 'aes-256-gcm' }
+		]);
+	});
+
+	test('a proxy rule needs at least one protocol; Shadowsocks needs a cipher and an effective password', () => {
+		const none = emptyDraft();
+		none.name = 'r';
+		for (const entry of none.listen.protocols) entry.enabled = false;
+		expect(errorsOf(none)).toEqual({ protocols: 'protocolRequired' });
+		none.mode = 'forward';
+		none.target.port = '5432';
+		expect(errorsOf(none)).toEqual({});
+
+		const ss = emptyDraft();
+		ss.name = 'r';
+		row(ss, 'ss').enabled = true;
+		expect(errorsOf(ss)).toEqual({ ssPassword: 'passwordRequired' });
+		row(ss, 'ss').cipher = '';
+		expect(errorsOf(ss)).toEqual({ ssCipher: 'cipherRequired', ssPassword: 'passwordRequired' });
+		ss.listen.password = 'placeholder';
+		expect(errorsOf(ss)).toEqual({ ssCipher: 'cipherRequired' });
+		row(ss, 'ss').cipher = 'aes-256-gcm';
+		expect(errorsOf(ss)).toEqual({});
+		// A custom row with an empty password still inherits the shared one.
+		ss.listen.password = '';
+		row(ss, 'ss').custom = true;
+		expect(errorsOf(ss)).toEqual({ ssPassword: 'passwordRequired' });
+		row(ss, 'ss').password = 'own';
+		expect(errorsOf(ss)).toEqual({});
 	});
 });

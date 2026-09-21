@@ -78,6 +78,32 @@ export const virtualRulesFixture: Rule[] = [
 	{ name: 'orphan', listen: { host: '127.0.0.1', port: 18102 }, forward: { virtual: 'missing' } }
 ];
 
+export const protocolRulesFixture: Rule[] = [
+	{
+		name: 'ss-only',
+		listen: {
+			host: '0.0.0.0',
+			port: 18200,
+			protocols: [{ type: 'ss', password: 'placeholder', cipher: 'chacha20-ietf-poly1305' }]
+		},
+		forward: {}
+	},
+	{
+		name: 'mixed',
+		listen: {
+			host: '127.0.0.1',
+			port: 18201,
+			username: 'demo',
+			password: 'placeholder',
+			protocols: [
+				{ type: 'http' },
+				{ type: 'socks5', username: 'socks-user', password: 'socks-pass' }
+			]
+		},
+		forward: {}
+	}
+];
+
 const zero: Stats = {
 	up: 0,
 	down: 0,
