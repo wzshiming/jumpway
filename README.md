@@ -60,10 +60,18 @@ A cross-platform proxy GUI client
 
 The configuration lives in `~/.jumpway/config.yaml`. Open the tray menu
 `Config` → `Web UI` (or browse to `http://127.0.0.1:1088/`) to manage it in the
-browser:
+browser. The sidebar (a drawer on narrow screens) shows the runtime state,
+switches between the pages and holds the English/中文 and system/light/dark
+theme switches. On desktop it can collapse into an icon rail and remembers
+that choice; language and theme remain available from Preferences.
 
-- Each rule is a tab at the top of the page; `+` adds one. A rule is an **entry** (`listen`) and
-  an **exit** (`forward`):
+- `Overview`: how many rules are running, the active connections, current rates
+  and total traffic, and one card per rule with its state, address, target,
+  exit chain and rates. The card's `Enabled` switch stops or restarts that rule
+  alone (it writes `disabled` to the file and applies it). Pencil and chart icons
+  open the rule editor and its traffic statistics; the trash icon deletes the
+  rule after confirmation. `New rule` and the rule names open the editor. A
+  rule is an **entry** (`listen`) and an **exit** (`forward`):
     - `listen`: the host and port clients connect to, with optional proxy
       credentials. Leave `Listen through` empty to open the port on this
       machine; otherwise the first hop binds the port on its side (an `ssh://`
@@ -76,8 +84,18 @@ browser:
       the exit node (an empty host means `127.0.0.1` on the exit node). The
       `Exit chain` is dialed from this machine: hop 1 is the exit node, the last
       hop is the first one dialed; leave it empty to connect directly.
-- `Settings`: the Web UI address (this page and the REST API) and the hosts, environment variables and files that bypass proxy rules
-- `Advanced YAML`: edit the file directly
+    - Hops are proxy URLs, one or more per hop for load balancing; `Build…`
+      assembles one from the protocol, host, port and credentials. The chain is
+      drawn above the form from the clients to the target.
+- `Global Settings`: the Web UI address (this page and the REST API) and the hosts,
+  environment variables and files that bypass proxy rules, each saved on its own
+- `Configuration File`: edit the YAML file directly
+
+Rule editing, Global Settings and Configuration File use the same `Save & Apply`
+control and unsaved-change indicator. The two Global Settings forms still save
+independently. In the rule editor, `Cancel` returns to Overview without saving;
+unsaved changes require confirmation before leaving. Current page URLs are used
+directly; retired page aliases are not maintained.
 
 ```yaml
 web_ui:
@@ -127,30 +145,40 @@ Web UI.
 
 ## Statistics
 
-Three tabs show the live numbers (bandwidth over the last second and its peak,
+Three pages show the live numbers (bandwidth over the last second and its peak,
 total bytes and when the last byte went up or down, current and cumulative
-connections, dial latency and failures). `Statistics`
-lists one row per rule and expands into the whole chain in traffic order —
-clients, the entry (or the hops that bind a remote entry), this machine, every
-exit hop with its URLs and the hop it is reached through, and the targets — each
-stage with the same numbers; the connection count links to the connections of
-that rule. `Hosts` aggregates every hop URL of every rule by host, so a jump
-server shared by several rules is one row, expandable into its endpoints and
-the rules that use them. `Connections` lists every current connection with its
-client IP, rule (the hops it actually went through are shown on hover), target,
-bytes, rates and duration, sortable and filterable, with a `Disconnect` button
-that closes it. For loopback clients of rules that listen locally, the client
-column shows the local process that opened the connection instead of its IP
-(PID and address on hover), resolved through `lsof` on macOS, `/proc` on Linux
-and the IP Helper API on Windows, limited to processes jumpway is allowed to
-inspect. Rule names on these pages open the rule's row in `Statistics`;
-editing stays on the rule tabs. Proxy URLs are shown as `scheme://host:port`.
+connections, dial latency and failures); the overview shows the per-rule rates
+as well. All three use the same list layout with aligned metric columns. Each
+entry shows its full statistics without expansion; circled question marks
+explain the concepts on hover, keyboard focus or click. `Rule Traffic` lists
+one entry per rule with its state and address. Expansion adds the whole chain
+in traffic order: clients, the entry (or the hops that bind a
+remote entry), this machine, every exit hop with its URLs and the hop it is
+reached through, and the targets — each stage with the same numbers; the
+connection count links to the connections of that rule. `Proxy Hosts` aggregates
+every hop URL of every rule by host, so a jump server shared by several rules
+is one entry with its aggregate statistics visible, expandable into its endpoints.
+An entry with one endpoint does not repeat the same statistics in its expansion;
+multiple endpoints retain their individual breakdowns.
+`Live Connections` lists every current connection with its client IP, rule (the hops
+it actually went through are shown on hover), target, current and peak rates,
+total bytes, last-transfer times and duration, sortable and filterable. The
+full client address and port are visible. Expansion adds only the start time
+and path, without repeating the statistics; the `Disconnect` icon closes the
+connection. For loopback clients of rules that listen locally, the client
+also shows the local process that opened the connection (name and PID),
+resolved through `lsof` on macOS, `/proc` on Linux and the IP Helper API on
+Windows, limited to processes jumpway is allowed to inspect. Rule names on
+these pages open the rule's entry in `Rule Traffic`; editing starts from
+`Overview`. Proxy URLs are shown as `scheme://host:port`.
 The counters live in memory since the process started, survive reloads for
 unchanged rule names and for URLs that keep their position in a chain, and keep
 at most 1000 targets per rule. A reset also restarts the bytes, rates and
 duration of connections still open and drops the targets that no longer have
-an open connection. Peaks are the highest one-second rate since start
-or reset; a hop's peak is the peak of its URLs combined, while `Hosts`, which
+an open connection. Aggregate active/total counts restart at zero; surviving
+connections stay in `Live Connections` but are not included in those counts.
+Peaks are the highest one-second rate since start
+or reset; a hop's peak is the peak of its URLs combined, while `Proxy Hosts`, which
 only sums per-rule numbers, shows the sum of its endpoints' peaks as an upper
 bound. Hops behind a connection-multiplexing hop (SSH) count transports rather
 than client connections. The same data is served as JSON at `/apis/stats`
@@ -171,6 +199,30 @@ so the combined hop peak exists only in the JSON).
 ### Linux
 
 `./tools/build_linux.sh`
+
+### Web UI
+
+The browser UI is a Svelte app in `app/web/ui`; its build output in
+`app/web/statics` is committed and embedded into the binary, so the Go builds
+above need no Node. Changing the UI needs Node (the versions listed under
+`engines` in `app/web/ui/package.json`; `.nvmrc` picks 24) and pnpm 12.4.2:
+
+- `make -C app/web ui`: frozen install and production build into
+  `app/web/statics`; commit the result together with the source change
+- `make -C app/web ui-dev`: dev server with hot reload; `/apis`, `/metrics`,
+  `/swaggerui` and `/debug` are proxied to a running jumpway
+  (`http://127.0.0.1:1088`, or `JUMPWAY_URL`)
+- `make -C app/web ui-check`: type checks, formatting and unit tests
+- `pnpm --dir app/web/ui test:e2e`: browser tests against a mocked API (once:
+  `pnpm --dir app/web/ui exec playwright install chromium`; `PW_CHANNEL=chrome`
+  uses an installed Google Chrome instead)
+
+`pnpm --dir app/web/ui test:e2e:real` runs a read-only check against the
+jumpway at `JUMPWAY_URL`; the tests that create rules, rewrite the YAML file and
+open connections stay skipped unless opted in with `JUMPWAY_E2E_WRITE=1` (plus
+`JUMPWAY_E2E_ISOLATED=1` for the YAML file and `JUMPWAY_TARGET_URL` for
+traffic), and are meant for a disposable instance, not a personal
+configuration.
 
 ## License
 

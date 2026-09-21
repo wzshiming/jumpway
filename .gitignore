@@ -20,3 +20,8 @@ tmp
 webview/webview
 webview/webview.exe
 
+# Web UI toolchain output (sources in app/web/ui, build lands in app/web/statics)
+app/web/ui/node_modules/
+app/web/ui/dist/
+app/web/ui/test-results/
+app/web/ui/playwright-report/
