@@ -37,6 +37,7 @@
 	import { status } from '../lib/status.svelte';
 	import { toasts } from '../lib/toast.svelte';
 	import { list, type Rule } from '../lib/types';
+	import { fieldsOf, layoutFor } from '../lib/urlBuilder';
 
 	// null edits a new rule at #/new.
 	interface Props {
@@ -44,6 +45,9 @@
 	}
 
 	let { name }: Props = $props();
+
+	const ciphers =
+		fieldsOf(layoutFor('shadowsocks')!).find((input) => input.name === 'encrypto')?.items ?? [];
 
 	// The name the backend knows the rule by; set once a new rule is first saved so a retry is a PUT.
 	// App remounts this page per route name, so only the initial prop matters.
@@ -422,6 +426,24 @@
 								aria-describedby={describedBy}
 								autocomplete="new-password"
 							/>
+						{/snippet}
+					</Field>
+					<Field id="listen-cipher" label={t('cipher')} hint={t('cipherHint')}>
+						{#snippet children({ describedBy })}
+							<select
+								id="listen-cipher"
+								class="input"
+								bind:value={draft.listen.cipher}
+								aria-describedby={describedBy}
+							>
+								<option value="">{t('cipherOff')}</option>
+								{#if draft.listen.cipher && !ciphers.includes(draft.listen.cipher)}
+									<option value={draft.listen.cipher}>{draft.listen.cipher}</option>
+								{/if}
+								{#each ciphers as item (item)}
+									<option value={item}>{item}</option>
+								{/each}
+							</select>
 						{/snippet}
 					</Field>
 				</div>

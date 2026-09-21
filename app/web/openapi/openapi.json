@@ -703,6 +703,9 @@
     ],
     "type": "object",
     "properties": {
+     "cipher": {
+      "type": "string"
+     },
      "host": {
       "type": "string"
      },

@@ -44,6 +44,9 @@ export const en = {
 	credentialsHint:
 		'Optional credentials for HTTP Basic / SOCKS5 clients. Usernames must not contain ":".',
 	credentialsProxyOnly: 'Credentials apply to proxy rules only',
+	cipher: 'Shadowsocks cipher',
+	cipherOff: 'Off',
+	cipherHint: 'Serves Shadowsocks on the same port, sharing the password.',
 	listenThroughHint:
 		'Leave empty to open the port on this machine. Otherwise the first hop binds host:port on its side (SSH remote forwarding; the remote sshd binds loopback unless GatewayPorts is enabled) and the last hop is dialed from this machine. Only ssh://, cmd: and nc hops can bind.',
 	deleteRule: 'Delete',
