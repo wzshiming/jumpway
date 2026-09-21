@@ -1297,6 +1297,28 @@ test('protocol credentials align below their controls on desktop and stack on ph
 	}
 });
 
+test('listen and exit headings are spaced below the preceding separators', async ({ page }) => {
+	await page.goto('/?lang=zh#/rules/lab');
+	await expect(heading(page)).toHaveText('lab');
+	for (const width of [1280, 390]) {
+		await page.setViewportSize({ width, height: 844 });
+		for (const [name, label] of [
+			['listen', '监听'],
+			['exit', '出口']
+		]) {
+			const section = page.getByRole('group', { name: label, exact: true });
+			const gap = await section.evaluate((element) => {
+				const title = element.querySelector(':scope > legend')!.getBoundingClientRect();
+				const previous = element.previousElementSibling!.getBoundingClientRect();
+				return title.top - previous.bottom;
+			});
+			expect(gap, `${name} heading gap at ${width}px`).toBeGreaterThanOrEqual(20);
+			await section.locator(':scope > legend').scrollIntoViewIfNeeded();
+			await shoot(page, `section-heading-${width}-${name}`);
+		}
+	}
+});
+
 test.describe('screenshots', () => {
 	for (const [viewport, label] of [
 		[{ width: 1280, height: 800 }, 'desktop'],

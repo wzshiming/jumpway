@@ -352,7 +352,7 @@
 			<ChainFlow {listenWay} {forwardWay} target={targetLabel} address={listenLabel} />
 		</section>
 
-		<fieldset class="band" disabled={busy.value}>
+		<fieldset class="band mt-5" disabled={busy.value}>
 			<legend class="band-title">{t('listen')}</legend>
 			{#if listenVirtual}
 				<div>
@@ -439,7 +439,7 @@
 			{/if}
 		</fieldset>
 
-		<fieldset class="band" disabled={busy.value}>
+		<fieldset class="band mt-5" disabled={busy.value}>
 			<legend class="band-title">{t('exit')}</legend>
 			{#if forwarding}
 				<fieldset>
