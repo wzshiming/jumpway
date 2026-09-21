@@ -10,6 +10,7 @@ import App from '../App.svelte';
 import { SAVED_PREFIX } from '../lib/api';
 import { toasts } from '../lib/toast.svelte';
 import type { Rule } from '../lib/types';
+import { fieldsOf, layoutFor } from '../lib/urlBuilder';
 
 // The whole app mounted in jsdom against a method-aware in-memory /apis stub.
 
@@ -945,4 +946,101 @@ test('the editor links peers by channel: the listener under a virtual target or 
 	expect(form()).not.toBeNull();
 	expect(field('target-virtual').value).toBe('missing');
 	expect(peerText()).toBe('');
+});
+
+// Shadowsocks: the cipher select shares the credentials block and the password.
+const select = (id: string, value: string) => {
+	const element = field(id);
+	element.value = value;
+	element.dispatchEvent(new Event('change', { bubbles: true }));
+	flushSync();
+};
+const cipher = () => target.querySelector<HTMLSelectElement>('#listen-cipher');
+const mode = (value: 'proxy' | 'forward') =>
+	target.querySelector<HTMLInputElement>(`input[name="mode"][value="${value}"]`)!;
+const CIPHERS = fieldsOf(layoutFor('shadowsocks')!).find(
+	(input) => input.name === 'encrypto'
+)!.items!;
+
+test("the Shadowsocks cipher is a labelled select next to the credentials: Off by default with the builder's ciphers, sent beside the password, dropped again by Off", async () => {
+	await render('#/rules/lab');
+	expect(cipher()?.tagName).toBe('SELECT');
+	expect(cipher()?.className).toBe('input');
+	expect(form()!.querySelector('label[for="listen-cipher"]')?.textContent).toBe(
+		'Shadowsocks cipher'
+	);
+	expect(cipher()?.value).toBe('');
+	expect(options('listen-cipher')).toEqual(['', ...CIPHERS]);
+	expect(cipher()?.options[0].textContent).toBe('Off');
+	expect(target.querySelector('#listen-cipher-hint')?.textContent).toBe(
+		'Serves Shadowsocks on the same port, sharing the password.'
+	);
+	expect(cipher()?.getAttribute('aria-describedby')).toBe('listen-cipher-hint');
+	expect(badge()).toBeNull();
+
+	select('listen-cipher', 'aes-256-gcm');
+	expect(badge()).toBe('Unsaved changes');
+	type('listen-username', '');
+	await save();
+	expect(writes()).toEqual([
+		{
+			method: 'PUT',
+			url: '/apis/configs/rules/lab',
+			body: {
+				name: 'lab',
+				disabled: true,
+				listen: { host: '127.0.0.1', port: 18100, password: 'placeholder', cipher: 'aes-256-gcm' },
+				forward: {}
+			}
+		}
+	]);
+	expect(badge()).toBeNull();
+	expect(cipher()?.value).toBe('aes-256-gcm');
+
+	select('listen-cipher', '');
+	expect(badge()).toBe('Unsaved changes');
+	await save();
+	expect((writes()[1].body as Rule).listen).toEqual({
+		host: '127.0.0.1',
+		port: 18100,
+		password: 'placeholder'
+	});
+});
+
+test('a saved cipher reopens selected; forward mode hides and omits it while the draft survives the round trip', async () => {
+	rules.find((rule) => rule.name === 'lab')!.listen.cipher = 'aes-256-gcm';
+	await render('#/rules/lab');
+	expect(cipher()?.value).toBe('aes-256-gcm');
+	expect(cipher()?.options[cipher()!.selectedIndex].textContent).toBe('aes-256-gcm');
+
+	choose(mode('forward'));
+	expect(cipher()).toBeNull();
+	type('target-port', '5432');
+	await save();
+	expect((writes()[0].body as Rule).listen).toEqual({ host: '127.0.0.1', port: 18100 });
+	choose(mode('proxy'));
+	expect(cipher()?.value).toBe('aes-256-gcm');
+	expect(field('listen-password').value).toBe('placeholder');
+	await save();
+	expect((writes()[1].body as Rule).listen).toEqual({
+		host: '127.0.0.1',
+		port: 18100,
+		username: 'demo',
+		password: 'placeholder',
+		cipher: 'aes-256-gcm'
+	});
+});
+
+test('a cipher alias the backend accepts is shown as its own option and saved back unchanged', async () => {
+	rules.find((rule) => rule.name === 'lab')!.listen.cipher = 'AES_256_GCM';
+	await render('#/rules/lab');
+	expect(cipher()?.value).toBe('AES_256_GCM');
+	expect(cipher()?.selectedOptions[0]?.textContent).toBe('AES_256_GCM');
+	expect(options('listen-cipher')).toEqual(['', 'AES_256_GCM', ...CIPHERS]);
+	expect(badge()).toBeNull();
+	type('listen-port', '18110');
+	await save();
+	expect((writes()[0].body as Rule).listen).toMatchObject({ port: 18110, cipher: 'AES_256_GCM' });
+	select('listen-cipher', 'aes-128-gcm');
+	expect(options('listen-cipher')).toEqual(['', ...CIPHERS]);
 });

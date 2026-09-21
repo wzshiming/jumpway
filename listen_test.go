@@ -218,7 +218,7 @@ func TestNewListenConfigSSHRemoteBind(t *testing.T) {
 			done <- Serve(proxyCtx, func(callCtx context.Context) (net.Listener, error) {
 				return listenConfig.Listen(callCtx, "tcp", "0.0.0.0:0")
 			}, func(callCtx context.Context, listener net.Listener) error {
-				return RunProxy(callCtx, listener, local.LOCAL, nil)
+				return RunProxy(callCtx, listener, local.LOCAL, nil, nil)
 			}, func(event Event) {
 				select {
 				case events <- event:

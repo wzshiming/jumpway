@@ -76,17 +76,20 @@ that choice; language and theme remain available from Preferences.
   rule after confirmation. `New rule` and the rule names open the editor. A
   rule is an **entry** (`listen`) and an **exit** (`forward`):
     - `listen`: the host and port clients connect to, with optional proxy
-      credentials. Leave `Listen through` empty to open the port on this
-      machine; otherwise the first hop binds the port on its side (an `ssh://`
-      hop uses SSH remote forwarding, and the remote `sshd` binds loopback
-      unless `GatewayPorts` is enabled) and the last hop is dialed from this
-      machine.
-    - `forward`: in `Proxy` mode clients pick their own destination
-      (HTTP, SOCKS4, SOCKS5 and SSH are served on the entry); in `Port forward`
-      mode every connection is piped to the target host and port, reached from
-      the exit node (an empty host means `127.0.0.1` on the exit node). The
-      `Exit chain` is dialed from this machine: hop 1 is the exit node, the last
-      hop is the first one dialed; leave it empty to connect directly.
+      credentials. Setting `cipher` additionally serves Shadowsocks (TCP only)
+      on the same port, keyed with the same `password`; the cipher alone does
+      not authenticate HTTP, SOCKS or SSH clients, which still need `username`.
+      Leave `Listen through` empty to open the port on this machine; otherwise
+      the first hop binds the port on its side (an `ssh://` hop uses SSH remote
+      forwarding, and the remote `sshd` binds loopback unless `GatewayPorts` is
+      enabled) and the last hop is dialed from this machine.
+    - `forward`: in `Proxy` mode clients pick their own destination (HTTP,
+      SOCKS4, SOCKS5 and SSH are served on the entry, plus Shadowsocks when
+      `cipher` is set); in `Port forward` mode every connection is piped to the
+      target host and port, reached from the exit node (an empty host means
+      `127.0.0.1` on the exit node). The `Exit chain` is dialed from this
+      machine: hop 1 is the exit node, the last hop is the first one dialed;
+      leave it empty to connect directly.
     - Hops are proxy URLs, one or more per hop for load balancing; `Build…`
       assembles one from the protocol, host, port and credentials. The chain is
       drawn above the form from the clients to the target.
@@ -122,6 +125,7 @@ rules:
       port: 1080
       username: alice
       password: secret
+      cipher: aes-256-gcm    # also serves Shadowsocks with the same password
       way:
         - lb:
             - ssh://alice@vps.example:22?identity_file=~/.ssh/id_ed25519

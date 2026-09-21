@@ -31,6 +31,7 @@ import (
 	"github.com/wzshiming/jumpway/app/web/services/stats"
 	"github.com/wzshiming/jumpway/config"
 	"github.com/wzshiming/jumpway/metrics"
+	"github.com/wzshiming/shadowsocks"
 )
 
 func TestReloadWebUIWithoutRules(test *testing.T) {
@@ -65,7 +66,7 @@ func TestReloadWebUIWithoutRules(test *testing.T) {
 func TestReloadAllRulesAndAuth(test *testing.T) {
 	app := newTestApp(test, &config.Config{Rules: []config.Rule{
 		{Name: "direct"},
-		{Name: "auth", Listen: config.Listen{Username: "alice", Password: "test-secret"}},
+		{Name: "auth", Listen: config.Listen{Username: "alice", Password: "test-secret", Cipher: "aes-256-gcm"}},
 		{Name: "disabled", Disabled: true},
 	}})
 	if err := app.Reload(); err != nil {
@@ -91,15 +92,24 @@ func TestReloadAllRulesAndAuth(test *testing.T) {
 		name    string
 		address string
 		user    *url.Userinfo
+		ss      bool
 		code    int
 	}{
 		{name: "direct", address: status.Rules[0].Address, code: http.StatusOK},
 		{name: "auth-required", address: status.Rules[1].Address, code: http.StatusProxyAuthRequired},
 		{name: "auth-accepted", address: status.Rules[1].Address, user: url.UserPassword("alice", "test-secret"), code: http.StatusOK},
+		{name: "ss-accepted", address: status.Rules[1].Address, ss: true, code: http.StatusOK},
 	} {
 		test.Run(scenario.name, func(test *testing.T) {
 			proxyURL := &url.URL{Scheme: "http", Host: scenario.address, User: scenario.user}
 			transport := &http.Transport{Proxy: http.ProxyURL(proxyURL), DisableKeepAlives: true}
+			if scenario.ss {
+				proxy, err := shadowsocks.NewDialer("ss://aes-256-gcm:test-secret@" + scenario.address)
+				if err != nil {
+					test.Fatal(err)
+				}
+				transport.Proxy, transport.DialContext = nil, proxy.DialContext
+			}
 			defer transport.CloseIdleConnections()
 			client := &http.Client{Transport: transport, Timeout: time.Second}
 			response, err := client.Get(target.URL)

@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -115,6 +116,43 @@ func TestValidate(t *testing.T) {
 		{
 			name: "username_only",
 			conf: &Config{Rules: []Rule{{Name: "a", Listen: Listen{Username: "user"}}}},
+		},
+		{
+			name:      "cipher_without_password",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Cipher: "aes-256-gcm"}}}},
+			wantError: "rules[0].listen.cipher is set but password is empty",
+		},
+		{
+			name:      "cipher_with_username_without_password",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Username: "user", Cipher: "aes-256-gcm"}}}},
+			wantError: "rules[0].listen.cipher is set but password is empty",
+		},
+		{
+			name:      "port_forward_with_cipher",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Password: "secret", Cipher: "aes-256-gcm"}, Forward: Forward{Port: 5432}}}},
+			wantError: "rules[0].listen.cipher is only used by proxy rules",
+		},
+		{
+			name:      "virtual_forward_with_cipher",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Port: 1080, Password: "secret", Cipher: "aes-256-gcm"}, Forward: Forward{Virtual: "x"}}}},
+			wantError: "rules[0].listen.cipher is only used by proxy rules",
+		},
+		{
+			name:      "unsupported_cipher",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Password: "secret", Cipher: "rot13"}}}},
+			wantError: `rules[0].listen.cipher "rot13" is unsupported`,
+		},
+		{
+			name: "cipher_and_password",
+			conf: &Config{Rules: []Rule{{Name: "a", Listen: Listen{Password: "secret", Cipher: "aes-256-gcm"}}}},
+		},
+		{
+			name: "cipher_case_and_underscore",
+			conf: &Config{Rules: []Rule{{Name: "a", Listen: Listen{Password: "secret", Cipher: "AES_256_GCM"}}}},
+		},
+		{
+			name: "cipher_with_both_credentials",
+			conf: &Config{Rules: []Rule{{Name: "a", Listen: Listen{Username: "user", Password: "secret", Cipher: "chacha20-ietf-poly1305"}}}},
 		},
 		{
 			name:      "no_lb",
@@ -498,6 +536,31 @@ func TestVirtualSchema(t *testing.T) {
 	}
 }
 
+func TestListenCipherSchema(t *testing.T) {
+	listen := Listen{Port: 1080, Password: "secret", Cipher: "aes-256-gcm"}
+	yamlOut, err := yaml.Marshal(listen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "port: 1080\npassword: secret\ncipher: aes-256-gcm\n"; string(yamlOut) != want {
+		t.Fatalf("yaml = %q, want %q", yamlOut, want)
+	}
+	var fromYAML Listen
+	if err := yaml.Unmarshal(yamlOut, &fromYAML); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(fromYAML, listen) {
+		t.Fatalf("yaml roundtrip = %#v, want %#v", fromYAML, listen)
+	}
+	jsonOut, err := json.Marshal(listen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `{"host":"","port":1080,"password":"secret","cipher":"aes-256-gcm"}`; string(jsonOut) != want {
+		t.Fatalf("json = %s, want %s", jsonOut, want)
+	}
+}
+
 func TestListenAddress(t *testing.T) {
 	for _, test := range []struct {
 		name string
@@ -563,6 +626,18 @@ func TestListenUser(t *testing.T) {
 				t.Fatalf("Password() = %q, %v; want %q, %v", password, ok, test.listen.Password, test.wantPass)
 			}
 		})
+	}
+}
+
+func TestListenShadowsocks(t *testing.T) {
+	for _, listen := range []Listen{{}, {Username: "user", Password: "secret"}} {
+		if got := listen.Shadowsocks(); got != nil {
+			t.Fatalf("Shadowsocks() for %#v = %v, want nil", listen, got)
+		}
+	}
+	listen := Listen{Username: "user", Password: "p:a/ss", Cipher: "aes-256-gcm"}
+	if got, want := listen.Shadowsocks().String(), url.UserPassword("aes-256-gcm", "p:a/ss").String(); got != want {
+		t.Fatalf("Shadowsocks() = %q, want %q", got, want)
 	}
 }
 

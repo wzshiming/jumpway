@@ -31,6 +31,7 @@ export interface RuleDraft {
 		virtual: string;
 		username: string;
 		password: string;
+		cipher: string;
 		way: HopDraft[];
 	};
 	mode: Mode;
@@ -67,6 +68,7 @@ export function draftFrom(rule: Rule): RuleDraft {
 			virtual: text(rule.listen.virtual),
 			username: text(rule.listen.username),
 			password: text(rule.listen.password),
+			cipher: text(rule.listen.cipher),
 			way: hopsFrom(rule.listen.way)
 		},
 		mode: forwarding ? 'forward' : 'proxy',
@@ -145,6 +147,7 @@ export function readRule(draft: RuleDraft): ReadResult {
 	if (!forwarding) {
 		if (draft.listen.username) listen.username = draft.listen.username;
 		if (draft.listen.password) listen.password = draft.listen.password;
+		if (draft.listen.cipher) listen.cipher = draft.listen.cipher;
 	}
 	const listenWay = listenVirtual ? [] : wayOf(draft.listen.way);
 	if (listenWay.length) listen.way = listenWay;

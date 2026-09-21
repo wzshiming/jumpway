@@ -20,6 +20,8 @@ import (
 	"github.com/wzshiming/httpcache"
 	"github.com/wzshiming/jumpway/i18n"
 	"github.com/wzshiming/jumpway/log"
+	"github.com/wzshiming/shadowsocks"
+	_ "github.com/wzshiming/shadowsocks/init"
 	"gopkg.in/yaml.v3"
 )
 
@@ -58,6 +60,7 @@ type Listen struct {
 	Way      []bridgeconfig.Node `yaml:"way,omitempty" json:"way,omitempty"`
 	Username string              `yaml:"username,omitempty" json:"username,omitempty"`
 	Password string              `yaml:"password,omitempty" json:"password,omitempty"`
+	Cipher   string              `yaml:"cipher,omitempty" json:"cipher,omitempty"`
 }
 
 func (l Listen) Address() string {
@@ -79,6 +82,14 @@ func (l Listen) User() *url.Userinfo {
 		return url.UserPassword(l.Username, l.Password)
 	}
 	return url.User(l.Username)
+}
+
+// Shadowsocks is the cipher:password pair served as ss:// on the entry, nil when no cipher is set.
+func (l Listen) Shadowsocks() *url.Userinfo {
+	if l.Cipher == "" {
+		return nil
+	}
+	return url.UserPassword(l.Cipher, l.Password)
 }
 
 // Forward is the exit: connections are dialed through Way (empty = from this machine) to Host:Port, to the in-process channel Virtual, or to the proxy client's own target when both are empty.
@@ -238,7 +249,10 @@ func Validate(conf *Config) error {
 		if rule.Forward.Host != "" && rule.Forward.IsProxy() {
 			return fmt.Errorf("rules[%d].forward.host is set but port is 0", ruleIndex)
 		}
-		if rule.Listen.Password != "" && rule.Listen.Username == "" {
+		if rule.Listen.Cipher != "" && rule.Listen.Password == "" {
+			return fmt.Errorf("rules[%d].listen.cipher is set but password is empty", ruleIndex)
+		}
+		if rule.Listen.Password != "" && rule.Listen.Username == "" && rule.Listen.Cipher == "" {
 			return fmt.Errorf("rules[%d].listen.password is set but username is empty", ruleIndex)
 		}
 		if strings.Contains(rule.Listen.Username, ":") {
@@ -246,6 +260,12 @@ func Validate(conf *Config) error {
 		}
 		if !rule.Forward.IsProxy() && rule.Listen.Username != "" {
 			return fmt.Errorf("rules[%d].listen.username is only used by proxy rules", ruleIndex)
+		}
+		if !rule.Forward.IsProxy() && rule.Listen.Cipher != "" {
+			return fmt.Errorf("rules[%d].listen.cipher is only used by proxy rules", ruleIndex)
+		}
+		if rule.Listen.Cipher != "" && !shadowsocks.IsCipher(rule.Listen.Cipher) {
+			return fmt.Errorf("rules[%d].listen.cipher %q is unsupported", ruleIndex, rule.Listen.Cipher)
 		}
 		if err := validateVirtual(fmt.Sprintf("rules[%d].listen", ruleIndex), rule.Listen.Virtual, rule.Listen.Host, rule.Listen.Port, rule.Listen.Way); err != nil {
 			return err

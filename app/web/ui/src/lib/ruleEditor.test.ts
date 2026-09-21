@@ -72,7 +72,7 @@ describe('draftFrom', () => {
 			name: '',
 			enabled: true,
 			mode: 'proxy',
-			listen: { host: '127.0.0.1', port: '0', username: '', password: '', way: [] },
+			listen: { host: '127.0.0.1', port: '0', username: '', password: '', cipher: '', way: [] },
 			target: { kind: 'address', host: '', port: '', virtual: '' },
 			forward: { way: [] }
 		});
@@ -338,5 +338,49 @@ describe('virtual endpoints', () => {
 			expect(read(draft)).toEqual(rule);
 			expect(snapshot(draftFrom(read(draft)))).toBe(snapshot(draft));
 		}
+	});
+});
+
+describe('shadowsocks cipher', () => {
+	const shadowsocks: Rule = {
+		name: 'ss',
+		listen: { host: '0.0.0.0', port: 18200, password: 'placeholder', cipher: 'aes-256-gcm' },
+		forward: {}
+	};
+	const read = (draft: RuleDraft) => {
+		const result = readRule(draft);
+		if (!result.ok) throw new Error('unexpected errors ' + JSON.stringify(result.errors));
+		return result.rule;
+	};
+
+	test('draftFrom copies the cipher as text; rules without one and the empty draft leave it blank', () => {
+		expect(draftFrom(shadowsocks).listen).toMatchObject({
+			username: '',
+			password: 'placeholder',
+			cipher: 'aes-256-gcm'
+		});
+		expect(draftFrom(lab).listen.cipher).toBe('');
+		expect(emptyDraft().listen.cipher).toBe('');
+	});
+
+	test('a proxy rule sends the cipher next to the shared password and round-trips; an empty one is omitted', () => {
+		const draft = draftFrom(shadowsocks);
+		expect(read(draft)).toEqual(shadowsocks);
+		expect(snapshot(draftFrom(read(draft)))).toBe(snapshot(draft));
+		draft.listen.cipher = '';
+		expect(read(draft).listen).toEqual({ host: '0.0.0.0', port: 18200, password: 'placeholder' });
+		// Aliases the backend accepts are passed through untouched rather than dropped.
+		draft.listen.cipher = 'AES_256_GCM';
+		expect(read(draft).listen.cipher).toBe('AES_256_GCM');
+	});
+
+	test('a forward rule omits the hidden cipher like the other credentials; the draft keeps it', () => {
+		const draft = draftFrom(shadowsocks);
+		draft.mode = 'forward';
+		draft.target.port = '5432';
+		expect(read(draft).listen).toEqual({ host: '0.0.0.0', port: 18200 });
+		expect(draft.listen.cipher).toBe('aes-256-gcm');
+		draft.mode = 'proxy';
+		expect(read(draft)).toEqual(shadowsocks);
 	});
 });

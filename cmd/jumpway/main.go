@@ -14,8 +14,6 @@ import (
 	_ "github.com/wzshiming/bridge/protocols/ssh"
 	_ "github.com/wzshiming/bridge/protocols/tls"
 
-	_ "github.com/wzshiming/anyproxy/proxies/shadowsocks"
-
 	"github.com/wzshiming/jumpway/app/tray"
 	"github.com/wzshiming/jumpway/config"
 	"github.com/wzshiming/jumpway/daemon"

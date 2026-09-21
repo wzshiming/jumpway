@@ -19,6 +19,7 @@ require (
 	github.com/wzshiming/httpproxy v0.6.1
 	github.com/wzshiming/notify v0.1.1
 	github.com/wzshiming/openapiui/v2 v2.0.0
+	github.com/wzshiming/shadowsocks v0.5.0
 	github.com/wzshiming/socks4 v0.5.0
 	github.com/wzshiming/socks5 v0.8.0
 	github.com/wzshiming/sshd v0.3.0
@@ -49,7 +50,6 @@ require (
 	github.com/prometheus/common v0.70.1 // indirect
 	github.com/prometheus/procfs v0.21.1 // indirect
 	github.com/wzshiming/commandproxy v0.2.1 // indirect
-	github.com/wzshiming/shadowsocks v0.5.0 // indirect
 	github.com/wzshiming/trie v0.4.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect

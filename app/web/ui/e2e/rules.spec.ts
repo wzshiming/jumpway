@@ -967,34 +967,94 @@ test('virtual endpoints: a channel pairs an exit listener with an entry; cards a
 	await expect(peers).toHaveText('No enabled rule listens on this channel.');
 });
 
-test.describe('screenshots', () => {
-	const shoot = async (page: Page, name: string) => {
-		const path = test.info().outputPath(name + '.png');
-		await page.screenshot({ path, fullPage: true, animations: 'disabled' });
-		test.info().attach(name, { path, contentType: 'image/png' });
-		const overflow = await page.evaluate(() => ({
-			scrollWidth: document.getElementById('main')!.scrollWidth,
-			clientWidth: document.getElementById('main')!.clientWidth,
-			wide: Array.from(document.querySelectorAll('body *'))
-				.filter(
-					(element) =>
-						element.getBoundingClientRect().right > document.documentElement.clientWidth + 1
-				)
-				.slice(0, 8)
-				.map(
-					(element) =>
-						element.tagName +
-						'.' +
-						element.className.toString().slice(0, 60) +
-						' right=' +
-						Math.round(element.getBoundingClientRect().right)
-				)
-		}));
-		expect(overflow.scrollWidth, `${name} ${overflow.wide.join(' | ')}`).toBeLessThanOrEqual(
-			overflow.clientWidth
-		);
-	};
+// Full-page screenshot plus a check that nothing in #main runs past the viewport.
+const shoot = async (page: Page, name: string) => {
+	const path = test.info().outputPath(name + '.png');
+	await page.screenshot({ path, fullPage: true, animations: 'disabled' });
+	test.info().attach(name, { path, contentType: 'image/png' });
+	const overflow = await page.evaluate(() => ({
+		scrollWidth: document.getElementById('main')!.scrollWidth,
+		clientWidth: document.getElementById('main')!.clientWidth,
+		wide: Array.from(document.querySelectorAll('body *'))
+			.filter(
+				(element) =>
+					element.getBoundingClientRect().right > document.documentElement.clientWidth + 1
+			)
+			.slice(0, 8)
+			.map(
+				(element) =>
+					element.tagName +
+					'.' +
+					element.className.toString().slice(0, 60) +
+					' right=' +
+					Math.round(element.getBoundingClientRect().right)
+			)
+	}));
+	expect(overflow.scrollWidth, `${name} ${overflow.wide.join(' | ')}`).toBeLessThanOrEqual(
+		overflow.clientWidth
+	);
+};
 
+test('Shadowsocks: the cipher select saves beside a password without username, reopens selected, hides in forward mode and fits a phone', async ({
+	page,
+	api
+}) => {
+	const cipher = () => page.getByLabel('Shadowsocks cipher');
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await page.goto('/#/new');
+	await expect(heading(page)).toHaveText('New rule');
+	await expect(cipher()).toHaveValue('');
+	await expect(cipher().locator('option').first()).toHaveText('Off');
+	await expect(cipher().locator('option', { hasText: 'aes-256-gcm' })).toHaveCount(1);
+	await page.getByLabel('Rule name').fill('ss');
+	await page.getByLabel('Port', { exact: true }).fill('18200');
+	await page.getByLabel('Password', { exact: true }).fill('placeholder');
+	await cipher().selectOption('aes-256-gcm');
+	await expect(unsaved(page)).toBeVisible();
+	await expect(
+		page.getByText('Serves Shadowsocks on the same port, sharing the password.')
+	).toBeVisible();
+	await shoot(page, 'desktop-editor-cipher');
+	await page.keyboard.press('ControlOrMeta+s');
+	await expect(page).toHaveURL(/#\/rules\/ss$/);
+	await expect(unsaved(page)).toHaveCount(0);
+	expect(api.writes).toEqual([
+		{
+			method: 'POST',
+			path: '/apis/configs/rules',
+			body: {
+				name: 'ss',
+				listen: { host: '127.0.0.1', port: 18200, password: 'placeholder', cipher: 'aes-256-gcm' },
+				forward: {}
+			}
+		}
+	]);
+
+	// A fresh load reads the saved cipher back into the select.
+	await page.reload();
+	await expect(heading(page)).toHaveText('ss');
+	await expect(cipher()).toHaveValue('aes-256-gcm');
+	await expect(page.getByLabel('Username')).toHaveValue('');
+	await page.getByRole('radio', { name: 'Port forward' }).check();
+	await expect(cipher()).toHaveCount(0);
+	await page.getByRole('radio', { name: 'Proxy' }).check();
+	await expect(cipher()).toHaveValue('aes-256-gcm');
+
+	await page.setViewportSize({ width: 390, height: 844 });
+	await cipher().scrollIntoViewIfNeeded();
+	const box = (await cipher().boundingBox())!;
+	expect(box.x).toBeGreaterThanOrEqual(0);
+	expect(box.x + box.width).toBeLessThanOrEqual(390);
+	await shoot(page, 'mobile-editor-cipher');
+
+	await page.goto('/?lang=zh#/rules/ss');
+	await expect(page.getByLabel('Shadowsocks 加密方式')).toHaveValue('aes-256-gcm');
+	await expect(page.getByLabel('Shadowsocks 加密方式').locator('option').first()).toHaveText(
+		'关闭'
+	);
+});
+
+test.describe('screenshots', () => {
 	for (const [viewport, label] of [
 		[{ width: 1280, height: 800 }, 'desktop'],
 		[{ width: 375, height: 812 }, 'mobile']
