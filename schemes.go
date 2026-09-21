@@ -5,11 +5,13 @@ import (
 	"net"
 
 	"github.com/wzshiming/anyproxy"
+	shadowsocksadapter "github.com/wzshiming/anyproxy/proxies/shadowsocks"
 	socks4adapter "github.com/wzshiming/anyproxy/proxies/socks4"
 	socks5adapter "github.com/wzshiming/anyproxy/proxies/socks5"
 	sshproxyadapter "github.com/wzshiming/anyproxy/proxies/sshproxy"
 	"github.com/wzshiming/cmux/pattern"
 	"github.com/wzshiming/httpproxy"
+	"github.com/wzshiming/shadowsocks"
 	"github.com/wzshiming/socks4"
 	"github.com/wzshiming/socks5"
 	"github.com/wzshiming/sshproxy"
@@ -21,6 +23,7 @@ func init() {
 	anyproxy.Register("socks5", newSOCKS5ServeConn)
 	anyproxy.Register("socks4", newSOCKS4ServeConn)
 	anyproxy.Register("ssh", newSSHServeConn)
+	anyproxy.Register("ss", newShadowsocksServeConn)
 }
 
 type serveConnFunc func(net.Conn)
@@ -114,6 +117,19 @@ func newSSHServeConn(ctx context.Context, scheme, address string, conf *anyproxy
 		return nil, nil, err
 	}
 	template := host.(*sshproxy.SimpleServer)
+	return serveConnFunc(func(conn net.Conn) {
+		server := template.Server
+		server.Context = WithClientAddr(ctx, conn.RemoteAddr())
+		server.ServeConn(conn)
+	}), patterns, nil
+}
+
+func newShadowsocksServeConn(ctx context.Context, scheme, address string, conf *anyproxy.Config) (anyproxy.ServeConn, []string, error) {
+	host, patterns, err := shadowsocksadapter.NewServeConn(ctx, scheme, address, conf)
+	if err != nil {
+		return nil, nil, err
+	}
+	template := host.(*shadowsocks.SimpleServer)
 	return serveConnFunc(func(conn net.Conn) {
 		server := template.Server
 		server.Context = WithClientAddr(ctx, conn.RemoteAddr())

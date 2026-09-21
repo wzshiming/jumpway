@@ -16,17 +16,20 @@ import (
 	"github.com/wzshiming/bridge"
 	"github.com/wzshiming/bridge/protocols/local"
 	"github.com/wzshiming/jumpway/utils"
+	"github.com/wzshiming/shadowsocks"
 	"github.com/wzshiming/socks4"
 	"github.com/wzshiming/socks5"
 	"github.com/wzshiming/sshproxy"
 )
+
+var testShadowsocksUser = url.UserPassword("aes-256-gcm", "s3cr3t")
 
 func TestRunProxyClientAddr(test *testing.T) {
 	target := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		io.WriteString(writer, "proxy-ok")
 	}))
 	test.Cleanup(target.Close)
-	for _, protocol := range []string{"http_connect", "http_get", "socks5", "socks4", "ssh"} {
+	for _, protocol := range []string{"http_connect", "http_get", "socks5", "socks4", "ssh", "ss"} {
 		test.Run(protocol, func(test *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
@@ -40,7 +43,7 @@ func TestRunProxyClientAddr(test *testing.T) {
 				return local.LOCAL.DialContext(ctx, network, address)
 			})
 			done := make(chan error, 1)
-			go func() { done <- RunProxy(ctx, listener, dialer, nil) }()
+			go func() { done <- RunProxy(ctx, listener, dialer, nil, testShadowsocksUser) }()
 			test.Cleanup(func() {
 				cancel()
 				listener.Close()
@@ -126,6 +129,13 @@ func TestRunProxyClientAddr(test *testing.T) {
 				test.Cleanup(func() { client.Close() })
 				client.ProxyDial = dialClient
 				proxy = client
+			case "ss":
+				client, err := shadowsocks.NewDialer("ss://" + testShadowsocksUser.String() + "@" + address)
+				if err != nil {
+					test.Fatal(err)
+				}
+				client.ProxyDial = dialClient
+				proxy = client
 			}
 			if proxy != nil {
 				conn, err := proxy.DialContext(ctx, "tcp", target.Listener.Addr().String())
@@ -162,7 +172,7 @@ func TestRunProxyAuth(t *testing.T) {
 			t.Fatal(err)
 		}
 		done := make(chan error, 1)
-		go func() { done <- RunProxy(ctx, listener, local.LOCAL, user) }()
+		go func() { done <- RunProxy(ctx, listener, local.LOCAL, user, testShadowsocksUser) }()
 		t.Cleanup(func() {
 			cancel()
 			listener.Close()
@@ -211,6 +221,14 @@ func TestRunProxyAuth(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { proxy.Close() })
+			proxy.ProxyDial = dialClient
+			transport.Proxy = nil
+			transport.DialContext = proxy.DialContext
+		case "ss":
+			proxy, err := shadowsocks.NewDialer(proxyURL.String())
+			if err != nil {
+				t.Fatal(err)
+			}
 			proxy.ProxyDial = dialClient
 			transport.Proxy = nil
 			transport.DialContext = proxy.DialContext
@@ -265,6 +283,15 @@ func TestRunProxyAuth(t *testing.T) {
 			}
 		})
 	}
+	// The Shadowsocks credentials are the cipher and the shared password; a dial only fails once the request is read.
+	t.Run("ss", func(t *testing.T) {
+		t.Run("valid_credentials", func(t *testing.T) {
+			checkProxy(t, "ss", user, testShadowsocksUser, http.StatusOK)
+		})
+		t.Run("invalid_credentials", func(t *testing.T) {
+			checkProxy(t, "ss", user, url.UserPassword("aes-256-gcm", "wrong"), http.StatusProxyAuthRequired)
+		})
+	})
 }
 
 type virtualTestAddr struct{}
@@ -312,7 +339,7 @@ func TestRunProxyVirtualListener(t *testing.T) {
 		return local.LOCAL.DialContext(ctx, network, address)
 	})
 	done := make(chan error, 1)
-	go func() { done <- RunProxy(ctx, listener, dialer, url.UserPassword("alice", "s3cr3t")) }()
+	go func() { done <- RunProxy(ctx, listener, dialer, url.UserPassword("alice", "s3cr3t"), nil) }()
 	t.Cleanup(func() {
 		cancel()
 		listener.Close()

@@ -14,7 +14,7 @@ import (
 // VirtualNetwork is the Addr.Network of in-process channel endpoints.
 const VirtualNetwork = "virtual"
 
-func RunProxy(ctx context.Context, listener net.Listener, dialer bridge.Dialer, user *url.Userinfo) error {
+func RunProxy(ctx context.Context, listener net.Listener, dialer bridge.Dialer, user, ss *url.Userinfo) error {
 	addr := listener.Addr()
 	if addr == nil {
 		return errors.New("listener has no address")
@@ -33,6 +33,9 @@ func RunProxy(ctx context.Context, listener net.Listener, dialer bridge.Dialer, 
 		"socks5://" + proxyAddress,
 		"socks4://" + proxyAddress,
 		"ssh://" + proxyAddress,
+	}
+	if ss != nil {
+		proxies = append(proxies, "ss://"+ss.String()+"@"+address)
 	}
 	proxy, err := anyproxy.NewAnyProxy(ctx, proxies, &anyproxy.Config{
 		Dialer:    dialer,

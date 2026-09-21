@@ -210,7 +210,7 @@ func (a *App) reload() error {
 			jumpway.Serve(ctx, listen, func(ctx context.Context, listener net.Listener) error {
 				listener = rs.WrapListener(listener)
 				if target == "" {
-					return jumpway.RunProxy(ctx, listener, dialer, rule.Listen.User())
+					return jumpway.RunProxy(ctx, listener, dialer, rule.Listen.User(), rule.Listen.Shadowsocks())
 				}
 				return jumpway.RunForward(ctx, listener, dialer, target)
 			}, report)
