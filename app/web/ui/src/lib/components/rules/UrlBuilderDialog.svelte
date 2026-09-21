@@ -104,7 +104,11 @@
 			<div class="space-y-3" data-builder-fields>
 				{#each fields as field (layout.name + '/' + field.name)}
 					{@const id = 'url-builder-' + field.name}
-					<Field {id} label={t(`field.${field.name}`)} optional={field.option === true}>
+					<Field
+						{id}
+						label={t(field.label ?? `field.${field.name}`)}
+						optional={field.option === true}
+					>
 						{#snippet children()}
 							{#if field.kind === 'select'}
 								<select {id} class="input" bind:value={values[field.name]}>
@@ -118,11 +122,12 @@
 									class="input font-mono text-[13px]"
 									type={field.kind === 'password' ? 'password' : 'text'}
 									bind:value={values[field.name]}
-									placeholder={field.name === 'port'
-										? field.value
-										: field.kind === 'file'
-											? '~/.ssh/id_ed25519'
-											: undefined}
+									placeholder={field.placeholder ??
+										(field.name === 'port'
+											? field.value
+											: field.kind === 'file'
+												? '~/.ssh/id_ed25519'
+												: undefined)}
 									inputmode={field.name === 'port' ? 'numeric' : undefined}
 									autocomplete={field.kind === 'password' ? 'new-password' : 'off'}
 									autocapitalize="none"

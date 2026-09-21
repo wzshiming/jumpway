@@ -8,7 +8,7 @@ const layout = (name: string) => {
 };
 
 describe('layouts', () => {
-	test('ship the eight protocols in order with ss as an alias', () => {
+	test('ship the ten protocols in order with ss/cmd/nc as aliases', () => {
 		expect(layouts.map((entry) => entry.name)).toEqual([
 			'https',
 			'http',
@@ -17,11 +17,19 @@ describe('layouts', () => {
 			'socks5',
 			'socks5h',
 			'ssh',
-			'shadowsocks'
+			'shadowsocks',
+			'command',
+			'netcat'
 		]);
 		expect(layoutFor('ss')?.name).toBe('shadowsocks');
 		expect(layoutFor('SOCKS5')?.name).toBe('socks5');
-		expect(layoutFor('cmd')).toBeUndefined();
+		for (const alias of ['cmd', 'CMD', 'command', 'Command']) {
+			expect(layoutFor(alias)?.name).toBe('command');
+		}
+		for (const alias of ['nc', 'NC', 'netcat', 'NetCat']) {
+			expect(layoutFor(alias)?.name).toBe('netcat');
+		}
+		expect(layoutFor('telnet')).toBeUndefined();
 	});
 
 	test('fields exclude spans and initial values apply defaults under prefill', () => {
@@ -43,6 +51,25 @@ describe('layouts', () => {
 			password: '',
 			host: 'h',
 			port: '80'
+		});
+	});
+
+	test('command layouts expose a single command field with placeholders', () => {
+		expect(fieldsOf(layout('command'))).toEqual([
+			{ name: 'command', kind: 'text', placeholder: 'nc %h %p' }
+		]);
+		expect(fieldsOf(layout('netcat'))).toEqual([
+			{
+				name: 'command',
+				kind: 'text',
+				label: 'field.commandPrefix',
+				option: true,
+				placeholder: 'ssh jump'
+			}
+		]);
+		expect(initialValues(layout('command'))).toEqual({ command: '' });
+		expect(initialValues(layout('netcat'), { command: 'ssh jump' })).toEqual({
+			command: 'ssh jump'
 		});
 	});
 });
@@ -157,8 +184,63 @@ describe('parseURL', () => {
 	});
 
 	test('returns null for unknown schemes and non-URLs', () => {
-		expect(parseURL('cmd:ssh -W %h:%p jump')).toBeNull();
+		expect(parseURL('telnet:ssh -W %h:%p jump')).toBeNull();
 		expect(parseURL('not a url')).toBeNull();
 		expect(parseURL('')).toBeNull();
+		expect(parseURL(':')).toBeNull();
+	});
+});
+
+describe('command layouts', () => {
+	test('cmd: round-trips the raw command through parseURL and buildURL', () => {
+		const parsed = parseURL('cmd:ssh -W %h:%p jump');
+		expect(parsed?.layout.name).toBe('command');
+		expect(parsed?.values.command).toBe('ssh -W %h:%p jump');
+		expect(buildURL(parsed!.layout, parsed!.values)).toEqual({
+			url: 'cmd:ssh -W %h:%p jump',
+			valid: true,
+			hint: null
+		});
+	});
+
+	test('buildURL writes the command raw, trimmed only at the ends', () => {
+		const cmd = layout('command');
+		expect(buildURL(cmd, { command: '  ssh -W %h:%p "my jump"  ' }).url).toBe(
+			'cmd:ssh -W %h:%p "my jump"'
+		);
+		expect(buildURL(cmd, { command: 'a  b?c#d/é' }).url).toBe('cmd:a  b?c#d/é');
+		expect(buildURL(cmd, { command: 'x', host: 'h', port: '22' }).url).toBe('cmd:x');
+	});
+
+	test('command requires a non-blank command while netcat does not', () => {
+		const cmd = layout('command');
+		expect(buildURL(cmd, {})).toEqual({ url: 'cmd:', valid: false, hint: 'builderCommandHint' });
+		expect(buildURL(cmd, { command: '   ' })).toEqual({
+			url: 'cmd:',
+			valid: false,
+			hint: 'builderCommandHint'
+		});
+		const nc = layout('netcat');
+		expect(buildURL(nc, {})).toEqual({ url: 'nc:', valid: true, hint: null });
+		expect(buildURL(nc, { command: ' ssh jump ' })).toEqual({
+			url: 'nc:ssh jump',
+			valid: true,
+			hint: null
+		});
+	});
+
+	test('parseURL keeps the remainder verbatim and normalizes long aliases', () => {
+		const raw = ' ssh  -W "%h:%p" %25 ?a=1#frag é ';
+		expect(parseURL('cmd:' + raw)).toEqual({ layout: layout('command'), values: { command: raw } });
+		expect(parseURL('CMD:x')?.layout.name).toBe('command');
+		expect(parseURL('nc:')).toEqual({ layout: layout('netcat'), values: { command: '' } });
+		for (const [input, url] of [
+			['command:ssh -W %h:%p jump', 'cmd:ssh -W %h:%p jump'],
+			['netcat:ssh jump', 'nc:ssh jump'],
+			['NC:ssh jump', 'nc:ssh jump']
+		]) {
+			const parsed = parseURL(input)!;
+			expect(buildURL(parsed.layout, parsed.values).url).toBe(url);
+		}
 	});
 });

@@ -569,6 +569,80 @@ test('the URL builder: four goldens, prefill, and Cancel/Escape leave the row un
 	await expect(row).toHaveValue('socks5://[::1]:1080');
 });
 
+test('the URL builder: command and netcat hops take one raw command field, no host or port', async ({
+	page,
+	api
+}) => {
+	await page.goto('/#/rules/office');
+	const row = page.locator('input[id^="exit-url-"]').first();
+	const wand = row.locator('..').getByRole('button', { name: 'Build…' });
+	await wand.click();
+	const dialog = builder(page);
+	const protocol = dialog.getByLabel('Protocol');
+	const command = dialog.getByLabel('Command');
+	const fields = dialog.locator('[data-builder-fields] :is(input, select)');
+	const preview = dialog.locator('output');
+	const hint = dialog.locator('#url-builder-hint');
+	const useURL = dialog.getByRole('button', { name: 'Use URL' });
+
+	await protocol.selectOption('command');
+	await expect(fields).toHaveCount(1);
+	await expect(dialog.getByLabel('Host')).toHaveCount(0);
+	await expect(dialog.getByLabel('Port')).toHaveCount(0);
+	await expect(command).toHaveValue('');
+	await expect(command).toHaveAttribute('placeholder', 'nc %h %p');
+	await expect(preview).toHaveText('cmd:');
+	await expect(useURL).toBeDisabled();
+	await expect(hint).toHaveText('A command is required.');
+	await command.fill('   ');
+	await expect(preview).toHaveText('cmd:');
+	await expect(useURL).toBeDisabled();
+	await command.fill('ssh -W %h:%p jump');
+	await expect(preview).toHaveText('cmd:ssh -W %h:%p jump');
+	await expect(hint).toHaveText('');
+	await command.press('Enter');
+	await expect(dialog).toHaveCount(0);
+	await expect(row).toHaveValue('cmd:ssh -W %h:%p jump');
+	await expect(unsaved(page)).toBeVisible();
+
+	// Prefill from cmd:, then netcat: the command is optional and the prefix alone is valid.
+	await wand.click();
+	await expect(protocol).toHaveValue('command');
+	await expect(command).toHaveValue('ssh -W %h:%p jump');
+	await expect(command).toBeFocused();
+	await protocol.selectOption('netcat');
+	const prefix = dialog.getByLabel('Execution prefix');
+	await expect(fields).toHaveCount(1);
+	await expect(prefix).toHaveValue('');
+	await expect(prefix).toHaveAttribute('placeholder', 'ssh jump');
+	await expect(preview).toHaveText('nc:');
+	await expect(useURL).toBeEnabled();
+	await expect(hint).toHaveText('');
+	await prefix.fill('ssh jump');
+	await expect(preview).toHaveText('nc:ssh jump');
+	await useURL.click();
+	await expect(dialog).toHaveCount(0);
+	await expect(row).toHaveValue('nc:ssh jump');
+
+	await wand.click();
+	await expect(protocol).toHaveValue('netcat');
+	await expect(prefix).toHaveValue('ssh jump');
+	await dialog.getByRole('button', { name: 'Cancel' }).click();
+	await expect(dialog).toHaveCount(0);
+	await expect(row).toHaveValue('nc:ssh jump');
+
+	await page.keyboard.press('ControlOrMeta+s');
+	await expect(unsaved(page)).toHaveCount(0);
+	expect(api.writes[0].body).toMatchObject({
+		forward: {
+			way: [
+				{ lb: ['nc:ssh jump'] },
+				{ lb: ['ssh://ops@bastion.example:22', 'ssh://ops@bastion-2.example:22'] }
+			]
+		}
+	});
+});
+
 test('a 400 keeps the form dirty on its route and shows the redacted message', async ({
 	page,
 	api,
