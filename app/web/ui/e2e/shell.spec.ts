@@ -1,4 +1,5 @@
 import type { Locator, Page } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
 import type { Rule } from '../src/lib/types.ts';
 import { SECRET, rulesFixture, snapshotTotals } from './fixtures/api.ts';
 import { expect, test } from './fixtures/test.ts';
@@ -30,6 +31,24 @@ async function expectNavLabelsFit(page: Page, labels: string[]) {
 		})
 	);
 	expect(problems).toEqual([]);
+}
+
+// Vite may inline the brand PNGs as data URLs, so match the bitmap by its bytes, not its src.
+async function expectBrandBitmap(page: Page, name: 'icon_white' | 'icon_black') {
+	const expected = Array.from(
+		await readFile(new URL(`../../../../icon/${name}.png`, import.meta.url))
+	);
+	await expect
+		.poll(() =>
+			page
+				.locator('a[href="#/"] img')
+				.first()
+				.evaluate(async (img: HTMLImageElement) => {
+					if (!img.complete || !img.naturalWidth) return null;
+					return Array.from(new Uint8Array(await (await fetch(img.currentSrc)).arrayBuffer()));
+				})
+		)
+		.toEqual(expected);
 }
 
 const EN_LABELS = [
@@ -247,7 +266,7 @@ test('the theme switch stamps data-theme, swaps the brand bitmap and persists', 
 	await page.getByRole('button', { name: 'Dark' }).click();
 	await expect(html).toHaveAttribute('data-theme', 'dark');
 	await expect(page.getByRole('button', { name: 'Dark' })).toHaveAttribute('aria-pressed', 'true');
-	await expect(page.locator('a[href="#/"] img').first()).toHaveAttribute('src', /icon_white/);
+	await expectBrandBitmap(page, 'icon_white');
 	const background = await page.evaluate(
 		() => getComputedStyle(document.documentElement).backgroundColor
 	);
@@ -256,9 +275,10 @@ test('the theme switch stamps data-theme, swaps the brand bitmap and persists', 
 
 	await page.reload();
 	await expect(html).toHaveAttribute('data-theme', 'dark');
+	await expectBrandBitmap(page, 'icon_white');
 	await page.getByRole('button', { name: 'Light' }).click();
 	await expect(html).toHaveAttribute('data-theme', 'light');
-	await expect(page.locator('a[href="#/"] img').first()).toHaveAttribute('src', /icon_black/);
+	await expectBrandBitmap(page, 'icon_black');
 });
 
 test.describe('mobile', () => {

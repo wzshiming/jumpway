@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+
+    - name: Vet
+      run: go vet ./...
+
+    - name: Test
+      run: go test ./... -race -count=1
+
+    - name: Build
+      env:
+        CGO_ENABLED: "0"
+      run: go build ./...
+
+  web-ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: app/web/ui
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up pnpm
+      uses: pnpm/action-setup@v4
+      with:
+        package_json_file: app/web/ui/package.json
+        run_install: false
+
+    - name: Set up Node
+      uses: actions/setup-node@v4
+      with:
+        node-version-file: app/web/ui/.nvmrc
+        cache: pnpm
+        cache-dependency-path: app/web/ui/pnpm-lock.yaml
+
+    - name: Install dependencies
+      run: pnpm install --frozen-lockfile
+
+    - name: Check
+      run: pnpm check
+
+    - name: Unit tests
+      run: pnpm test
+
+    - name: Install Playwright browser
+      run: pnpm exec playwright install --with-deps chromium
+
+    - name: E2E tests
+      run: pnpm exec playwright test --project=chromium --workers=1
+
+    - name: Upload test results
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: playwright-test-results
+        path: app/web/ui/test-results
+        retention-days: 7
+        if-no-files-found: ignore
