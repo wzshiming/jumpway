@@ -197,7 +197,9 @@ test('the overview lists every rule with its management facts: state, mode, list
 	});
 	expect(cards[0].querySelector('a[href="#/rules/office"]')).not.toBeNull();
 	expect(cards[0].querySelector('a[href="#/stats?rule=office"]')).not.toBeNull();
-	expect(target.querySelector('main header a[href="#/new"]')?.textContent?.trim()).toBe('New rule');
+	expect(
+		target.querySelector('main section[aria-label="Rules"] a[href="#/new"]')?.textContent?.trim()
+	).toBe('New rule');
 });
 
 test('an unknown rule name renders its empty state with a way back to the overview', async () => {
@@ -298,7 +300,7 @@ test('Cancel on a clean editor returns to the overview at once; #/new keeps Canc
 	expect(target.querySelector('h1')?.textContent).toBe('Overview');
 	expect(writes()).toEqual([]);
 
-	click(target.querySelector('main header a[href="#/new"]'));
+	click(target.querySelector('main section[aria-label="Rules"] a[href="#/new"]'));
 	await settle();
 	expect(target.querySelector('h1')?.textContent).toBe('New rule');
 	expect(button('Cancel', form()!)?.type).toBe('button');

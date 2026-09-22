@@ -12,8 +12,7 @@ const LEGACY = [{ type: 'http' }, { type: 'socks5' }, { type: 'socks4' }, { type
 const heading = (page: Page) => page.getByRole('heading', { level: 1 });
 const cards = (page: Page) => page.getByRole('main').getByRole('article');
 const cardNames = (page: Page) => cards(page).locator('header a');
-const newRule = (page: Page) =>
-	page.getByRole('main').locator('header').getByRole('link', { name: 'New rule' });
+const newRule = (page: Page) => page.getByRole('main').getByRole('link', { name: 'New rule' });
 const form = (page: Page) => page.getByRole('main').locator('form');
 const unsaved = (page: Page) => page.getByRole('main').getByText('Unsaved changes');
 const confirmDialog = (page: Page) =>
@@ -116,6 +115,32 @@ test('the overview cards carry state, name, mode, address, target and chain size
 	expect(count(api, 'GET /apis/configs/status')).toBeGreaterThanOrEqual(2);
 	expect(count(api, 'GET /apis/configs/rules')).toBeGreaterThanOrEqual(2);
 
+	await expect(
+		page.getByRole('main').locator('header').getByRole('link', { name: 'New rule' })
+	).toHaveCount(0);
+	const rulesRegion = page.getByRole('region', { name: 'Rules', exact: true });
+	const grid = rulesRegion.locator('> div');
+	expect(
+		await grid.evaluate((element) =>
+			Array.from(element.children, (child) => [child.tagName, child.getAttribute('href')])
+		)
+	).toEqual([
+		['ARTICLE', null],
+		['ARTICLE', null],
+		['ARTICLE', null],
+		['A', '#/new']
+	]);
+	// Leaving early aborts the delete's list re-read.
+	await expect(rulesRegion).toHaveAttribute('aria-busy', 'false');
+	await cards(page).last().getByRole('button', { name: 'Delete' }).focus();
+	await page.keyboard.press('Tab');
+	await expect(newRule(page)).toBeFocused();
+	await expect(newRule(page)).toHaveCSS('outline-style', 'solid');
+	await page.keyboard.press('Enter');
+	await expect(page).toHaveURL(/#\/new$/);
+	await expect(heading(page)).toHaveText('New rule');
+	await page.goBack();
+	await expect(page).toHaveURL(/#\/$/);
 	await newRule(page).click();
 	await expect(page).toHaveURL(/#\/new$/);
 	await expect(heading(page)).toHaveText('New rule');
@@ -129,9 +154,10 @@ test('an empty overview and an unknown rule show their empty states', async ({
 	api.rules = [];
 	await page.goto('/#/rules');
 	await expect(page).toHaveURL(/#\/$/);
-	await expect(page.getByRole('main')).toContainText('No rules yet.');
-	await expect(page.getByRole('main').getByRole('link', { name: 'New rule' })).toHaveCount(1);
+	await expect(newRule(page)).toHaveCount(1);
 	await expect(newRule(page)).toBeVisible();
+	await expect(cards(page)).toHaveCount(0);
+	await expect(page.getByRole('main')).not.toContainText('No rules yet.');
 
 	failures.allow = expected400;
 	await page.goto('/#/rules/ghost');
@@ -782,8 +808,17 @@ test('the card footer keeps its three 32px actions and long rates inside the car
 		const geometry = await page.evaluate(() => {
 			const main = document.getElementById('main')!;
 			const articles = Array.from(document.querySelectorAll('main article'));
+			const trailing = document.querySelector('main article ~ a[href="#/new"]')!;
+			const trailingBox = trailing.getBoundingClientRect();
+			const previousBox = trailing.previousElementSibling!.getBoundingClientRect();
 			return {
 				overflow: main.scrollWidth - main.clientWidth,
+				trailing: {
+					border: getComputedStyle(trailing).borderTopStyle,
+					sharesRow: Math.abs(trailingBox.top - previousBox.top) < 1,
+					height: Math.round(trailingBox.height),
+					previousHeight: Math.round(previousBox.height)
+				},
 				cards: articles.map((article) => {
 					const box = article.getBoundingClientRect();
 					const controls = Array.from(article.querySelectorAll('footer a, footer button')).map(
@@ -802,6 +837,12 @@ test('the card footer keeps its three 32px actions and long rates inside the car
 			};
 		});
 		expect(geometry.overflow, `${width}px`).toBeLessThanOrEqual(0);
+		expect(geometry.trailing, `${width}px`).toEqual({
+			border: 'dashed',
+			sharesRow: width === 1280,
+			height: width === 1280 ? geometry.trailing.previousHeight : 160,
+			previousHeight: geometry.trailing.previousHeight
+		});
 		for (const card of geometry.cards) {
 			expect(card.sizes, `${width}px`).toEqual(['32x32', '32x32', '32x32']);
 			expect(card.inside, `${width}px`).toBe(true);
