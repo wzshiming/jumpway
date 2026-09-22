@@ -136,14 +136,19 @@ test('the overview cards carry state, name, mode, address, target and chain size
 	await page.keyboard.press('Tab');
 	await expect(newRule(page)).toBeFocused();
 	await expect(newRule(page)).toHaveCSS('outline-style', 'solid');
+	const peers = page.waitForResponse('**/apis/configs/rules');
 	await page.keyboard.press('Enter');
 	await expect(page).toHaveURL(/#\/new$/);
 	await expect(heading(page)).toHaveText('New rule');
+	expect(await (await peers).finished()).toBeNull();
 	await page.goBack();
 	await expect(page).toHaveURL(/#\/$/);
+	await expect(rulesRegion).toHaveAttribute('aria-busy', 'false');
+	const reloadedPeers = page.waitForResponse('**/apis/configs/rules');
 	await newRule(page).click();
 	await expect(page).toHaveURL(/#\/new$/);
 	await expect(heading(page)).toHaveText('New rule');
+	expect(await (await reloadedPeers).finished()).toBeNull();
 });
 
 test('an empty overview and an unknown rule show their empty states', async ({

@@ -461,7 +461,7 @@ test('a dirty in-app link click opens the custom prompt with zero history writes
 		.context()
 		.waitForEvent('page', { timeout: 2000 })
 		.catch(() => null);
-	await page.click('#yaml', { modifiers: ['Meta'] });
+	await page.click('#yaml', { modifiers: ['ControlOrMeta'] });
 	await (await popup)?.close();
 	await page.waitForTimeout(200);
 	expect(await page.evaluate(snapshot)).toMatchObject({
