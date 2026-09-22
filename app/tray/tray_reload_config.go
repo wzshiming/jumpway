@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
@@ -90,6 +91,7 @@ func (a *App) reload() error {
 			rules = append(rules, runtime.state)
 			continue
 		}
+		protocols := rule.Listen.Schemes()
 		rules = append(rules, &ruleState{
 			name:          rule.Name,
 			listenAddress: rule.Listen.Address(),
@@ -97,6 +99,9 @@ func (a *App) reload() error {
 			target:        rule.Forward.Target(),
 			remote:        rule.Listen.Remote(),
 			virtual:       rule.Listen.Virtual != "",
+			http: rule.Forward.IsProxy() && slices.ContainsFunc(protocols, func(protocol config.Protocol) bool {
+				return protocol.Type == config.ProtocolHTTP
+			}),
 		})
 	}
 	a.metrics.Sync(enabled)
@@ -203,6 +208,11 @@ func (a *App) reload() error {
 				return a.virtual.Listen(rule.Listen.Virtual)
 			}
 		}
+		protocols := rule.Listen.Schemes()
+		schemes := make([]jumpway.Scheme, len(protocols))
+		for index, protocol := range protocols {
+			schemes[index] = jumpway.Scheme{Type: protocol.Type, User: protocol.User()}
+		}
 		a.wg.Add(1)
 		go func() {
 			defer a.wg.Done()
@@ -210,7 +220,7 @@ func (a *App) reload() error {
 			jumpway.Serve(ctx, listen, func(ctx context.Context, listener net.Listener) error {
 				listener = rs.WrapListener(listener)
 				if target == "" {
-					return jumpway.RunProxy(ctx, listener, dialer, rule.Listen.User(), rule.Listen.Shadowsocks())
+					return jumpway.RunProxy(ctx, listener, dialer, schemes)
 				}
 				return jumpway.RunForward(ctx, listener, dialer, target)
 			}, report)

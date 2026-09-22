@@ -14,8 +14,15 @@ export interface Address {
 	port: number;
 }
 
+// One scheme served on the entry; empty credentials inherit the shared Listen ones, cipher is ss only.
+export interface Protocol {
+	type: string;
+	username?: string;
+	password?: string;
+	cipher?: string;
+}
+
 // virtual names an in-app channel instead of a socket; the server then reports host '' and port 0.
-// cipher also serves Shadowsocks on the entry, keyed by the same password.
 export interface Listen {
 	host: string;
 	port: number;
@@ -24,6 +31,7 @@ export interface Listen {
 	username?: string;
 	password?: string;
 	cipher?: string;
+	protocols?: Nullable<Protocol[]>;
 }
 
 // port 0 or absent means proxy mode: clients pick their own target; virtual is always a forward.

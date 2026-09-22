@@ -12,11 +12,12 @@ import (
 
 func TestMenuModelRules(test *testing.T) {
 	rules := []ruleState{
-		{name: "alpha", address: "127.0.0.1:1097", running: true},
-		{name: "beta", address: "127.0.0.1:1099", attempt: 3},
-		{name: "remote", address: "0.0.0.0:2097", remote: true, running: true},
+		{name: "alpha", address: "127.0.0.1:1097", http: true, running: true},
+		{name: "beta", address: "127.0.0.1:1099", http: true, attempt: 3},
+		{name: "remote", address: "0.0.0.0:2097", remote: true, http: true, running: true},
 		{name: "database", address: "127.0.0.1:15432", target: "10.0.0.5:5432"},
-		{name: "wildcard", listenAddress: "0.0.0.0:1197"},
+		{name: "wildcard", listenAddress: "0.0.0.0:1197", http: true},
+		{name: "socks", address: "127.0.0.1:1081", running: true},
 	}
 	want := []ruleMenuEntry{
 		{
@@ -39,6 +40,10 @@ func TestMenuModelRules(test *testing.T) {
 			name: "wildcard", address: "127.0.0.1:1197", label: "wildcard (127.0.0.1:1197)",
 			status: "wildcard \u00b7 127.0.0.1:1197 \u00b7 " + i18n.Stopped(), localProxy: true,
 		},
+		{
+			name: "socks", address: "127.0.0.1:1081", label: "socks (127.0.0.1:1081)",
+			status: "socks \u00b7 127.0.0.1:1081 \u00b7 " + i18n.Running(),
+		},
 	}
 	if got := menuModel(rules); !reflect.DeepEqual(got, want) {
 		test.Fatalf("menu model = %#v, want %#v", got, want)
@@ -49,17 +54,18 @@ func TestBuildMenuRuleItems(test *testing.T) {
 	app := &App{
 		webAddress: "127.0.0.1:1098",
 		rules: []*ruleState{
-			{name: "alpha", address: "127.0.0.1:1097", running: true},
-			{name: "beta", address: "127.0.0.1:1099", running: true},
-			{name: "remote", address: "127.0.0.1:2097", remote: true},
+			{name: "alpha", address: "127.0.0.1:1097", http: true, running: true},
+			{name: "beta", address: "127.0.0.1:1099", http: true, running: true},
+			{name: "remote", address: "127.0.0.1:2097", remote: true, http: true},
 			{name: "database", address: "127.0.0.1:15432", target: "10.0.0.5:5432"},
+			{name: "socks", address: "127.0.0.1:1081", running: true},
 		},
 	}
 	if app.buildMenu() == nil {
 		test.Fatal("missing menu")
 	}
 	items := app.menuItems
-	if items == nil || items.web == nil || !items.web.IsDisabled() || len(items.rules) != 4 {
+	if items == nil || items.web == nil || !items.web.IsDisabled() || len(items.rules) != 5 {
 		test.Fatalf("missing status items: %+v", items)
 	}
 	for name, item := range items.rules {
@@ -87,16 +93,17 @@ func TestBuildMenuRuleItems(test *testing.T) {
 	if address := app.ruleAddress("beta"); address != "127.0.0.1:1199" {
 		test.Fatalf("export retained a stale address: %q", address)
 	}
-	if app.ruleAddress("remote") != "" || app.ruleAddress("database") != "" || app.ruleAddress("missing") != "" {
+	if app.ruleAddress("remote") != "" || app.ruleAddress("database") != "" || app.ruleAddress("socks") != "" || app.ruleAddress("missing") != "" {
 		test.Fatal("non-local proxy address was exported")
 	}
 }
 
 func TestBuildMenuNoLocalProxy(test *testing.T) {
 	for _, rules := range [][]*ruleState{nil, {
-		{name: "remote", remote: true},
+		{name: "remote", remote: true, http: true},
 		{name: "forward", target: "127.0.0.1:5432"},
-		{name: "virtual", address: "virtual://x", virtual: true, running: true},
+		{name: "virtual", address: "virtual://x", virtual: true, http: true, running: true},
+		{name: "socks", address: "127.0.0.1:1081", running: true},
 	}} {
 		app := &App{rules: rules}
 		app.buildMenu()
@@ -110,7 +117,7 @@ func TestBuildMenuNoLocalProxy(test *testing.T) {
 func TestMenuSnapshotStatus(test *testing.T) {
 	app := &App{
 		webAddress: "127.0.0.1:1098", Mode: i18n.ManualProxy(),
-		rules: []*ruleState{{name: "alpha", address: "127.0.0.1:1097", running: true}},
+		rules: []*ruleState{{name: "alpha", address: "127.0.0.1:1097", http: true, running: true}},
 	}
 	before := app.menuSnapshot()
 	app.rules[0].running, app.rules[0].attempt = false, 4
@@ -125,7 +132,7 @@ func TestMenuSnapshotStatus(test *testing.T) {
 }
 
 func TestUpdateStatusConcurrentRebuild(test *testing.T) {
-	app := &App{rules: []*ruleState{{name: "alpha", address: "127.0.0.1:1097"}}}
+	app := &App{rules: []*ruleState{{name: "alpha", address: "127.0.0.1:1097", http: true}}}
 	app.updateStatus()
 	app.buildMenu()
 	var workers sync.WaitGroup
@@ -151,7 +158,7 @@ func TestUpdateStatusConcurrentRebuild(test *testing.T) {
 func TestUpdateStatusRemovedSelection(test *testing.T) {
 	app := &App{
 		systemProxyRule: "alpha",
-		rules:           []*ruleState{{name: "alpha", address: "127.0.0.1:1097"}},
+		rules:           []*ruleState{{name: "alpha", address: "127.0.0.1:1097", http: true}},
 	}
 	app.buildMenu()
 	if !app.menuItems.proxies["alpha"].IsChecked() || app.menuItems.manual.IsChecked() {
@@ -168,8 +175,8 @@ func TestSystemProxySelectionReload(test *testing.T) {
 	app := &App{
 		systemProxyRule: "alpha",
 		rules: []*ruleState{
-			{name: "alpha", address: "127.0.0.1:1097"},
-			{name: "beta", address: "127.0.0.1:1099"},
+			{name: "alpha", address: "127.0.0.1:1097", http: true},
+			{name: "beta", address: "127.0.0.1:1099", http: true},
 		},
 	}
 	address, changed, removed := app.syncSystemProxySelection()
@@ -188,10 +195,10 @@ func TestSystemProxySelectionReload(test *testing.T) {
 	if address != "" || !changed || removed != "alpha" || app.systemProxyRule != "" || app.Mode != i18n.ManualProxy() {
 		test.Fatalf("removed selection = %q, %v, %q", address, changed, removed)
 	}
-	for _, rule := range []*ruleState{{name: "beta", remote: true}, {name: "beta", target: "127.0.0.1:5432"}, {name: "beta", address: "virtual://x", virtual: true, running: true}} {
+	for _, rule := range []*ruleState{{name: "beta", remote: true, http: true}, {name: "beta", target: "127.0.0.1:5432"}, {name: "beta", address: "virtual://x", virtual: true, http: true, running: true}, {name: "beta", address: "127.0.0.1:1081", running: true}} {
 		app.rules, app.systemProxyRule = []*ruleState{rule}, "beta"
 		if address, _, removed := app.syncSystemProxySelection(); address != "" || removed != "beta" || app.systemProxyRule != "" {
-			test.Fatal("non-local proxy remained selected")
+			test.Fatalf("non-local or non-HTTP proxy %+v remained selected", rule)
 		}
 	}
 }
@@ -207,7 +214,7 @@ func TestQuitDisablesSystemProxy(test *testing.T) {
 	}
 	test.Cleanup(func() { setSystemProxy = previous })
 
-	app := &App{rules: []*ruleState{{name: "alpha", address: "127.0.0.1:1097"}}}
+	app := &App{rules: []*ruleState{{name: "alpha", address: "127.0.0.1:1097", http: true}}}
 	app.selectSystemProxy("alpha")
 	if !reflect.DeepEqual(calls, []string{"127.0.0.1:1097"}) {
 		test.Fatalf("selection calls = %q", calls)
@@ -261,7 +268,7 @@ func TestQuitWaitsForPendingSystemProxy(test *testing.T) {
 		pending.Wait()
 	})
 
-	app := &App{rules: []*ruleState{{name: "alpha", address: "127.0.0.1:1097"}}}
+	app := &App{rules: []*ruleState{{name: "alpha", address: "127.0.0.1:1097", http: true}}}
 	pending.Add(1)
 	go func() {
 		defer pending.Done()

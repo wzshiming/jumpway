@@ -51,17 +51,18 @@ func TestExportCommandUsesLiveLocalRule(test *testing.T) {
 	stubCommands(test, "", "osascript", "notify-send")
 	written := captureClipboard(test)
 	app := &App{rules: []*ruleState{
-		{name: "alpha", address: "127.0.0.1:1097"},
-		{name: "remote", address: "127.0.0.1:2097", remote: true},
+		{name: "alpha", address: "127.0.0.1:1097", http: true},
+		{name: "remote", address: "127.0.0.1:2097", remote: true, http: true},
 		{name: "database", address: "127.0.0.1:15432", target: "10.0.0.5:5432"},
-		{name: "wildcard", listenAddress: "0.0.0.0:1197"},
+		{name: "wildcard", listenAddress: "0.0.0.0:1197", http: true},
+		{name: "socks", address: "127.0.0.1:1081"},
 	}}
 	shell := exportKindByLabel(test, "Shell")
-	for _, name := range []string{"remote", "database", "missing"} {
+	for _, name := range []string{"remote", "database", "socks", "missing"} {
 		app.exportCommand(shell, name)
 	}
 	if len(*written) != 0 {
-		test.Fatalf("non-local rule exported: %q", *written)
+		test.Fatalf("non-local or non-HTTP rule exported: %q", *written)
 	}
 	app.exportCommand(shell, "wildcard")
 	app.exportCommand(shell, "alpha")

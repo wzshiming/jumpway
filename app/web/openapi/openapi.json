@@ -716,6 +716,12 @@
       "type": "integer",
       "format": "uint32"
      },
+     "protocols": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Protocol"
+      }
+     },
      "username": {
       "type": "string"
      },
@@ -839,6 +845,27 @@
      }
     },
     "description": "Process identifies the local process that owns a TCP socket.\n"
+   },
+   "Protocol": {
+    "required": [
+     "type"
+    ],
+    "type": "object",
+    "properties": {
+     "cipher": {
+      "type": "string"
+     },
+     "password": {
+      "type": "string"
+     },
+     "type": {
+      "type": "string"
+     },
+     "username": {
+      "type": "string"
+     }
+    },
+    "description": "Protocol is one proxy scheme served on the entry; empty credentials inherit the shared Listen ones.\n"
    },
    "RawConfig": {
     "required": [

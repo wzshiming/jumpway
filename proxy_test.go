@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -24,6 +25,11 @@ import (
 
 var testShadowsocksUser = url.UserPassword("aes-256-gcm", "s3cr3t")
 
+// legacySchemes is the pre-protocols listener: the four defaults with user's credentials plus Shadowsocks.
+func legacySchemes(user *url.Userinfo) []Scheme {
+	return []Scheme{{Type: "http", User: user}, {Type: "socks5", User: user}, {Type: "socks4", User: user}, {Type: "ssh", User: user}, {Type: "ss", User: testShadowsocksUser}}
+}
+
 func TestRunProxyClientAddr(test *testing.T) {
 	target := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		io.WriteString(writer, "proxy-ok")
@@ -43,7 +49,7 @@ func TestRunProxyClientAddr(test *testing.T) {
 				return local.LOCAL.DialContext(ctx, network, address)
 			})
 			done := make(chan error, 1)
-			go func() { done <- RunProxy(ctx, listener, dialer, nil, testShadowsocksUser) }()
+			go func() { done <- RunProxy(ctx, listener, dialer, legacySchemes(nil)) }()
 			test.Cleanup(func() {
 				cancel()
 				listener.Close()
@@ -172,7 +178,7 @@ func TestRunProxyAuth(t *testing.T) {
 			t.Fatal(err)
 		}
 		done := make(chan error, 1)
-		go func() { done <- RunProxy(ctx, listener, local.LOCAL, user, testShadowsocksUser) }()
+		go func() { done <- RunProxy(ctx, listener, local.LOCAL, legacySchemes(user)) }()
 		t.Cleanup(func() {
 			cancel()
 			listener.Close()
@@ -339,7 +345,8 @@ func TestRunProxyVirtualListener(t *testing.T) {
 		return local.LOCAL.DialContext(ctx, network, address)
 	})
 	done := make(chan error, 1)
-	go func() { done <- RunProxy(ctx, listener, dialer, url.UserPassword("alice", "s3cr3t"), nil) }()
+	alice := url.UserPassword("alice", "s3cr3t")
+	go func() { done <- RunProxy(ctx, listener, dialer, legacySchemes(alice)[:4]) }()
 	t.Cleanup(func() {
 		cancel()
 		listener.Close()
@@ -380,5 +387,156 @@ func TestRunProxyVirtualListener(t *testing.T) {
 		}
 	case <-ctx.Done():
 		t.Fatal("proxy did not dial the target")
+	}
+}
+
+func TestRunProxyNoProtocols(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	if err := RunProxy(context.Background(), listener, local.LOCAL, nil); err == nil {
+		t.Fatal("RunProxy() accepted an empty protocol list")
+	}
+}
+
+// startProxy serves schemes on a loopback listener and returns its address and a target answering "proxy-ok".
+func startProxy(t *testing.T, schemes []Scheme) (address string, target *httptest.Server) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- RunProxy(ctx, listener, local.LOCAL, schemes) }()
+	t.Cleanup(func() {
+		cancel()
+		listener.Close()
+		select {
+		case err := <-done:
+			if err == nil || !utils.IsClosedConnError(err) {
+				t.Errorf("RunProxy() = %v, want closed connection error", err)
+			}
+		case <-time.After(time.Second):
+			t.Error("RunProxy did not stop after closing its listener")
+		}
+	})
+	target = httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		io.WriteString(writer, "proxy-ok")
+	}))
+	t.Cleanup(target.Close)
+	return listener.Addr().String(), target
+}
+
+// requestVia fetches target through the proxy URL; ok reports a 200 proxy-ok body, rejected a non-timeout failure.
+func requestVia(t *testing.T, proxyURL *url.URL, target string) (ok, rejected bool) {
+	t.Helper()
+	transport := &http.Transport{Proxy: http.ProxyURL(proxyURL), DisableKeepAlives: true}
+	dialClient := func(ctx context.Context, network, address string) (net.Conn, error) {
+		conn, err := (&net.Dialer{}).DialContext(ctx, network, address)
+		if err != nil {
+			return nil, err
+		}
+		t.Cleanup(func() { conn.Close() })
+		return conn, conn.SetDeadline(time.Now().Add(2 * time.Second))
+	}
+	transport.DialContext = dialClient
+	switch proxyURL.Scheme {
+	case "socks5":
+		proxy, err := socks5.NewDialer(proxyURL.String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		proxy.ProxyDial = dialClient
+		transport.Proxy, transport.DialContext = nil, proxy.DialContext
+	case "socks4":
+		proxy, err := socks4.NewDialer(proxyURL.String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		proxy.ProxyDial = dialClient
+		transport.Proxy, transport.DialContext = nil, proxy.DialContext
+	case "ss":
+		proxy, err := shadowsocks.NewDialer(proxyURL.String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		proxy.ProxyDial = dialClient
+		transport.Proxy, transport.DialContext = nil, proxy.DialContext
+	}
+	t.Cleanup(transport.CloseIdleConnections)
+	client := &http.Client{Transport: transport, Timeout: 3 * time.Second}
+	response, err := client.Get(target)
+	if err != nil {
+		var networkError net.Error
+		if errors.As(err, &networkError) && networkError.Timeout() {
+			t.Fatalf("request through %s timed out instead of being rejected: %v", proxyURL.Redacted(), err)
+		}
+		return false, true
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode == http.StatusOK && string(body) == "proxy-ok" {
+		return true, false
+	}
+	return false, response.StatusCode == http.StatusProxyAuthRequired
+}
+
+func TestRunProxyPerProtocolCredentials(t *testing.T) {
+	alice, bob := url.UserPassword("alice", "alice-secret"), url.UserPassword("bob", "bob-secret")
+	address, target := startProxy(t, []Scheme{
+		{Type: "http", User: alice},
+		{Type: "socks5", User: bob},
+		{Type: "ss", User: url.UserPassword("aes-256-gcm", "ss-secret")},
+	})
+	for _, test := range []struct {
+		name   string
+		scheme string
+		user   *url.Userinfo
+		wantOK bool
+	}{
+		{name: "http_alice", scheme: "http", user: alice, wantOK: true},
+		{name: "http_bob", scheme: "http", user: bob},
+		{name: "http_anonymous", scheme: "http"},
+		{name: "socks5_bob", scheme: "socks5", user: bob, wantOK: true},
+		{name: "socks5_alice", scheme: "socks5", user: alice},
+		{name: "socks5_anonymous", scheme: "socks5"},
+		{name: "ss_own_password", scheme: "ss", user: url.UserPassword("aes-256-gcm", "ss-secret"), wantOK: true},
+		{name: "ss_alice_password", scheme: "ss", user: url.UserPassword("aes-256-gcm", "alice-secret")},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ok, rejected := requestVia(t, &url.URL{Scheme: test.scheme, Host: address, User: test.user}, target.URL)
+			if ok != test.wantOK || rejected == test.wantOK {
+				t.Fatalf("ok = %v, rejected = %v; want ok %v", ok, rejected, test.wantOK)
+			}
+		})
+	}
+}
+
+func TestRunProxySingleProtocol(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		protocol string
+		other    string
+	}{
+		{name: "http_only", protocol: "http", other: "socks5"},
+		{name: "socks5_only", protocol: "socks5", other: "http"},
+		{name: "socks4_only", protocol: "socks4", other: "http"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			address, target := startProxy(t, []Scheme{{Type: test.protocol}})
+			if ok, _ := requestVia(t, &url.URL{Scheme: test.protocol, Host: address}, target.URL); !ok {
+				t.Fatalf("%s request through its own listener failed", test.protocol)
+			}
+			if ok, rejected := requestVia(t, &url.URL{Scheme: test.other, Host: address}, target.URL); ok || !rejected {
+				t.Fatalf("%s handshake was not rejected by the %s-only listener", test.other, test.protocol)
+			}
+		})
 	}
 }

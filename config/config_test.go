@@ -155,6 +155,119 @@ func TestValidate(t *testing.T) {
 			conf: &Config{Rules: []Rule{{Name: "a", Listen: Listen{Username: "user", Password: "secret", Cipher: "chacha20-ietf-poly1305"}}}},
 		},
 		{
+			name: "explicit_protocols",
+			conf: &Config{Rules: []Rule{{Name: "a", Listen: Listen{Port: 1080, Protocols: []Protocol{{Type: "http"}, {Type: "socks5"}}}}}},
+		},
+		{
+			name: "ss_only",
+			conf: &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "ss", Cipher: "aes-256-gcm", Password: "secret"}}}}}},
+		},
+		{
+			name: "socks4_username_only",
+			conf: &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "socks4", Username: "alice"}}}}}},
+		},
+		{
+			name:      "unknown_protocol",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "http"}, {Type: "quic"}}}}}},
+			wantError: `rules[0].listen.protocols[1].type "quic" is unknown`,
+		},
+		{
+			name:      "empty_protocol_type",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Username: "alice"}}}}}},
+			wantError: `rules[0].listen.protocols[0].type "" is unknown`,
+		},
+		{
+			name:      "duplicate_protocol",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "http"}, {Type: "socks5"}, {Type: "http"}}}}}},
+			wantError: `rules[0].listen.protocols[2].type "http" is duplicated`,
+		},
+		{
+			name:      "protocol_username_with_colon",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "http", Username: "a:b", Password: "secret"}}}}}},
+			wantError: `rules[0].listen.protocols[0].username "a:b" must not contain ":"`,
+		},
+		{
+			name:      "protocol_cipher_on_http",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "http", Cipher: "aes-256-gcm"}}}}}},
+			wantError: "rules[0].listen.protocols[0].cipher is only used by ss",
+		},
+		{
+			name:      "protocol_unsupported_cipher",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "ss", Cipher: "rot13", Password: "secret"}}}}}},
+			wantError: `rules[0].listen.protocols[0].cipher "rot13" is unsupported`,
+		},
+		{
+			name:      "ss_without_cipher",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "ss", Password: "secret"}}}}}},
+			wantError: "rules[0].listen.protocols[0].cipher is empty",
+		},
+		{
+			name:      "ss_without_password",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Username: "user", Protocols: []Protocol{{Type: "http"}, {Type: "ss", Cipher: "aes-256-gcm"}}}}}},
+			wantError: "rules[0].listen.protocols[1].cipher is set but password is empty",
+		},
+		{
+			name:      "ss_inherits_cipher_without_password",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Cipher: "aes-256-gcm", Protocols: []Protocol{{Type: "ss"}}}}}},
+			wantError: "rules[0].listen.cipher is set but password is empty",
+		},
+		{
+			name: "ss_inherits_shared_password",
+			conf: &Config{Rules: []Rule{{Name: "a", Listen: Listen{Password: "secret", Protocols: []Protocol{{Type: "ss", Cipher: "aes-256-gcm"}}}}}},
+		},
+		{
+			// The UI migrates a legacy cipher into an ss entry and keeps the password shared.
+			name: "shared_password_for_ss_beside_unauthenticated_http",
+			conf: &Config{Rules: []Rule{{Name: "a", Listen: Listen{Password: "secret", Protocols: []Protocol{{Type: "http"}, {Type: "socks5"}, {Type: "socks4"}, {Type: "ssh"}, {Type: "ss", Cipher: "aes-256-gcm"}}}}}},
+		},
+		{
+			name: "ss_inherits_cipher_and_password",
+			conf: &Config{Rules: []Rule{{Name: "a", Listen: Listen{Password: "secret", Cipher: "aes-256-gcm", Protocols: []Protocol{{Type: "socks5"}, {Type: "ss"}}}}}},
+		},
+		{
+			name:      "protocol_password_without_username",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "http", Password: "secret"}}}}}},
+			wantError: "rules[0].listen.protocols[0].password is set but username is empty",
+		},
+		{
+			name:      "protocol_password_without_username_beside_ss",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Password: "shared", Protocols: []Protocol{{Type: "ss", Cipher: "aes-256-gcm"}, {Type: "socks5", Password: "secret"}}}}}},
+			wantError: "rules[0].listen.protocols[1].password is set but username is empty",
+		},
+		{
+			name:      "shared_password_without_ss",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Password: "secret", Protocols: []Protocol{{Type: "http"}}}}}},
+			wantError: "rules[0].listen.password is set but username is empty",
+		},
+		{
+			name:      "shared_password_unused_by_ss",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Password: "secret", Protocols: []Protocol{{Type: "http"}, {Type: "ss", Cipher: "aes-256-gcm", Password: "other"}}}}}},
+			wantError: "rules[0].listen.password is set but username is empty",
+		},
+		{
+			name: "protocol_password_with_inherited_username",
+			conf: &Config{Rules: []Rule{{Name: "a", Listen: Listen{Username: "alice", Protocols: []Protocol{{Type: "http", Password: "secret"}}}}}},
+		},
+		{
+			name: "protocol_usernames_with_shared_password",
+			conf: &Config{Rules: []Rule{{Name: "a", Listen: Listen{Password: "secret", Protocols: []Protocol{{Type: "http", Username: "alice"}, {Type: "socks5", Username: "bob"}}}}}},
+		},
+		{
+			name:      "cipher_without_ss_selected",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Password: "secret", Cipher: "aes-256-gcm", Protocols: []Protocol{{Type: "http"}}}}}},
+			wantError: "rules[0].listen.cipher is set but protocols has no ss",
+		},
+		{
+			name:      "port_forward_with_protocols",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "http"}}}, Forward: Forward{Port: 5432}}}},
+			wantError: "rules[0].listen.protocols is only used by proxy rules",
+		},
+		{
+			name:      "virtual_forward_with_protocols",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Port: 1080, Protocols: []Protocol{{Type: "socks5"}}}, Forward: Forward{Virtual: "x"}}}},
+			wantError: "rules[0].listen.protocols is only used by proxy rules",
+		},
+		{
 			name:      "no_lb",
 			conf:      withWay(bridgeconfig.Node{}),
 			wantError: "rules[0].forward.way[0] has no proxy URL",
@@ -599,45 +712,127 @@ func TestListenRemote(t *testing.T) {
 	}
 }
 
-func TestListenUser(t *testing.T) {
+func TestListenSchemes(t *testing.T) {
+	legacy := []Protocol{{Type: "http"}, {Type: "socks5"}, {Type: "socks4"}, {Type: "ssh"}}
+	withShared := func(username, password string, protocols ...Protocol) []Protocol {
+		for index := range protocols {
+			protocols[index].Username, protocols[index].Password = username, password
+		}
+		return protocols
+	}
 	for _, test := range []struct {
-		name     string
-		listen   Listen
-		wantNil  bool
-		wantPass bool
+		name   string
+		listen Listen
+		want   []Protocol
 	}{
-		{name: "no_username", wantNil: true},
-		{name: "password_only", listen: Listen{Password: "secret"}, wantNil: true},
-		{name: "username_only", listen: Listen{Username: "user"}},
-		{name: "username_and_password", listen: Listen{Username: "user@host", Password: "p:a/ss"}, wantPass: true},
+		{name: "empty", want: legacy},
+		{name: "legacy_credentials", listen: Listen{Username: "user", Password: "secret"}, want: withShared("user", "secret", slices.Clone(legacy)...)},
+		{
+			name:   "legacy_cipher",
+			listen: Listen{Password: "secret", Cipher: "aes-256-gcm"},
+			want:   append(withShared("", "secret", slices.Clone(legacy)...), Protocol{Type: "ss", Password: "secret", Cipher: "aes-256-gcm"}),
+		},
+		{name: "explicit_only", listen: Listen{Cipher: "aes-256-gcm", Protocols: []Protocol{{Type: "socks5"}}}, want: []Protocol{{Type: "socks5"}}},
+		{
+			name:   "inherit_shared",
+			listen: Listen{Username: "user", Password: "secret", Cipher: "aes-256-gcm", Protocols: []Protocol{{Type: "http"}, {Type: "ss"}, {Type: "socks4", Username: "bob"}}},
+			want: []Protocol{
+				{Type: "http", Username: "user", Password: "secret"},
+				{Type: "ss", Username: "user", Password: "secret", Cipher: "aes-256-gcm"},
+				{Type: "socks4", Username: "bob", Password: "secret"},
+			},
+		},
+		{
+			name:   "override_shared",
+			listen: Listen{Username: "user", Password: "secret", Cipher: "aes-256-gcm", Protocols: []Protocol{{Type: "ss", Password: "other", Cipher: "chacha20-ietf-poly1305"}, {Type: "http", Username: "alice", Password: "pw"}}},
+			want: []Protocol{
+				{Type: "ss", Username: "user", Password: "other", Cipher: "chacha20-ietf-poly1305"},
+				{Type: "http", Username: "alice", Password: "pw"},
+			},
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			user := test.listen.User()
-			if test.wantNil {
+			before := slices.Clone(test.listen.Protocols)
+			got := test.listen.Schemes()
+			if !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("Schemes() = %#v, want %#v", got, test.want)
+			}
+			if !reflect.DeepEqual(test.listen.Protocols, before) {
+				t.Fatalf("Schemes() mutated Protocols: %#v", test.listen.Protocols)
+			}
+			if len(test.listen.Protocols) != 0 {
+				got[0].Type = "mutated"
+				if test.listen.Protocols[0].Type == "mutated" {
+					t.Fatal("Schemes() shares its backing array with Protocols")
+				}
+			}
+		})
+	}
+	if !slices.Equal(DefaultProtocols, []string{"http", "socks5", "socks4", "ssh"}) {
+		t.Fatalf("DefaultProtocols = %v", DefaultProtocols)
+	}
+}
+
+func TestProtocolUser(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		protocol Protocol
+		want     string
+	}{
+		{name: "unauthenticated", protocol: Protocol{Type: "http"}},
+		{name: "password_only", protocol: Protocol{Type: "socks5", Password: "secret"}},
+		{name: "username_only", protocol: Protocol{Type: "ssh", Username: "user"}, want: "user"},
+		{name: "username_and_password", protocol: Protocol{Type: "http", Username: "user@host", Password: "p:a/ss"}, want: url.UserPassword("user@host", "p:a/ss").String()},
+		{name: "socks4_drops_password", protocol: Protocol{Type: "socks4", Username: "user", Password: "secret"}, want: "user"},
+		{name: "ss", protocol: Protocol{Type: "ss", Username: "user", Password: "p:a/ss", Cipher: "aes-256-gcm"}, want: url.UserPassword("aes-256-gcm", "p:a/ss").String()},
+		{name: "ss_without_cipher", protocol: Protocol{Type: "ss", Password: "secret"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			user := test.protocol.User()
+			if test.want == "" {
 				if user != nil {
 					t.Fatalf("User() = %v, want nil", user)
 				}
 				return
 			}
-			if user == nil || user.Username() != test.listen.Username {
-				t.Fatalf("User() = %v, want username %q", user, test.listen.Username)
-			}
-			if password, ok := user.Password(); password != test.listen.Password || ok != test.wantPass {
-				t.Fatalf("Password() = %q, %v; want %q, %v", password, ok, test.listen.Password, test.wantPass)
+			if user == nil || user.String() != test.want {
+				t.Fatalf("User() = %v, want %q", user, test.want)
 			}
 		})
 	}
 }
 
-func TestListenShadowsocks(t *testing.T) {
-	for _, listen := range []Listen{{}, {Username: "user", Password: "secret"}} {
-		if got := listen.Shadowsocks(); got != nil {
-			t.Fatalf("Shadowsocks() for %#v = %v, want nil", listen, got)
-		}
+func TestListenProtocolsSchema(t *testing.T) {
+	listen := Listen{Port: 1080, Password: "secret", Protocols: []Protocol{{Type: "http", Username: "alice"}, {Type: "ss", Cipher: "aes-256-gcm", Password: "other"}}}
+	yamlOut, err := yaml.Marshal(listen)
+	if err != nil {
+		t.Fatal(err)
 	}
-	listen := Listen{Username: "user", Password: "p:a/ss", Cipher: "aes-256-gcm"}
-	if got, want := listen.Shadowsocks().String(), url.UserPassword("aes-256-gcm", "p:a/ss").String(); got != want {
-		t.Fatalf("Shadowsocks() = %q, want %q", got, want)
+	wantYAML := "port: 1080\npassword: secret\nprotocols:\n    - type: http\n      username: alice\n    - type: ss\n      password: other\n      cipher: aes-256-gcm\n"
+	if string(yamlOut) != wantYAML {
+		t.Fatalf("yaml = %q, want %q", yamlOut, wantYAML)
+	}
+	var fromYAML Listen
+	if err := yaml.Unmarshal(yamlOut, &fromYAML); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(fromYAML, listen) {
+		t.Fatalf("yaml roundtrip = %#v, want %#v", fromYAML, listen)
+	}
+	jsonOut, err := json.Marshal(listen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantJSON := `{"host":"","port":1080,"password":"secret","protocols":[{"type":"http","username":"alice"},{"type":"ss","password":"other","cipher":"aes-256-gcm"}]}`
+	if string(jsonOut) != wantJSON {
+		t.Fatalf("json = %s, want %s", jsonOut, wantJSON)
+	}
+	var fromJSON Listen
+	if err := json.Unmarshal(jsonOut, &fromJSON); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(fromJSON, listen) {
+		t.Fatalf("json roundtrip = %#v, want %#v", fromJSON, listen)
 	}
 }
 
@@ -1027,7 +1222,13 @@ func TestJSONTags(t *testing.T) {
 			name:    "local_listen",
 			value:   Listen{},
 			keys:    []string{"host", "port"},
-			omitted: []string{"way", "username", "password"},
+			omitted: []string{"way", "username", "password", "cipher", "protocols"},
+		},
+		{
+			name:    "protocol",
+			value:   Protocol{Type: "http"},
+			keys:    []string{"type"},
+			omitted: []string{"username", "password", "cipher"},
 		},
 		{
 			name: "remote_listen_with_credentials",
