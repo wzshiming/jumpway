@@ -166,11 +166,18 @@ test('every card has an accessible switch that mirrors the configured state, lab
 
 const pageHeader = () => target.querySelector('main h1')!.closest('header')!;
 const breadcrumb = () => target.querySelector('main nav[aria-label="Breadcrumb"] a');
+const grid = () => target.querySelector<HTMLElement>('main section[aria-label="Rules"] > div')!;
 
-test('the overview manages the rules: a New rule action in the header and Edit, Rule Traffic, Delete on every card', async () => {
+test('the overview manages the rules: a New rule card closes the grid and Edit, Rule Traffic, Delete sit on every card', async () => {
 	await render();
-	const create = pageHeader().querySelector('a[href="#/new"]');
-	expect(create?.textContent?.trim()).toBe('New rule');
+	expect(pageHeader().querySelector('a[href="#/new"]')).toBeNull();
+	const create = grid().lastElementChild!;
+	expect([create.tagName, create.getAttribute('href'), create.textContent?.trim()]).toEqual([
+		'A',
+		'#/new',
+		'New rule'
+	]);
+	expect(create.previousElementSibling?.tagName).toBe('ARTICLE');
 	expect(target.querySelectorAll('main a[href="#/new"]')).toHaveLength(1);
 	for (const element of cards()) {
 		const controls = Array.from(element.querySelectorAll('footer a, footer button')).map(
@@ -191,18 +198,24 @@ test('the overview manages the rules: a New rule action in the header and Edit, 
 	expect(breadcrumb()?.textContent?.trim()).toBe('Overview');
 });
 
-test('an empty list says so once beside the header action', async () => {
+test('an empty list shows only the New rule card', async () => {
 	rules = [];
 	await render('/#/');
 	expect(target.querySelector('main h1')?.textContent).toBe('Overview');
-	expect(target.querySelector('main section[aria-label="Rules"]')?.textContent?.trim()).toBe(
+	expect(cards()).toEqual([]);
+	expect(target.querySelector('main section[aria-label="Rules"]')?.textContent).not.toContain(
 		'No rules yet.'
 	);
-	expect(target.querySelectorAll('main a[href="#/new"]')).toHaveLength(1);
+	expect(
+		Array.from(grid().children).map((element) => [element.tagName, element.getAttribute('href')])
+	).toEqual([['A', '#/new']]);
+	expect(pageHeader().querySelector('a[href="#/new"]')).toBeNull();
 	teardown();
 	rules = structuredClone(rulesFixture);
 	await render('/?lang=zh#/');
-	expect(pageHeader().querySelector('a[href="#/new"]')?.textContent?.trim()).toBe('新建规则');
+	const trailing = card('office').parentElement!.lastElementChild;
+	expect(trailing?.getAttribute('href')).toBe('#/new');
+	expect(trailing?.textContent?.trim()).toBe('新建规则');
 	expect(card('office').querySelector('footer button')?.getAttribute('aria-label')).toBe('删除');
 });
 

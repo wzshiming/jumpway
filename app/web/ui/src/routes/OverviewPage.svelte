@@ -166,12 +166,7 @@
 		list(stats.data?.rules).find((rule) => rule.name === name)?.stats ?? null;
 </script>
 
-<PageHeader title={t('page.overview')} description={null}>
-	<a href={NEW_RULE_ROUTE} class="btn btn-primary">
-		<IconPlus class="size-4" aria-hidden="true" />
-		{t('newRule')}
-	</a>
-</PageHeader>
+<PageHeader title={t('page.overview')} description={null} />
 
 {#snippet kpiLabel(label: string, help: string)}
 	<p class="flex items-center gap-1 text-xs text-fg-muted">
@@ -233,8 +228,6 @@
 		<Banner kind="error" title={errorMessage(error)} message={null}>
 			<Button variant="secondary" onclick={load}>{t('retry')}</Button>
 		</Banner>
-	{:else if rules && rules.length === 0}
-		<p class="text-sm text-fg-muted">{t('noRules')}</p>
 	{:else if rules}
 		<div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
 			{#each rules as rule (rule.name)}
@@ -248,6 +241,13 @@
 					onDelete={() => void remove(rule.name)}
 				/>
 			{/each}
+			<a
+				href={NEW_RULE_ROUTE}
+				class="flex min-h-40 flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-line-strong text-sm text-fg-muted transition-colors hover:border-accent hover:text-accent"
+			>
+				<IconPlus class="size-6" aria-hidden="true" />
+				{t('newRule')}
+			</a>
 		</div>
 	{:else}
 		<p class="text-sm text-fg-muted">{t('loading')}</p>
