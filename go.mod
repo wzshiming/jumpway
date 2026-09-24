@@ -8,9 +8,9 @@ require (
 	github.com/gogpu/systray v0.3.0
 	github.com/gorilla/handlers v1.5.2
 	github.com/gorilla/mux v1.8.1
+	github.com/kardianos/service v1.3.0
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8
 	github.com/prometheus/client_golang v1.24.1
-	github.com/takama/daemon v1.0.0
 	github.com/wzshiming/anyproxy v0.9.0
 	github.com/wzshiming/bridge v0.14.0
 	github.com/wzshiming/cmux v0.5.0

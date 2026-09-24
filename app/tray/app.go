@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/gogpu/systray"
@@ -87,7 +88,8 @@ func NewApp(store *config.Store) *App {
 		store:   store,
 		metrics: metrics.NewRegistry(),
 	}
-	notify.On(os.Interrupt, a.Quit)
+	notify.On(syscall.SIGINT, a.Quit)
+	notify.On(syscall.SIGTERM, func() { a.do(a.Quit) })
 	return a
 }
 
