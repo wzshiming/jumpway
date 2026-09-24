@@ -1,8 +1,12 @@
 package tray
 
 import (
+	"errors"
+	"fmt"
+
 	"github.com/gogpu/systray"
 	"github.com/wzshiming/jumpway/i18n"
+	"github.com/wzshiming/jumpway/log"
 )
 
 type menuItems struct {
@@ -148,10 +152,25 @@ func (a *App) buildMenu() *systray.Menu {
 	return menu
 }
 
-func (a *App) rebuildMenu() {
+func (a *App) rebuildMenu() error {
 	if a.tray == nil {
-		return
+		return nil
 	}
 	a.restoreSystemProxy()
-	a.tray.SetMenu(a.buildMenu())
+	a.mu.Lock()
+	previous := a.menuItems
+	a.mu.Unlock()
+	menu := a.buildMenu()
+	err := runOnMain(func() { a.tray.SetMenu(menu) })
+	if err == nil {
+		return nil
+	}
+	err = fmt.Errorf("rebuild tray menu: %w", err)
+	log.Error(err, i18n.ReloadConfig())
+	a.mu.Lock()
+	// The installed menu stays; keep routing status updates to its items.
+	a.menuItems = previous
+	a.lastErr = errors.Join(a.lastErr, err)
+	a.mu.Unlock()
+	return err
 }
