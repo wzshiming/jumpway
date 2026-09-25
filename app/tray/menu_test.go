@@ -1,12 +1,19 @@
 package tray
 
 import (
+	"context"
 	"errors"
+	"os"
+	"os/exec"
+	"os/signal"
 	"reflect"
+	"runtime"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
+	"github.com/wzshiming/jumpway/config"
 	"github.com/wzshiming/jumpway/i18n"
 )
 
@@ -300,5 +307,61 @@ func TestQuitWaitsForPendingSystemProxy(test *testing.T) {
 	pending.Wait()
 	if !reflect.DeepEqual(calls, []string{"127.0.0.1:1097", ""}) || app.systemProxyRule != "" || app.systemProxyAddress != "" {
 		test.Fatalf("quit raced the pending selection: calls = %q, selection = %q/%q", calls, app.systemProxyRule, app.systemProxyAddress)
+	}
+}
+
+func TestSIGTERMQueuesQuit(test *testing.T) {
+	if os.Getenv("JUMPWAY_TEST_SIGTERM_CHILD") != "" {
+		app := NewApp(config.NewStore(test.TempDir()))
+		finished := make(chan bool)
+		go func() {
+			for fn := range app.actions {
+				fn()
+				app.proxyMu.Lock()
+				stopped := app.stopped
+				app.proxyMu.Unlock()
+				finished <- stopped
+			}
+		}()
+		entered, release := make(chan struct{}), make(chan struct{})
+		app.do(func() {
+			close(entered)
+			<-release
+		})
+		<-entered
+		delivered := make(chan os.Signal, 1)
+		signal.Notify(delivered, syscall.SIGTERM)
+		process, err := os.FindProcess(os.Getpid())
+		if err != nil {
+			test.Fatal(err)
+		}
+		if err := process.Signal(syscall.SIGTERM); err != nil {
+			test.Fatal(err)
+		}
+		<-delivered
+		close(release)
+		if <-finished {
+			test.Fatal("Quit ran while another action was in flight")
+		}
+		select {
+		case stopped := <-finished:
+			if !stopped {
+				test.Fatal("SIGTERM queued an action other than Quit")
+			}
+		case <-time.After(5 * time.Second):
+			test.Fatal("SIGTERM did not queue Quit behind the in-flight action")
+		}
+		return
+	}
+	if runtime.GOOS == "windows" {
+		test.Skip("Process.Signal(SIGTERM) is not supported on Windows")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, os.Args[0], "-test.run=^"+test.Name()+"$", "-test.count=1", "-test.timeout=20s")
+	command.WaitDelay = time.Second
+	command.Env = append(os.Environ(), "JUMPWAY_TEST_SIGTERM_CHILD=1")
+	if output, err := command.CombinedOutput(); err != nil {
+		test.Fatalf("SIGTERM child: %v\n%s", err, output)
 	}
 }

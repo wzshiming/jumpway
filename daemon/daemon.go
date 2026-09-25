@@ -1,33 +1,58 @@
 package daemon
 
 import (
+	"errors"
 	"os"
+	"path/filepath"
+	"runtime"
+	"sync"
 
-	"github.com/takama/daemon"
+	"github.com/kardianos/service"
 	"github.com/wzshiming/jumpway"
+	"github.com/wzshiming/jumpway/config"
 	"github.com/wzshiming/jumpway/log"
 )
 
 var (
-	globalDaemon daemon.Daemon
+	globalDaemon = sync.OnceValues(newDaemon)
+	logDirectory string
 )
 
-func init() {
-	svc, err := daemon.New(jumpway.AppName, jumpway.AppDescription, Kind)
-	if err != nil {
-		log.Error(err, "get daemon")
-		os.Exit(2)
+func newDaemon() (service.Service, error) {
+	option := service.KeyValue{
+		"UserService": runtime.GOOS == "darwin",
+		"RunAtLoad":   true,
+		"KeepAlive":   false,
 	}
-	globalDaemon = svc
+	if dir, err := config.DefaultDir(); err == nil {
+		logDirectory = filepath.Join(dir, "logs")
+		option["LogDirectory"] = logDirectory
+	}
+	// nil Interface: this handle only controls the OS service, Run is never called.
+	return service.New(nil, &service.Config{
+		Name:        jumpway.AppName,
+		DisplayName: jumpway.AppName,
+		Description: jumpway.AppDescription,
+		Option:      option,
+	})
+}
+
+func lookup() (service.Service, service.Status, error) {
+	svc, err := globalDaemon()
+	if err != nil {
+		return nil, service.StatusUnknown, err
+	}
+	status, err := svc.Status()
+	return svc, status, err
 }
 
 func IsRunning() bool {
-	status, err := globalDaemon.Status()
+	_, status, err := lookup()
 	if err != nil {
-		log.Info("daemon status", "status", err)
+		log.Info("daemon status", "err", err)
 		return false
 	}
-	log.Info("daemon status", "status", status)
+	log.Info("daemon status", "running", status == service.StatusRunning)
 	return true
 }
 
@@ -57,41 +82,75 @@ func Run(command string) {
 }
 
 func Install() {
-	status, err := globalDaemon.Install()
-	if err != nil && err != daemon.ErrAlreadyInstalled {
-		log.Error(err, "daemon install", "status", status)
+	svc, err := globalDaemon()
+	if err != nil {
+		log.Error(err, "daemon install")
+		return
 	}
-	log.Info("daemon install", "status", status)
+	if _, err := svc.Status(); err == nil {
+		log.Info("daemon install", "status", "already installed")
+		return
+	}
+	if logDirectory != "" {
+		err = os.MkdirAll(logDirectory, 0755)
+	}
+	if err == nil {
+		err = svc.Install()
+	}
+	if err != nil {
+		log.Error(err, "daemon install")
+		return
+	}
+	log.Info("daemon install", "status", "installed")
 }
 
 func Start() {
-	status, err := globalDaemon.Start()
-	if err != nil && err != daemon.ErrAlreadyRunning {
-		log.Error(err, "daemon start", "status", status)
+	svc, status, err := lookup()
+	if err != nil {
+		log.Error(err, "daemon start")
+		return
 	}
-	log.Info("daemon start", "status", status)
+	if status == service.StatusRunning {
+		log.Info("daemon start", "status", "already running")
+		return
+	}
+	if err := svc.Start(); err != nil {
+		log.Error(err, "daemon start")
+		return
+	}
+	log.Info("daemon start", "status", "started")
 }
 
 func Stop() {
-	status, err := globalDaemon.Stop()
-	if err != nil && err != daemon.ErrAlreadyStopped {
-		log.Error(err, "daemon stop", "status", status)
+	svc, status, err := lookup()
+	if err != nil || status != service.StatusRunning {
+		log.Info("daemon stop", "status", "not running", "err", err)
+		return
 	}
-	log.Info("daemon stop", "status", status)
+	if err := svc.Stop(); err != nil {
+		log.Error(err, "daemon stop")
+		return
+	}
+	log.Info("daemon stop", "status", "stopped")
 }
 
 func Remove() {
-	status, err := globalDaemon.Remove()
-	if err != nil && err != daemon.ErrNotInstalled {
-		log.Error(err, "daemon remove", "status", status)
+	svc, _, err := lookup()
+	if err != nil {
+		log.Info("daemon remove", "status", "not installed", "err", err)
+		return
 	}
-	log.Info("daemon remove", "status", status)
+	if err := svc.Uninstall(); err != nil {
+		log.Error(err, "daemon remove")
+		return
+	}
+	log.Info("daemon remove", "status", "removed")
 }
 
 func Status() {
-	status, err := globalDaemon.Status()
-	if err != nil {
-		log.Error(err, "daemon status", "status", status)
+	_, status, err := lookup()
+	if err != nil && !errors.Is(err, service.ErrNotInstalled) {
+		log.Error(err, "daemon status")
 	}
-	log.Info("daemon status", "status", status)
+	log.Info("daemon status", "installed", err == nil, "running", status == service.StatusRunning)
 }
