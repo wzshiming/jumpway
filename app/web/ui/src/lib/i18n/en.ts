@@ -71,6 +71,7 @@ export const en = {
 	latency: 'Latency',
 	latencyTotals: 'Last / average',
 	dialFailures: 'Failures',
+	dialsTotals: 'Failed / attempted',
 	dialAttempts: 'dial attempts',
 	viaHop: 'via {parent}',
 	state: 'State',
@@ -93,6 +94,9 @@ export const en = {
 	targets: 'Targets',
 	targetCount: '{count} distinct targets',
 	noTargets: 'No connections yet',
+	targetsEvicted: '{count} older targets were dropped from this list',
+	showingTargets: 'Showing {shown} of {total} targets',
+	viaEndpoint: 'via {endpoint}',
 	client: 'Client',
 	target: 'Target',
 	duration: 'Duration',
@@ -204,10 +208,14 @@ export const en = {
 	active: 'Active',
 	peakSum: 'peak (sum)',
 	sortBy: 'Sort by',
+	sortConfigured: 'Configured order',
 	ascending: 'Ascending',
 	descending: 'Descending',
 	started: 'Started',
 	total: 'Total',
+	noMatches: 'No matches',
+	filteredRules: '{count} of {total} rules',
+	filteredHosts: '{count} of {total} hosts',
 
 	// Concept definitions behind the circled question marks
 	'help.now': 'Current rate: bytes per second over the last completed one-second window.',
@@ -223,7 +231,10 @@ export const en = {
 		'Latency: how long the last successful dial took / the average over all successful dials. Connection setup time, not a ping.',
 	'help.latencyAggregate':
 		'Latency: the last dial of the most recently active endpoint (traffic counts as activity, so not necessarily the newest dial) / the average over every endpoint, weighted by successful dials. Connection setup time, not a ping.',
-	'help.failures': 'Failures: dials that could not be completed since the last reset.',
+	'help.failures':
+		'Failures: dial attempts that did not connect / all dial attempts since the last reset.',
+	'help.targetsEvicted':
+		'Targets: a rule remembers at most 1000 targets. When more appear, idle targets with the oldest activity are dropped first; their traffic stays in the rule totals.',
 	'help.upload': 'Upload \u2014 from the client towards the target.',
 	'help.download': 'Download \u2014 from the target back to the client.',
 	'help.page.stats':

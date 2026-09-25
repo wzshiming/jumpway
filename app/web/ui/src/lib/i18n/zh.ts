@@ -72,6 +72,7 @@ export const zh = {
 	latency: '延迟',
 	latencyTotals: '最近 / 平均',
 	dialFailures: '失败',
+	dialsTotals: '失败 / 尝试',
 	dialAttempts: '次连接尝试',
 	viaHop: '上一级：{parent}',
 	state: '状态',
@@ -94,6 +95,9 @@ export const zh = {
 	targets: '目标',
 	targetCount: '{count} 个不同目标',
 	noTargets: '尚无连接记录',
+	targetsEvicted: '另有 {count} 个较早的目标已从列表中移除',
+	showingTargets: '显示 {shown} / {total} 个目标',
+	viaEndpoint: '经由 {endpoint}',
 	client: '客户端',
 	target: '目标',
 	duration: '持续时间',
@@ -203,10 +207,14 @@ export const zh = {
 	active: '活动',
 	peakSum: '峰值（合计）',
 	sortBy: '排序依据',
+	sortConfigured: '配置顺序',
 	ascending: '升序',
 	descending: '降序',
 	started: '开始时间',
 	total: '累计',
+	noMatches: '没有匹配项',
+	filteredRules: '{count} / {total} 条规则',
+	filteredHosts: '{count} / {total} 个主机',
 
 	// Concept definitions behind the circled question marks
 	'help.now': '当前：最近一个完整的 1 秒窗口内的每秒字节数。',
@@ -220,7 +228,9 @@ export const zh = {
 		'延迟：最近一次成功建连所用时间 / 所有成功建连的平均值。这是建立连接的耗时，不是 ping。',
 	'help.latencyAggregate':
 		'延迟：最近有活动（传输数据也算活动，未必是最近一次建连）的端点最后一次建连所用时间 / 所有端点按成功建连次数加权的平均值。这是建立连接的耗时，不是 ping。',
-	'help.failures': '失败：自上次重置以来未能建立连接的次数。',
+	'help.failures': '失败：未能建连的尝试次数 / 自上次重置以来的全部建连尝试次数。',
+	'help.targetsEvicted':
+		'目标：每条规则最多记住 1000 个目标；超出时先移除最久未活动的空闲目标，其流量仍计入规则合计。',
 	'help.upload': '上传 — 从客户端发往目标方向。',
 	'help.download': '下载 — 从目标返回客户端方向。',
 	'help.page.stats':

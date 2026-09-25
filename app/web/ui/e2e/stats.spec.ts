@@ -92,7 +92,7 @@ async function expectMetricsFit(page: Page, name: string) {
 		const limit = main.getBoundingClientRect().right + 1;
 		return Array.from(
 			main.querySelectorAll(
-				'[data-traffic] dt, [data-traffic] dd, [data-connections] dd, [data-latency] dd, [data-failures] dd, [data-address], [data-endpoint], [data-endpoints], [data-host-name], [data-usage] a, [data-use], [data-mode], [data-connection] [data-target], [data-connection] [data-client], [data-connection] [data-rule-link], [data-connection] [data-metric], [data-connection] [data-duration], [data-connection-facts] dt, [data-connection-facts] dd'
+				'[data-traffic] dt, [data-traffic] dd, [data-connections] dd, [data-latency] dd, [data-failures] dd, [data-address], [data-endpoint], [data-endpoints], [data-host-name], [data-usage] a, [data-use], [data-mode], [data-target-address], [data-via], [data-evicted], [data-connection] [data-target], [data-connection] [data-client], [data-connection] [data-rule-link], [data-connection] [data-metric], [data-connection] [data-duration], [data-connection-facts] dt, [data-connection-facts] dd'
 			)
 		)
 			.filter((element) => {
@@ -155,7 +155,9 @@ async function expectColumnsAligned(page: Page, name: string) {
 			document.querySelectorAll<HTMLElement>(
 				'article[data-rule] [data-traffic], article[data-host] [data-traffic], article[data-connection] [data-traffic]'
 			)
-		).filter((band) => !band.closest('[data-hop-stats], [data-url], [data-endpoint-row]'));
+		).filter(
+			(band) => !band.closest('[data-hop-stats], [data-url], [data-target], [data-endpoint-row]')
+		);
 		if (bands.length < 2) out.push(`only ${bands.length} bands`);
 		for (const band of bands) {
 			const item = band.closest<HTMLElement>('article')!;
@@ -356,7 +358,7 @@ test('#/stats shows fixture values per rule; expanding reveals the full band, tr
 		'last',
 		/Connections\s+Active \/ total/,
 		/Latency\s+Last \/ average/,
-		'Failures'
+		/Failures\s+Failed \/ attempted/
 	]);
 	await expect(metrics(band)).toHaveText([
 		'12.0 KB/s',
@@ -378,7 +380,7 @@ test('#/stats shows fixture values per rule; expanding reveals the full band, tr
 		'#/connections?rule=office'
 	);
 	await expect(block.locator('[data-latency] dd')).toHaveText('41.2 ms / 38.7 ms');
-	await expect(block.locator('[data-failures] dd')).toHaveText('2');
+	await expect(block.locator('[data-failures] dd')).toHaveText('2 / 118');
 	const mirror = ruleRows(page).nth(1);
 	await expect(mirror.locator('[data-mode]')).toHaveText('Port forward');
 	await expect(mirror.locator('[data-address]')).toHaveText(
@@ -409,12 +411,14 @@ test('#/stats shows fixture values per rule; expanding reveals the full band, tr
 	await expect(toggle).toHaveAccessibleName('Collapse: office');
 	const details = await detailsOf(page, toggle);
 	await expect(details).toBeVisible();
-	// The expansion is the chain: two hops and three URLs carry statistics, nothing else does.
-	await expect(details.locator('[data-stats]')).toHaveCount(5);
+	// The expansion is the chain: two hops, three URLs and three targets carry statistics, nothing else does.
+	await expect(details.locator('[data-stats]')).toHaveCount(8);
 	expect(
 		await details
 			.locator('[data-metric]')
-			.evaluateAll((all) => all.every((element) => element.closest('[data-hop-stats], [data-url]')))
+			.evaluateAll((all) =>
+				all.every((element) => element.closest('[data-hop-stats], [data-url], [data-target]'))
+			)
 	).toBe(true);
 	await expect(metrics(band)).toHaveCount(8);
 	await expectMetricsFit(page, 'stats-expanded');
@@ -453,7 +457,31 @@ test('#/stats shows fixture values per rule; expanding reveals the full band, tr
 		'href',
 		'#/connections?rule=office'
 	);
-	await expect(stages.nth(4)).not.toContainText('example.com');
+	// The targets themselves: most recently active first, the never-active one last, each with
+	// the hop it was reached through and its own counters; three older ones were dropped.
+	await expect(stages.nth(4).locator('[data-evicted]')).toHaveText(
+		/3 older targets were dropped from this list/
+	);
+	const targets = stages.nth(4).locator('[data-target]');
+	await expect(targets.locator('[data-target-address]')).toHaveText([
+		'cdn.example.net:443',
+		'example.com:443',
+		'10.1.2.3:8080'
+	]);
+	await expect(targets.locator('[data-via]')).toHaveText([
+		'via ssh://bastion-2.example:22',
+		'via ssh://bastion.example:22'
+	]);
+	await expect(targets.nth(2).locator('[data-via]')).toHaveCount(0);
+	await hover(page, targets.nth(1).locator('[data-via]'));
+	await expect(tooltip(page)).toHaveText('ssh://xxxxx@bastion.example:22');
+	await expect(targets.nth(1).locator('[data-metric="down"]')).toHaveText('57.2 MB');
+	await expect(targets.nth(1).locator('[data-failures] dd')).toHaveText('2 / 80');
+	await expect(targets.nth(0).locator('[data-latency] dd')).toHaveText('22.0 ms / 24.5 ms');
+	await expect(stages.nth(4).locator('[data-targets-more]')).toHaveCount(0);
+	await hover(page, stages.nth(4).getByRole('button', { name: 'About Targets' }));
+	await expect(tooltip(page)).toContainText('at most 1000 targets');
+	expect(await page.content()).not.toContain('ops@');
 
 	// Items and the expansion survive polls unchanged; a changed value shows up within a poll.
 	const marked = await office.evaluate((row) => ((row as HTMLElement).dataset.marker = 'kept'));
@@ -491,6 +519,107 @@ test('#/stats shows fixture values per rule; expanding reveals the full band, tr
 	expect(count(api, 'GET /apis/configs/rules')).toBe(1);
 });
 
+test('#/stats search narrows the rules by name, address or target and clearing restores them; sorting by a counter reorders and the direction button flips it', async ({
+	page,
+	api
+}) => {
+	await page.goto('/#/stats');
+	const names = () =>
+		ruleRows(page).evaluateAll((rows) => rows.map((row) => (row as HTMLElement).dataset.rule));
+	await expect(ruleRows(page)).toHaveCount(4);
+	await expect(page.locator('[data-rule-count]')).toHaveCount(0);
+	const search = page.getByRole('searchbox', { name: 'Search' });
+	await expect(page.getByRole('button', { name: 'Clear search' })).toHaveCount(0);
+	await search.fill('tun');
+	await expect(ruleRows(page)).toHaveCount(1);
+	await expect.poll(names).toEqual(['db-tunnel']);
+	await expect(page.locator('[data-rule-count]')).toHaveText('1 of 4 rules');
+	// The forward target is searched too.
+	await search.fill('5432');
+	await expect.poll(names).toEqual(['mirror', 'db-tunnel']);
+	await search.fill('zzz');
+	await expect(ruleRows(page)).toHaveCount(0);
+	await expect(page.getByRole('main')).toContainText('No matches');
+	await expect(page.locator('[data-rule-count]')).toHaveText('0 of 4 rules');
+	await page.getByRole('button', { name: 'Clear search' }).click();
+	await expect(search).toHaveValue('');
+	await expect(ruleRows(page)).toHaveCount(4);
+	await expect(page.locator('[data-rule-count]')).toHaveCount(0);
+	await expect.poll(names).toEqual(['office', 'mirror', 'db-tunnel', 'lab']);
+
+	// Configured order by default; the download total reorders, ascending first, then flipped.
+	const sortBy = page.getByRole('combobox', { name: 'Sort by' });
+	const direction = page.getByRole('button', { name: /^(Ascending|Descending)$/ });
+	await expect(sortBy).toHaveValue('configured');
+	await expect(direction).toHaveAccessibleName('Ascending');
+	await sortBy.selectOption('down');
+	await expect.poll(names).toEqual(['db-tunnel', 'lab', 'mirror', 'office']);
+	await direction.click();
+	await expect(direction).toHaveAccessibleName('Descending');
+	await expect.poll(names).toEqual(['office', 'mirror', 'db-tunnel', 'lab']);
+	// A poll that changes the counters moves the rows, keeping their elements and expansion.
+	const mirror = page.locator('article[data-rule="mirror"]');
+	await mirror.getByRole('button', { name: 'Expand: mirror' }).click();
+	await mirror.evaluate((row) => ((row as HTMLElement).dataset.marker = 'kept'));
+	api.snapshot.rules![1].stats.down = 500_000_000;
+	await expect.poll(names).toEqual(['mirror', 'office', 'db-tunnel', 'lab']);
+	await expect(mirror).toHaveAttribute('data-marker', 'kept');
+	await expect(mirror.locator('button[aria-controls]')).toHaveAttribute('aria-expanded', 'true');
+	await sortBy.selectOption('dial_failures');
+	await expect.poll(names).toEqual(['db-tunnel', 'office', 'mirror', 'lab']);
+	await sortBy.selectOption('configured');
+	await expect.poll(names).toEqual(['lab', 'db-tunnel', 'mirror', 'office']);
+	await direction.click();
+	await expect.poll(names).toEqual(['office', 'mirror', 'db-tunnel', 'lab']);
+	// The controls stay usable at a phone width.
+	await page.setViewportSize({ width: 375, height: 800 });
+	await expect(search).toBeVisible();
+	await expect(sortBy).toBeVisible();
+	await expect(direction).toBeVisible();
+	await expectNoDocumentOverflow(page, 'stats-controls-375');
+});
+
+test('#/hosts search matches host names and endpoint labels; sorting by host name orders alphabetically', async ({
+	page
+}) => {
+	await page.goto('/#/hosts');
+	const names = () =>
+		hostRows(page).evaluateAll((rows) => rows.map((row) => (row as HTMLElement).dataset.host));
+	await expect(hostRows(page)).toHaveCount(4);
+	await expect(page.locator('[data-host-count]')).toHaveCount(0);
+	const search = page.getByRole('searchbox', { name: 'Search' });
+	await search.fill('bastion');
+	await expect.poll(names).toEqual(['bastion.example', 'bastion-2.example']);
+	await expect(page.locator('[data-host-count]')).toHaveText('2 of 4 hosts');
+	await search.fill('socks5');
+	await expect.poll(names).toEqual(['hop-a.example']);
+	await search.fill('zzz');
+	await expect(hostRows(page)).toHaveCount(0);
+	await expect(page.getByRole('main')).toContainText('No matches');
+	await page.getByRole('button', { name: 'Clear search' }).click();
+	await expect.poll(names).toEqual(hostsTotals.order);
+	await expect(page.locator('[data-host-count]')).toHaveCount(0);
+
+	const sortBy = page.getByRole('combobox', { name: 'Sort by' });
+	const direction = page.getByRole('button', { name: /^(Ascending|Descending)$/ });
+	await expect(sortBy).toHaveValue('traffic');
+	await expect(direction).toHaveAccessibleName('Descending');
+	await sortBy.selectOption('host');
+	await expect
+		.poll(names)
+		.toEqual(['hop-a.example', 'edge.example', 'bastion.example', 'bastion-2.example']);
+	await direction.click();
+	await expect(direction).toHaveAccessibleName('Ascending');
+	await expect
+		.poll(names)
+		.toEqual(['bastion-2.example', 'bastion.example', 'edge.example', 'hop-a.example']);
+	await sortBy.selectOption('traffic');
+	await expect.poll(names).toEqual([...hostsTotals.order].reverse());
+	await direction.click();
+	await expect.poll(names).toEqual(hostsTotals.order);
+	await expectMetricsFit(page, 'hosts-sorted');
+});
+
 test('?rule= pre-expands and focuses once; polls leave focus alone', async ({ page, api }) => {
 	await page.goto('/#/stats?rule=db-tunnel');
 	await expect(page).toHaveURL(/#\/stats\?rule=db-tunnel$/);
@@ -504,7 +633,7 @@ test('?rule= pre-expands and focuses once; polls leave focus alone', async ({ pa
 		/Direct/,
 		/Targets\s+127\.0\.0\.1:5432\s+No connections yet/
 	]);
-	await expect(stages.nth(1).locator('[data-failures] dd').first()).toHaveText('3');
+	await expect(stages.nth(1).locator('[data-failures] dd').first()).toHaveText('3 / 3');
 	await expectMetricsFit(page, 'stats-deep-link');
 
 	const link = page.getByRole('main').getByRole('link', { name: 'Prometheus metrics' });

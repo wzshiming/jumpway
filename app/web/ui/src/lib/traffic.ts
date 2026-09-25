@@ -1,4 +1,4 @@
-import type { MessageKey } from './i18n.svelte';
+import { t, type MessageKey } from './i18n.svelte';
 
 export interface Direction {
 	key: 'up' | 'down';
@@ -51,3 +51,23 @@ export const TRAFFIC_METRIC_HELP: Record<TrafficMetric, MessageKey> = {
 	total: 'help.total',
 	last: 'help.last'
 };
+
+export type TrafficKey = Direction[TrafficMetric];
+
+// The eight counters in sort-menu order: download before upload within each metric, as the pairs read.
+export const TRAFFIC_SORT_KEYS: readonly TrafficKey[] = TRAFFIC_METRICS.flatMap((metric) => [
+	DIRECTIONS[1][metric],
+	DIRECTIONS[0][metric]
+]);
+
+// "Download · now"; a key that is no traffic counter falls back to itself.
+export function trafficSortLabel(key: string): string {
+	for (const direction of DIRECTIONS) {
+		for (const metric of TRAFFIC_METRICS) {
+			if (direction[metric] === key) {
+				return t(direction.label) + ' \u00b7 ' + t(TRAFFIC_METRIC_LABELS[metric]);
+			}
+		}
+	}
+	return key;
+}
