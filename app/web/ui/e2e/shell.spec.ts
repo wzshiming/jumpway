@@ -355,7 +355,10 @@ test.describe('mobile', () => {
 		await page.keyboard.press('Escape');
 		await expect(drawer).not.toHaveAttribute('open', '');
 		await expect(menu).toBeFocused();
-		// The drawer's tooltip is gone; focus returning to the menu button shows that button's own.
+		// The drawer's tooltip went with it. The pointer still rests where Dark was, over whatever the
+		// page shows there now, so bring it to the focused button before reading its own tooltip.
+		await expect(tip).not.toHaveText('Dark');
+		await menu.hover();
 		await expect(tip).toHaveText('Open navigation');
 		expect(await tip.evaluate((element) => element.matches(':popover-open'))).toBe(true);
 		await page.mouse.move(200, 400);
