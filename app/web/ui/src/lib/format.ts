@@ -55,6 +55,22 @@ export function formatDateTime(value: unknown): string {
 	return Number.isFinite(timestamp) ? new Date(timestamp).toLocaleString(i18n.language) : DASH;
 }
 
+// The clock alone on the same local day; month/day and clock otherwise.
+export function formatShortTime(value: unknown, now = Date.now()): string {
+	const timestamp = Date.parse(text(value));
+	if (!Number.isFinite(timestamp)) return DASH;
+	const date = new Date(timestamp);
+	const today = new Date(now);
+	const sameDay =
+		date.getFullYear() === today.getFullYear() &&
+		date.getMonth() === today.getMonth() &&
+		date.getDate() === today.getDate();
+	const clock = { hour: '2-digit', minute: '2-digit' } as const;
+	return sameDay
+		? date.toLocaleTimeString(i18n.language, clock)
+		: date.toLocaleString(i18n.language, { month: 'numeric', day: 'numeric', ...clock });
+}
+
 const counters = new Map<string, Intl.NumberFormat>();
 
 export function formatCount(value: unknown): string {

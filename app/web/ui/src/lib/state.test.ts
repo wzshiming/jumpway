@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { rulesFixture, statusFixture } from '../../e2e/fixtures/api';
 import { ApiError } from './api';
 import { busy } from './busy.svelte';
 import { confirm, confirmService } from './confirm';
 import { createPoller, type Poller } from './polling.svelte';
 import { disconnectConnection, resetStats, stats } from './stats.svelte';
-import { ruleState, runtimeState, status } from './status.svelte';
+import { cardState, countRuleStates, ruleState, runtimeState, status } from './status.svelte';
 import { THEME_STORAGE_KEY, theme } from './theme.svelte';
+import type { RuleStatus } from './types';
 import { SUCCESS_TOAST_MS, toasts } from './toast.svelte';
 
 function setVisibility(state: 'visible' | 'hidden') {
@@ -449,6 +451,83 @@ describe('status and stats stores', () => {
 		expect(status.error).toMatchObject({ unreachable: true });
 		expect(runtimeState()).toBe('unknown');
 		unsubscribe();
+	});
+
+	const runtime = (partial: Partial<RuleStatus>): RuleStatus => ({
+		name: 'x',
+		address: ':1',
+		remote: false,
+		running: false,
+		...partial
+	});
+
+	test('cardState: disabled wins over the runtime, no runtime is unknown, otherwise the rule state', () => {
+		expect(cardState({ disabled: true }, runtime({ running: true }))).toBe('disabled');
+		expect(cardState({ disabled: true }, null)).toBe('disabled');
+		expect(cardState({}, null)).toBe('unknown');
+		expect(cardState({ disabled: false }, runtime({ running: true }))).toBe('running');
+		expect(cardState({}, runtime({ running: false, attempt: 2 }))).toBe('retrying');
+		expect(cardState({}, runtime({ running: false }))).toBe('stopped');
+		expect(cardState({}, runtime({ running: false, attempt: 0 }))).toBe('stopped');
+	});
+
+	test('countRuleStates counts every configured rule once by its card state', () => {
+		expect(countRuleStates(rulesFixture, statusFixture.rules)).toEqual({
+			total: 4,
+			running: 2,
+			retrying: 1,
+			stopped: 0,
+			unknown: 0,
+			disabled: 1
+		});
+	});
+
+	test('countRuleStates falls back to the runtime list while the rules are unknown', () => {
+		// lab is listed running:false without an attempt: as an enabled rule it counts as stopped.
+		expect(countRuleStates(null, statusFixture.rules)).toEqual({
+			total: 4,
+			running: 2,
+			retrying: 1,
+			stopped: 1,
+			unknown: 0,
+			disabled: 0
+		});
+		const zeros = { total: 0, running: 0, retrying: 0, stopped: 0, unknown: 0, disabled: 0 };
+		expect(countRuleStates(null, null)).toEqual(zeros);
+		expect(countRuleStates(null, undefined)).toEqual(zeros);
+		expect(countRuleStates([], statusFixture.rules)).toEqual(zeros);
+	});
+
+	test('countRuleStates ignores status entries of rules that are no longer configured', () => {
+		const withoutOffice = rulesFixture.filter((rule) => rule.name !== 'office');
+		expect(countRuleStates(withoutOffice, statusFixture.rules)).toEqual({
+			total: 3,
+			running: 1,
+			retrying: 1,
+			stopped: 0,
+			unknown: 0,
+			disabled: 1
+		});
+	});
+
+	test('countRuleStates: an enabled rule missing from the status is unknown; without a status all enabled rules are', () => {
+		const withoutMirror = statusFixture.rules!.filter((entry) => entry.name !== 'mirror');
+		expect(countRuleStates(rulesFixture, withoutMirror)).toEqual({
+			total: 4,
+			running: 1,
+			retrying: 1,
+			stopped: 0,
+			unknown: 1,
+			disabled: 1
+		});
+		expect(countRuleStates(rulesFixture, null)).toEqual({
+			total: 4,
+			running: 0,
+			retrying: 0,
+			stopped: 0,
+			unknown: 3,
+			disabled: 1
+		});
 	});
 
 	test('status and stats back off while unreachable: 10 → 20 s and 1 → 2 s', async () => {

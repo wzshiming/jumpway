@@ -65,7 +65,8 @@ test('the overview shows KPIs and one card per rule from the API', async ({ page
 	await page.goto('/');
 	await expect(heading(page)).toHaveText('Overview');
 	await expect(page).toHaveTitle('Overview · JumpWay');
-	await expect(kpi(page, 'rules')).toHaveText('2/4');
+	await expect(kpi(page, 'rules')).toHaveText('2 Running');
+	await expect(kpi(page, 'rule-states')).toHaveText('4 configured · 1 Retrying · 1 Disabled');
 	await expect(kpi(page, 'active')).toHaveText(String(snapshotTotals.active));
 	// The direction arrows carry their names for assistive technology.
 	expect(await compact(kpi(page, 'rate'))).toBe(
@@ -111,6 +112,69 @@ test('the overview shows KPIs and one card per rule from the API', async ({ page
 	expect(html).not.toContain('review-user');
 	expect(api.requests).toContain('GET /apis/configs/rules');
 	expect(api.requests).toContain('GET /apis/configs/status');
+});
+
+test('the KPI strip folds to two columns beside the expanded sidebar and never splits a state segment', async ({
+	page,
+	api
+}) => {
+	// 768px wide: the sidebar is expanded and the content beside it is about 480px.
+	await page.setViewportSize({ width: 768, height: 900 });
+	// A slow status: meanwhile every enabled rule counts as "Status unknown", the longest segment.
+	let release!: () => void;
+	api.delay.set(
+		'GET /apis/configs/status',
+		new Promise<void>((resolve) => {
+			release = resolve;
+		})
+	);
+	await page.goto('/');
+	await expect(page.getByRole('article')).toHaveCount(4);
+	const states = kpi(page, 'rule-states');
+	await expect(states).toHaveText('4 configured · 3 Status unknown · 1 Disabled');
+	// A segment is its count, its name and the separator after it: one line of text-xs each, so
+	// the line only ever breaks between segments and a separator never starts a line. The columns
+	// here are wide enough for every segment, so the nowrap itself is asserted too.
+	const expectSegmentsOnOneLineEach = async (texts: string[]) => {
+		const segments = await states.locator('> span').evaluateAll((spans) =>
+			spans.map((span) => ({
+				text: span.textContent!.replace(/\s+/g, ' ').trim(),
+				height: span.getBoundingClientRect().height,
+				whiteSpace: getComputedStyle(span).whiteSpace
+			}))
+		);
+		for (const segment of segments) {
+			expect(segment.height, segment.text).toBeLessThan(20);
+			expect(segment.whiteSpace, segment.text).toBe('nowrap');
+		}
+		expect(segments.map((segment) => segment.text)).toEqual(texts);
+	};
+	const overflow = () =>
+		page.evaluate(() => {
+			const main = document.getElementById('main')!;
+			return main.scrollWidth - main.clientWidth;
+		});
+	const box = async (name: string) => (await kpi(page, name).boundingBox())!;
+	await expectSegmentsOnOneLineEach(['4 configured ·', '3 Status unknown ·', '1 Disabled']);
+	expect(await overflow()).toBeLessThanOrEqual(0);
+	// Two columns: the rate tile sits below the rules tile.
+	await expect
+		.poll(async () => {
+			const rules = await box('rules');
+			return (await box('rate')).y - (rules.y + rules.height);
+		})
+		.toBeGreaterThan(0);
+
+	// On a desktop the four tiles share one row.
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await expect
+		.poll(async () => Math.abs((await box('total')).y - (await box('rules')).y))
+		.toBeLessThanOrEqual(2);
+	release();
+	await expect(kpi(page, 'rules')).toHaveText('2 Running');
+	await expect(states).toHaveText('4 configured · 1 Retrying · 1 Disabled');
+	await expectSegmentsOnOneLineEach(['4 configured ·', '1 Retrying ·', '1 Disabled']);
+	expect(await overflow()).toBeLessThanOrEqual(0);
 });
 
 test('sidebar links use current routes and unknown addresses return home', async ({ page }) => {
@@ -587,7 +651,8 @@ test('a list answer that predates an accepted write cannot undo it: a switch ans
 	await expect(mirror.getByRole('button', { name: 'Delete' })).toBeEnabled();
 	await expect(cards.locator('header a')).toHaveText(['mirror', 'db-tunnel', 'lab']);
 	await expect(section).toHaveAttribute('aria-busy', 'false');
-	await expect(kpi(page, 'rules')).toHaveText('0/3');
+	await expect(kpi(page, 'rules')).toHaveText('0 Running');
+	await expect(kpi(page, 'rule-states')).toHaveText('3 configured · 1 Retrying · 2 Disabled');
 	await expect(page.getByRole('status').filter({ hasText: 'Rule deleted.' })).toBeVisible();
 	await expect(page.getByRole('status').filter({ hasText: 'Saved and applied.' })).toBeVisible();
 	await expect(page.getByRole('alert')).toHaveCount(0);

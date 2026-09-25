@@ -8,9 +8,11 @@ import {
 } from '../../e2e/fixtures/api';
 import App from '../App.svelte';
 import { SAVED_PREFIX } from '../lib/api';
+import { formatCount, formatDateTime, formatShortTime } from '../lib/format';
+import { sumStats } from '../lib/hosts';
 import { router } from '../lib/router.svelte';
 import { toasts } from '../lib/toast.svelte';
-import type { Rule } from '../lib/types';
+import { list, type Rule, type Status } from '../lib/types';
 
 // The overview's rule cards switch a rule on and off against a method-aware in-memory /apis stub.
 
@@ -23,6 +25,8 @@ interface Call {
 let target: HTMLElement;
 let app: ReturnType<typeof mount> | null = null;
 let rules: Rule[];
+// What GET /apis/configs/status answers; the fixture unless a test replaces it.
+let runtime: Status;
 let calls: Call[];
 // `${method} ${url}` → 400 text. A "saved, but " text still applies the mutation first.
 let fail: Map<string, string>;
@@ -41,6 +45,7 @@ const text = (status: number, body: string) => new Response(body, { status });
 
 function stubApi() {
 	rules = structuredClone(rulesFixture);
+	runtime = structuredClone(statusFixture);
 	calls = [];
 	fail = new Map();
 	delay = new Map();
@@ -59,7 +64,7 @@ function stubApi() {
 					if (lost.has(url)) throw new TypeError('Failed to fetch');
 					return injected === undefined ? json(null) : text(400, injected);
 				};
-				if (url === '/apis/configs/status') return json(statusFixture);
+				if (url === '/apis/configs/status') return json(runtime);
 				if (url === '/apis/stats') return json(snapshotFixture);
 				if (url === '/apis/configs/rules') return json(rules);
 				const match = /^\/apis\/configs\/rules\/([^/]+)$/.exec(url);
@@ -140,6 +145,24 @@ afterEach(() => {
 	localStorage.clear();
 	document.documentElement.lang = 'en';
 	document.body.innerHTML = '';
+});
+
+// First in this file: the status poller keeps its last answer, so only a fresh module has none.
+test('while the status has not loaded the running count is a dash and enabled rules are of unknown state', async () => {
+	let release!: () => void;
+	delay.set(
+		'GET /apis/configs/status',
+		new Promise<void>((resolve) => {
+			release = resolve;
+		})
+	);
+	await render();
+	expect(kpi('rules')).toBe('\u2014 Running');
+	expect(ruleStates()).toBe('4 configured \u00b7 3 Status unknown \u00b7 1 Disabled');
+	release();
+	await settle();
+	expect(kpi('rules')).toBe('2 Running');
+	expect(ruleStates()).toBe('4 configured \u00b7 1 Retrying \u00b7 1 Disabled');
 });
 
 test('every card has an accessible switch that mirrors the configured state, labelled in en and zh', async () => {
@@ -425,9 +448,9 @@ test('leaving the page while a switch is still re-reading abandons it: what it r
 	expect(toastTexts('alert')).toEqual([]);
 });
 
-test('Delete asks by name; Cancel sends nothing, confirming removes the card, re-reads the list and status, and counts it out of the KPI', async () => {
+test('Delete asks by name; Cancel sends nothing, confirming removes the card, re-reads the list and status, and counts it out of the KPI even while the status still lists it', async () => {
 	await render();
-	expect(kpi('rules')).toBe('2/4');
+	expect(kpi('rules')).toBe('2 Running');
 	click(deleteButton('office'));
 	await settle();
 	expect(confirmDialog()?.textContent).toContain('Delete rule "office"?');
@@ -446,7 +469,11 @@ test('Delete asks by name; Cancel sends nothing, confirming removes the card, re
 		{ method: 'DELETE', url: '/apis/configs/rules/office', body: undefined }
 	]);
 	expect(names()).toEqual(['mirror', 'db-tunnel', 'lab']);
-	expect(kpi('rules')).toBe('2/3');
+	// The stub's status still lists office as running: a rule that is gone is not counted.
+	expect(kpi('rules')).toBe('1 Running');
+	expect(compact(target.querySelector('[data-kpi="rule-states"]'))).toBe(
+		'3 configured · 1 Retrying · 1 Disabled'
+	);
 	expect(toastTexts('status')).toEqual(['Rule deleted.']);
 	expect(toastTexts('alert')).toEqual([]);
 	expect(requested('GET /apis/configs/status')).toBe(2);
@@ -611,11 +638,23 @@ test('a list answer that predates a delete cannot bring the deleted card back', 
 });
 
 test.each([
-	{ name: 'mirror', enabled: false, state: 'disabled' },
-	{ name: 'lab', enabled: true, state: 'stopped' }
+	{
+		name: 'mirror',
+		enabled: false,
+		state: 'disabled',
+		running: '0 Running',
+		states: '3 configured · 1 Retrying · 2 Disabled'
+	},
+	{
+		name: 'lab',
+		enabled: true,
+		state: 'stopped',
+		running: '1 Running',
+		states: '3 configured · 1 Stopped · 1 Retrying'
+	}
 ])(
 	'a list answer that predates an accepted write cannot undo it: $name switched while the re-read after a delete is still open',
-	async ({ name, enabled, state }) => {
+	async ({ name, enabled, state, running, states }) => {
 		await render();
 		const section = target.querySelector('main section[aria-label="Rules"]')!;
 		// The re-read after the delete is slow; its payload is fixed when it is requested.
@@ -651,7 +690,9 @@ test.each([
 		expect(toggle(name).checked).toBe(enabled);
 		expect(chip(name)).toBe(state);
 		expect(names()).toEqual(['mirror', 'db-tunnel', 'lab']);
-		expect(kpi('rules')).toBe('2/3');
+		// The KPI follows the cards: the switched rule's own state, office no longer counted.
+		expect(kpi('rules')).toBe(running);
+		expect(compact(target.querySelector('[data-kpi="rule-states"]'))).toBe(states);
 		expect(section.getAttribute('aria-busy')).toBe('false');
 		expect(toggle(name).disabled).toBe(false);
 		expect(deleteButton(name).disabled).toBe(false);
@@ -714,4 +755,88 @@ test('virtual cards label channels as virtual:// and link peers by channel; a da
 	);
 	// The incoming side lists enabled entries whatever the listener's own state.
 	expect(peersOf('shared-exit')).toEqual([['lan-entry', '#/rules/lan-entry']]);
+});
+
+const ruleStates = () => compact(target.querySelector('[data-kpi="rule-states"]'));
+const connectionsTotal = () => compact(target.querySelector('[data-kpi="connections-total"]'));
+const sinceSpans = () =>
+	Array.from(target.querySelectorAll<HTMLElement>('[data-kpi="connections-total"] span'));
+const tooltipText = () => target.querySelector('#tooltip')?.textContent ?? null;
+const aggregateTotal = () => sumStats(list(snapshotFixture.rules).map((rule) => rule.stats)).total;
+
+test('the Rules KPI counts running rules and lists the other states in the card colours; the connections KPI names the total and its start', async () => {
+	await render();
+	expect(kpi('rules')).toBe('2 Running');
+	expect(ruleStates()).toBe('4 configured \u00b7 1 Retrying \u00b7 1 Disabled');
+	const segments = Array.from(
+		target.querySelectorAll('[data-kpi="rule-states"] [data-rule-state]')
+	);
+	expect(segments.map((segment) => segment.getAttribute('data-rule-state'))).toEqual([
+		'retrying',
+		'disabled'
+	]);
+	// lab is disabled although the status lists it as not running: Disabled, never Stopped.
+	expect(target.querySelector('[data-rule-state="stopped"]')).toBeNull();
+	const dot = segments[0].querySelector('[aria-hidden="true"]')!;
+	expect(dot.classList.contains('text-warning')).toBe(true);
+	expect(
+		card('db-tunnel').querySelector('[data-state="retrying"]')!.classList.contains('text-warning')
+	).toBe(true);
+	expect(kpi('active')).toBe('4');
+	const since = snapshotFixture.since;
+	expect(connectionsTotal()).toBe(
+		`${formatCount(aggregateTotal())} total \u00b7 since ${formatShortTime(since)}`
+	);
+	expect(sinceSpans().map((span) => span.textContent)).toEqual([formatShortTime(since)]);
+	sinceSpans()[0].dispatchEvent(new Event('pointerenter'));
+	flushSync();
+	expect(tooltipText()).toBe(formatDateTime(since));
+});
+
+test('the KPI strip reads in Chinese too', async () => {
+	await render('/?lang=zh#/');
+	expect(kpi('rules')).toBe('2 运行中');
+	expect(ruleStates()).toBe('共 4 条 \u00b7 重试中 1 \u00b7 已禁用 1');
+	const since = snapshotFixture.since;
+	expect(connectionsTotal()).toBe(
+		`累计 ${formatCount(aggregateTotal())} \u00b7 自 ${formatShortTime(since)} 起`
+	);
+	expect(sinceSpans().map((span) => span.textContent)).toEqual([formatShortTime(since)]);
+});
+
+test('a state segment is one unbreakable span that carries the separator after it; only a plain space sits between segments', async () => {
+	await render();
+	const line = target.querySelector('[data-kpi="rule-states"]')!;
+	const spans = Array.from(line.querySelectorAll<HTMLElement>(':scope > span'));
+	expect(spans.map((span) => span.className)).toEqual(Array(3).fill('whitespace-nowrap'));
+	expect(spans.map((span) => span.textContent)).toEqual([
+		'4 configured\u00a0\u00b7',
+		'1 Retrying\u00a0\u00b7',
+		'1 Disabled'
+	]);
+	expect(
+		spans.map((span) => span.querySelector('[data-rule-state]')?.getAttribute('data-rule-state'))
+	).toEqual([undefined, 'retrying', 'disabled']);
+	// The only break opportunity on the line is the space between two segments.
+	const between = (from: Element, to: Element) => {
+		let text = '';
+		for (let node = from.nextSibling; node && node !== to; node = node.nextSibling) {
+			expect(node.nodeType).toBe(Node.TEXT_NODE);
+			text += node.textContent;
+		}
+		return text;
+	};
+	expect(between(spans[0], spans[1])).toBe(' ');
+	expect(between(spans[1], spans[2])).toBe(' ');
+});
+
+test('when every configured rule runs the second line is just the configured count', async () => {
+	rules = rules.filter((rule) => rule.name === 'office' || rule.name === 'mirror');
+	runtime.rules = statusFixture.rules!.filter(
+		(entry) => entry.name === 'office' || entry.name === 'mirror'
+	);
+	await render();
+	expect(kpi('rules')).toBe('2 Running');
+	expect(ruleStates()).toBe('2 configured');
+	expect(target.querySelector('[data-kpi="rule-states"] [data-rule-state]')).toBeNull();
 });

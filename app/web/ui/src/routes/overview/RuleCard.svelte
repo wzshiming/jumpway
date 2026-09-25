@@ -13,7 +13,7 @@
 	import { t } from '../../lib/i18n.svelte';
 	import { duplicateRoute, ruleRoute, statsRoute } from '../../lib/routes';
 	import { forwardTarget, isForward, listenAddress } from '../../lib/rule';
-	import { ruleState } from '../../lib/status.svelte';
+	import { cardState } from '../../lib/status.svelte';
 	import { DIRECTIONS } from '../../lib/traffic';
 	import type { Rule, RuleStatus, Stats } from '../../lib/types';
 	import { normalizeWay } from '../../lib/way';
@@ -46,10 +46,10 @@
 			input.focus({ preventScroll: true });
 	});
 	const chip = $derived.by((): { state: ChipState; label: string } => {
-		if (rule.disabled) return { state: 'disabled', label: t('disabled') };
-		if (!runtime) return { state: 'unknown', label: t('checking') };
-		const state = ruleState(runtime);
-		return { state, label: t(state, { attempt: runtime.attempt ?? 0 }) };
+		const state = cardState(rule, runtime);
+		if (state === 'disabled') return { state, label: t('disabled') };
+		if (state === 'unknown') return { state, label: t('checking') };
+		return { state, label: t(state, { attempt: runtime?.attempt ?? 0 }) };
 	});
 	const address = $derived(runtime?.address ?? listenAddress(rule));
 	const target = $derived(runtime?.target ?? forwardTarget(rule));

@@ -397,7 +397,7 @@ test('the overview KPIs and the rule card facts are explained too, and the cards
 	button('About Rules')!.dispatchEvent(new Event('pointerenter'));
 	flushSync();
 	expect(tooltipText()).toBe(
-		'Rules with a running listener out of all configured rules; a disabled rule is not running.'
+		'Rules whose listener is running right now, out of all configured rules; the rest are retrying (listen keeps failing, still trying), stopped, disabled, or of unknown state while the status has not loaded.'
 	);
 	// The KPI rates name their direction for assistive technology.
 	expect(compact(target.querySelector('[data-kpi="rate"]'))).toMatch(/^Upload \S+ \S+ Download /);
