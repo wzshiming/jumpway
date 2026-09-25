@@ -4,20 +4,25 @@
 	import IconFlame from '~icons/lucide/flame';
 	import IconMonitor from '~icons/lucide/monitor';
 	import IconMoon from '~icons/lucide/moon';
+	import IconPanelLeftClose from '~icons/lucide/panel-left-close';
+	import IconPanelLeftOpen from '~icons/lucide/panel-left-open';
 	import IconSlidersHorizontal from '~icons/lucide/sliders-horizontal';
 	import IconSun from '~icons/lucide/sun';
 	import IconGithub from '~icons/simple-icons/github';
 	import { tooltip } from '../../actions/tooltip.svelte';
 	import { i18n, LANGUAGES, t, type Language } from '../../i18n.svelte';
+	import { SIDEBAR_ID } from '../../sidebar.svelte';
 	import { theme, type Theme } from '../../theme.svelte';
 	import IconButton from '../ui/IconButton.svelte';
 
 	// collapsed: the icon rail; language and theme move into one popover, the links stack.
+	// ontoggle: the sidebar's collapse control ends the resources row; the drawer passes none.
 	interface Props {
 		collapsed?: boolean;
+		ontoggle?: () => void;
 	}
 
-	let { collapsed = false }: Props = $props();
+	let { collapsed = false, ontoggle }: Props = $props();
 
 	const LANGUAGE_LABELS: Record<Language, { short: string; full: 'english' | 'chinese' }> = {
 		en: { short: 'EN', full: 'english' },
@@ -151,8 +156,12 @@
 	</ul>
 {/snippet}
 
-{#if collapsed}
-	<div class="flex flex-col items-center gap-1 border-t border-line px-2 py-2">
+<div
+	class="border-t border-line {collapsed
+		? 'flex flex-col items-center gap-1 px-2 py-2'
+		: 'space-y-3 px-3 py-3'}"
+>
+	{#if collapsed}
 		<button
 			bind:this={menuButton}
 			type="button"
@@ -177,13 +186,30 @@
 		>
 			{@render preferences()}
 		</div>
-		{@render resources()}
-	</div>
-{:else}
-	<div class="space-y-3 border-t border-line px-3 py-3">
+	{:else}
 		<div class="flex items-center justify-between gap-2">
 			{@render preferences()}
 		</div>
+	{/if}
+	<div
+		class="flex {collapsed
+			? 'flex-col items-center gap-1'
+			: 'items-center justify-between gap-0.5'}"
+	>
 		{@render resources()}
+		{#if ontoggle}
+			<IconButton
+				label={t(collapsed ? 'expandSidebar' : 'collapseSidebar')}
+				expanded={!collapsed}
+				controls={SIDEBAR_ID}
+				onclick={ontoggle}
+			>
+				{#if collapsed}
+					<IconPanelLeftOpen class="size-4" aria-hidden="true" />
+				{:else}
+					<IconPanelLeftClose class="size-4" aria-hidden="true" />
+				{/if}
+			</IconButton>
+		{/if}
 	</div>
-{/if}
+</div>

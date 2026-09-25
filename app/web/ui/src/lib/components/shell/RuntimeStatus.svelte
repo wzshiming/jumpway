@@ -19,12 +19,19 @@
 
 	const DETAILS_ID = 'runtime-details';
 
-	const state = $derived(runtimeState());
-	const label = $derived(t(state === 'unknown' ? 'checking' : state));
+	const runtime = $derived(runtimeState());
+	const label = $derived(t(runtime === 'unknown' ? 'checking' : runtime));
 	const address = $derived(status.data?.address ?? '');
 	const error = $derived(status.data?.error ? redactCredentials(status.data.error) : '');
 	const heading = $derived(`${t('runtime')}: ${label}`);
 	const details = $derived([address, error].filter(Boolean).join('\n'));
+
+	// The expanded column's error is clicked open per text: a new error starts clamped again.
+	let expanded = $state(false);
+	$effect(() => {
+		void error;
+		expanded = false;
+	});
 </script>
 
 {#if compact}
@@ -32,13 +39,13 @@
 		<button
 			type="button"
 			class="icon-btn"
-			data-state={state}
+			data-state={runtime}
 			aria-label={heading}
 			aria-describedby={details ? DETAILS_ID : undefined}
 			use:tooltip={details ? heading + '\n' + details : heading}
 			onclick={() => sidebar.set(false)}
 		>
-			<span class="size-2.5 rounded-full {DOT[state]}" aria-hidden="true"></span>
+			<span class="size-2.5 rounded-full {DOT[runtime]}" aria-hidden="true"></span>
 		</button>
 		{#if details}
 			<span id={DETAILS_ID} class="sr-only">{details}</span>
@@ -47,15 +54,25 @@
 {:else}
 	<div class="border-y border-line px-4 py-3">
 		<p class="text-xs text-fg-subtle">{t('runtime')}</p>
-		<p class="mt-1 flex items-center gap-2 text-sm font-medium" data-state={state}>
-			<span class="size-2 shrink-0 rounded-full {DOT[state]}" aria-hidden="true"></span>
+		<p class="mt-1 flex items-center gap-2 text-sm font-medium" data-state={runtime}>
+			<span class="size-2 shrink-0 rounded-full {DOT[runtime]}" aria-hidden="true"></span>
 			{label}
 		</p>
 		{#if address}
 			<p class="mt-1 font-mono text-xs break-all text-fg-muted">{address}</p>
 		{/if}
 		{#if error}
-			<p class="mt-1 text-xs break-words text-danger">{error}</p>
+			<button
+				type="button"
+				class="mt-1 w-full text-left text-xs break-words text-danger {expanded
+					? 'block'
+					: 'line-clamp-3'}"
+				aria-expanded={expanded}
+				use:tooltip={t(expanded ? 'collapse' : 'expand')}
+				onclick={() => (expanded = !expanded)}
+			>
+				{error}
+			</button>
 		{/if}
 	</div>
 {/if}

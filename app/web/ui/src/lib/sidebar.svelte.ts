@@ -1,4 +1,5 @@
 export const SIDEBAR_STORAGE_KEY = 'jumpway.sidebarCollapsed';
+export const SIDEBAR_ID = 'sidebar';
 
 let collapsed = $state(false);
 

@@ -295,6 +295,95 @@ test('desktop sidebar becomes a persistent icon rail with working preferences', 
 	await expect(nav(page)).toContainText('活动连接');
 });
 
+// JW_SHOTS=1 saves review screenshots of the sidebar states under /tmp.
+const shot = (page: Page, name: string) =>
+	process.env.JW_SHOTS
+		? page.screenshot({ path: `/tmp/jw-polish-s2-shots/${name}.png`, animations: 'disabled' })
+		: undefined;
+
+test('the sidebar clamps the runtime error to three lines until it is clicked open', async ({
+	page
+}) => {
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await page.goto('/');
+	const aside = page.locator('aside');
+	const error = aside.locator('button[aria-expanded]', { hasText: 'invalid proxy URL' });
+	const fits = () => aside.evaluate((element) => element.scrollWidth <= element.clientWidth);
+	await expect(error).toHaveAttribute('aria-expanded', 'false');
+	// text-xs lines are 16px tall: three of them and nothing more.
+	const clamped = (await error.boundingBox())!.height;
+	expect(clamped).toBeLessThan(3 * 16 + 6);
+	expect(await fits()).toBe(true);
+
+	await error.click();
+	await expect(error).toHaveAttribute('aria-expanded', 'true');
+	await expect(error).toBeFocused();
+	await expect.poll(async () => (await error.boundingBox())!.height).toBeGreaterThan(clamped);
+	await expect(error).toHaveText(
+		'rules[3].forward.way[0]: invalid proxy URL "socks5://xxxxx@host:bad": parse "socks5://xxxxx@host:bad": invalid port ":bad" after host (e.g. socks5://host:1080)'
+	);
+	expect(await error.evaluate((element) => element.scrollHeight <= element.clientHeight + 1)).toBe(
+		true
+	);
+	expect(await fits()).toBe(true);
+	await shot(page, 'sidebar-error-expanded');
+
+	await error.click();
+	await expect(error).toHaveAttribute('aria-expanded', 'false');
+	await expect.poll(async () => (await error.boundingBox())!.height).toBe(clamped);
+});
+
+test('the sidebar toggle ends the sidebar: beside the resource links, centred in the rail, absent from the drawer', async ({
+	page
+}) => {
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await page.goto('/');
+	const aside = page.locator('aside');
+	const toggle = aside.locator('button[aria-controls="sidebar"]');
+	await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+	await expect(aside.locator(':scope > :first-child button')).toHaveCount(0);
+	const rail = (await aside.boundingBox())!;
+	const box = (await toggle.boundingBox())!;
+	const github = (await aside.getByRole('link', { name: 'GitHub', exact: true }).boundingBox())!;
+	expect(rail.y + rail.height - (box.y + box.height)).toBeLessThan(80);
+	expect(box.x).toBeGreaterThanOrEqual(github.x + github.width);
+	await shot(page, 'sidebar-1280-expanded');
+
+	await toggle.click();
+	await expect(toggle).toBeFocused();
+	await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+	await expect.poll(async () => (await aside.boundingBox())?.width).toBe(64);
+	await expect
+		.poll(() =>
+			aside.evaluate((element) => {
+				const button = element.querySelector('button[aria-controls="sidebar"]')!;
+				const box = button.getBoundingClientRect();
+				const rail = element.getBoundingClientRect();
+				const others = Array.from(element.querySelectorAll('a, button')).filter(
+					(other) => other !== button
+				);
+				return {
+					lowest: others.every((other) => other.getBoundingClientRect().y < box.y),
+					centred: Math.abs(box.x + box.width / 2 - rail.x - 32) < 2
+				};
+			})
+		)
+		.toEqual({ lowest: true, centred: true });
+	await expect(aside.locator(':scope > :first-child button')).toHaveCount(0);
+	await shot(page, 'sidebar-1280-collapsed');
+
+	// The drawer ignores the rail choice and never offers the toggle.
+	await page.setViewportSize({ width: 375, height: 800 });
+	await expect(aside).toHaveCount(0);
+	await page.getByRole('button', { name: 'Open navigation', exact: true }).click();
+	const drawer = page.locator('dialog#navigation-drawer');
+	await expect(drawer).toHaveAttribute('open', '');
+	await expectNavLabelsFit(page, EN_LABELS);
+	await expect(drawer.getByRole('link', { name: 'GitHub', exact: true })).toBeVisible();
+	await expect(drawer.locator('[aria-controls="sidebar"]')).toHaveCount(0);
+	await shot(page, 'sidebar-375-drawer');
+});
+
 test('?lang=zh renders Chinese; the switch persists across reloads and ?lang= still wins', async ({
 	page
 }) => {
