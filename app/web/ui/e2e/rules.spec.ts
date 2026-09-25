@@ -1166,7 +1166,7 @@ test('listen protocols: one checked scheme is a single-protocol port, several sh
 		'SSH',
 		'Shadowsocks'
 	]);
-	expect(await checked()).toEqual(['HTTP', 'SOCKS5', 'SOCKS4', 'SSH']);
+	await expect.poll(checked).toEqual(['HTTP', 'SOCKS5', 'SOCKS4', 'SSH']);
 	await expect(row('HTTP').getByRole('checkbox', { name: 'Custom credentials' })).not.toBeChecked();
 	await expect(row('HTTP').getByLabel('Username')).toHaveCount(0);
 
@@ -1175,7 +1175,7 @@ test('listen protocols: one checked scheme is a single-protocol port, several sh
 	await page.keyboard.press('Space');
 	await protocols.getByRole('checkbox', { name: 'SOCKS4' }).uncheck();
 	await protocols.getByRole('checkbox', { name: 'SSH' }).uncheck();
-	expect(await checked()).toEqual(['SOCKS5']);
+	await expect.poll(checked).toEqual(['SOCKS5']);
 	await expect(row('HTTP')).toHaveCount(0);
 	await expect(row('SOCKS5')).toHaveCount(1);
 	await page.keyboard.press('ControlOrMeta+s');
@@ -1215,7 +1215,7 @@ test('listen protocols: one checked scheme is a single-protocol port, several sh
 	// Reopened from the mock, the same rows and fields come back.
 	await page.reload();
 	await expect(heading(page)).toHaveText('lab');
-	expect(await checked()).toEqual(['HTTP', 'SOCKS5', 'Shadowsocks']);
+	await expect.poll(checked).toEqual(['HTTP', 'SOCKS5', 'Shadowsocks']);
 	await expect(
 		row('Shadowsocks').getByRole('checkbox', { name: 'Custom credentials' })
 	).toBeChecked();
@@ -1240,7 +1240,7 @@ test('listen protocols: one checked scheme is a single-protocol port, several sh
 		forward: { port: 5432 }
 	});
 	await page.getByRole('radio', { name: 'Proxy' }).check();
-	expect(await checked()).toEqual(['HTTP', 'SOCKS5']);
+	await expect.poll(checked).toEqual(['HTTP', 'SOCKS5']);
 	await protocols.getByRole('checkbox', { name: 'Shadowsocks' }).check();
 	await expect(row('Shadowsocks').getByLabel('Password')).toHaveValue('ss-secret');
 	await page.keyboard.press('ControlOrMeta+s');
@@ -1258,7 +1258,7 @@ test('listen protocols: one checked scheme is a single-protocol port, several sh
 	// An explicit stored list reopens as is: one scheme with its own credentials.
 	await page.goto('/#/rules/ss-only');
 	await expect(heading(page)).toHaveText('ss-only');
-	expect(await checked()).toEqual(['Shadowsocks']);
+	await expect.poll(checked).toEqual(['Shadowsocks']);
 	await expect(row('Shadowsocks').getByLabel('Password')).toHaveValue('placeholder');
 	await expect(row('Shadowsocks').getByLabel('Cipher')).toHaveValue('chacha20-ietf-poly1305');
 
