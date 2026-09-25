@@ -4,6 +4,7 @@
 	import { tooltip } from '../lib/actions/tooltip.svelte';
 	import { errorMessage } from '../lib/api';
 	import Disclosure from '../lib/components/stats/Disclosure.svelte';
+	import ListControls from '../lib/components/stats/ListControls.svelte';
 	import StatsToolbar from '../lib/components/stats/StatsToolbar.svelte';
 	import TrafficDetail from '../lib/components/stats/TrafficDetail.svelte';
 	import Banner from '../lib/components/ui/Banner.svelte';
@@ -12,15 +13,29 @@
 	import PageHeader from '../lib/components/ui/PageHeader.svelte';
 	import { retainFocus } from '../lib/focus.svelte';
 	import { formatCount, redactURL } from '../lib/format';
-	import { aggregateHosts, type EndpointUse } from '../lib/hosts';
-	import { t } from '../lib/i18n.svelte';
+	import {
+		DEFAULT_HOST_SORT,
+		HOST_SORT_KEYS,
+		aggregateHosts,
+		filterHosts,
+		hostSortLabel,
+		sortHosts,
+		type EndpointUse,
+		type HostSort
+	} from '../lib/hosts';
+	import { i18n, t } from '../lib/i18n.svelte';
 	import { statsRoute } from '../lib/routes';
 	import { stats } from '../lib/stats.svelte';
 
 	onMount(() => stats.subscribe());
 
 	const hosts = $derived(aggregateHosts(stats.data?.rules));
-	retainFocus('[data-host]', () => hosts);
+	let query = $state('');
+	let sort = $state<HostSort>(DEFAULT_HOST_SORT);
+	const filtering = $derived(query.trim() !== '');
+	const filtered = $derived(filterHosts(hosts, query, i18n.language));
+	const shown = $derived(sortHosts(filtered, sort, i18n.language));
+	retainFocus('[data-host]', () => shown);
 	// Host and endpoint peaks are sums over hop URLs, so they are only an upper bound.
 	const peakHint = $derived(t('peakUpperBound'));
 
@@ -49,15 +64,26 @@
 			<Button variant="secondary" onclick={() => void stats.refresh()}>{t('retry')}</Button>
 		</Banner>
 	{/if}
+	<ListControls bind:query bind:sort sortKeys={HOST_SORT_KEYS} labelFor={hostSortLabel}>
+		{#snippet trailing()}
+			{#if filtering}
+				<p class="text-sm text-fg-muted tabular-nums" data-host-count>
+					{t('filteredHosts', { count: filtered.length, total: hosts.length })}
+				</p>
+			{/if}
+		{/snippet}
+	</ListControls>
 	{#if !stats.data}
 		{#if !stats.error}
 			<p class="text-sm text-fg-muted">{t('loading')}</p>
 		{/if}
 	{:else if hosts.length === 0}
 		<p class="text-sm text-fg-muted">{t('noHosts')}</p>
+	{:else if shown.length === 0}
+		<p class="text-sm text-fg-muted">{t('noMatches')}</p>
 	{:else}
 		<div class="space-y-3">
-			{#each hosts as host (host.host)}
+			{#each shown as host (host.host)}
 				<Disclosure
 					prefix="host-details"
 					name={host.host}

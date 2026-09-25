@@ -391,8 +391,9 @@ test('a changed port shows a persistent moved link keeping ?lang= and the hash; 
 	expect(link.getAttribute('href')).toBe('http://127.0.0.1:1099/?lang=en#/settings');
 	expect(target.querySelector('main')?.textContent).not.toContain('Cannot reach JumpWay.');
 
-	// The old listener is gone: polls keep failing, the notice stays and no generic banner replaces it.
-	await vi.advanceTimersByTimeAsync(10_000);
+	// The old listener is gone: polls keep failing (the first one backed off to 20 s), the notice
+	// stays and no generic banner replaces it.
+	await vi.advanceTimersByTimeAsync(20_000);
 	expect(requested('GET /apis/configs/status')).toBeGreaterThanOrEqual(3);
 	expect(alerts()).toEqual(['The web UI has moved to 127.0.0.1:1099']);
 	expect(target.querySelector('[data-state="unknown"]')).not.toBeNull();
@@ -443,9 +444,10 @@ test('a port whose bind fails is saved but never moved: the candidate stays unco
 	const href = () => notice()!.querySelector('a')?.getAttribute('href');
 	expect(href()).toBe('http://127.0.0.1:1099/#/settings');
 
-	// A listener answers here again but reports the web UI stopped: still unconfirmed.
+	// A listener answers here again but reports the web UI stopped: still unconfirmed. The poll
+	// after the refused refresh is backed off to 20 s.
 	down.clear();
-	await vi.advanceTimersByTimeAsync(10_000);
+	await vi.advanceTimersByTimeAsync(20_000);
 	expect(status.data).toMatchObject({ address: '127.0.0.1:1099', running: false });
 	expect(alerts()).toEqual([UNCONFIRMED_AT]);
 	expect(href()).toBe('http://127.0.0.1:1099/#/settings');
@@ -467,7 +469,8 @@ test('a status answer reporting the web UI stopped demotes a moved claim to unco
 
 	down.clear();
 	statusRunning = false;
-	await vi.advanceTimersByTimeAsync(10_000);
+	// The poll after the refused refresh is backed off to 20 s.
+	await vi.advanceTimersByTimeAsync(20_000);
 	expect(alerts()).toEqual([UNCONFIRMED_AT]);
 	expect(notice()!.querySelector('a')?.getAttribute('href')).toBe(
 		'http://127.0.0.1:1099/#/settings'

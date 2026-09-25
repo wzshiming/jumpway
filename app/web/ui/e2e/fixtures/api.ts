@@ -257,21 +257,49 @@ export const snapshotFixture: Snapshot = {
 					]
 				}
 			],
+			// Listed in first-seen order; the UI orders them by last_active, the never-active one last.
 			targets: [
 				{
 					address: 'example.com:443',
 					via: BASTION_URL,
-					stats: statsOf({ up: 3_000_000, down: 60_000_000, active: 1, total: 80 })
+					stats: statsOf({
+						up: 3_000_000,
+						down: 60_000_000,
+						active: 1,
+						total: 80,
+						dials: 80,
+						dial_failures: 2,
+						latency_ms: 40.1,
+						avg_latency_ms: 39.0,
+						last_active: '2026-09-19T08:59:50Z'
+					})
 				},
 				{
 					address: 'cdn.example.net:443',
 					via: BASTION_2_URL,
-					stats: statsOf({ up: 2_000_000, down: 40_000_000, active: 1, total: 30 })
+					stats: statsOf({
+						up: 2_000_000,
+						down: 40_000_000,
+						active: 1,
+						total: 30,
+						dials: 30,
+						latency_ms: 22.0,
+						avg_latency_ms: 24.5,
+						last_active: '2026-09-19T08:59:58Z'
+					})
 				},
 				{
 					address: '10.1.2.3:8080',
 					via: '',
-					stats: statsOf({ up: 242_880, down: 4_857_600, active: 1, total: 10 })
+					stats: statsOf({
+						up: 242_880,
+						down: 4_857_600,
+						active: 1,
+						total: 10,
+						dials: 10,
+						latency_ms: 1.2,
+						avg_latency_ms: 1.5
+					})
 				}
 			],
 			connections: [
@@ -334,7 +362,8 @@ export const snapshotFixture: Snapshot = {
 					stats: statsOf({ active: 1, total: 1 })
 				}
 			],
-			targets_evicted: 0
+			// Three older targets fell off the per-rule list; their bytes stay in the rule totals.
+			targets_evicted: 3
 		},
 		{
 			name: 'mirror',

@@ -5,12 +5,13 @@ import {
 	rulesFixture,
 	snapshotFixture,
 	statusFixture,
-	virtualRulesFixture
+	virtualRulesFixture,
+	webUIFixture
 } from '../../e2e/fixtures/api';
 import App from '../App.svelte';
 import { SAVED_PREFIX } from '../lib/api';
 import { toasts } from '../lib/toast.svelte';
-import type { Protocol, Rule } from '../lib/types';
+import type { Address, Protocol, Rule } from '../lib/types';
 import { fieldsOf, layoutFor } from '../lib/urlBuilder';
 
 // The whole app mounted in jsdom against a method-aware in-memory /apis stub.
@@ -32,6 +33,8 @@ interface Call {
 let target: HTMLElement;
 let app: ReturnType<typeof mount> | null = null;
 let rules: Rule[];
+// The configured web UI address; the status fixture reports the bound one.
+let webUI: Address;
 let calls: Call[];
 // `${method} ${url}` → 400 text. A "saved, but " text still applies the mutation first.
 let fail: Map<string, string>;
@@ -45,6 +48,7 @@ const text = (status: number, body: string) => new Response(body, { status });
 
 function stubApi() {
 	rules = structuredClone(rulesFixture);
+	webUI = structuredClone(webUIFixture);
 	calls = [];
 	fail = new Map();
 	vi.stubGlobal(
@@ -57,6 +61,7 @@ function stubApi() {
 			if (injected !== undefined && !injected.startsWith(SAVED_PREFIX)) return text(400, injected);
 			const answer = () => (injected === undefined ? json(null) : text(400, injected));
 			if (url === '/apis/configs/status') return json(statusFixture);
+			if (url === '/apis/configs/web-ui') return json(webUI);
 			if (url === '/apis/stats') return json(snapshotFixture);
 			const rule = body as Rule;
 			if (url === '/apis/configs/rules') {
@@ -268,7 +273,7 @@ test('editing a loaded rule marks it dirty; Ctrl+S sends the serialized rule and
 	expect(requested('GET /apis/configs/status')).toBe(2);
 });
 
-test('the editor footer is the shared save area: an iconed Save & Apply submit, Cancel and Delete as plain buttons, one dirty badge', async () => {
+test('the editor footer is the shared save area: an iconed Save & Apply submit, Cancel, Duplicate and Delete as plain buttons, one dirty badge', async () => {
 	await render('#/rules/office');
 	const bar = target.querySelector<HTMLElement>('main form [data-form-actions]');
 	if (!bar) throw new Error('missing form actions');
@@ -283,6 +288,7 @@ test('the editor footer is the shared save area: an iconed Save & Apply submit, 
 		)
 	).toEqual([
 		['Cancel', 'button', 'btn btn-secondary'],
+		['Duplicate rule', 'button', 'btn btn-secondary'],
 		['Delete', 'button', 'btn btn-danger']
 	]);
 	expect(bar.querySelector('[role="status"]')).toBeNull();
@@ -335,8 +341,11 @@ test('Cancel on a dirty draft asks: declining keeps every input, discarding retu
 
 test('after a rejected save the form is still dirty, so Cancel asks before leaving and sends nothing more', async () => {
 	await render('#/rules/mirror');
-	fail.set('PUT /apis/configs/rules/mirror', 'rules[1].listen.port 18097 is already in use');
-	type('listen-port', '18097');
+	fail.set(
+		'PUT /apis/configs/rules/mirror',
+		'reload failed: listen tcp 127.0.0.1:18197: bind: address already in use'
+	);
+	type('listen-port', '18197');
 	await save();
 	expect(target.querySelector('main [role="alert"]')?.textContent).toContain('already in use');
 	click(button('Cancel', form()!));
@@ -429,16 +438,16 @@ test('a rename PUTs to the old name and moves to the new route; a 400 keeps the 
 	await render('#/rules/mirror');
 	fail.set(
 		'PUT /apis/configs/rules/mirror',
-		'rules[1].listen address 127.0.0.1:18097 is already used by rule "office"'
+		'reload failed: listen tcp 127.0.0.1:18197: bind: address already in use'
 	);
 	type('rule-name', 'mirror-2');
-	type('listen-port', '18097');
+	type('listen-port', '18197');
 	await save();
 	expect(location.hash).toBe('#/rules/mirror');
 	expect(badge()).toBe('Unsaved changes');
 	const banner = target.querySelector('main [role="alert"]')!;
-	expect(banner.textContent).toContain('already used by rule "office"');
-	expect(inputs()).toMatchObject({ 'rule-name': 'mirror-2', 'listen-port': '18097' });
+	expect(banner.textContent).toContain('address already in use');
+	expect(inputs()).toMatchObject({ 'rule-name': 'mirror-2', 'listen-port': '18197' });
 
 	fail.clear();
 	type('listen-port', '18098');
@@ -1239,4 +1248,233 @@ test('a legacy flat cipher reopens as a checked Shadowsocks row, an alias as its
 		...LEGACY,
 		{ type: 'ss', cipher: 'aes-128-gcm' }
 	]);
+});
+
+// Duplicating: #/new?rule=<name> opens a dirty copy; the stored rules pre-check names and addresses.
+const errorText = (id: string) => target.querySelector(`#${id}-error`)?.textContent ?? null;
+
+test('#/new?rule= copies the source under a free "-copy" name, dirty from the start, and POSTs it once its port is free', async () => {
+	rules.push({ name: 'office-copy', listen: { host: '127.0.0.1', port: 18150 }, forward: {} });
+	await render('#/new?rule=office');
+	expect(target.querySelector('h1')?.textContent).toBe('New rule');
+	expect(requested('GET /apis/configs/rules/office')).toBe(1);
+	expect(inputs()).toMatchObject({
+		'rule-name': 'office-copy-2',
+		'listen-host': '127.0.0.1',
+		'listen-port': '18097'
+	});
+	expect(chain().join(' ')).toContain('socks5://hop-a.example:1080');
+	expect(badge()).toBe('Unsaved changes');
+	expect(button('Delete')).toBeUndefined();
+	expect(button('Duplicate rule')).toBeUndefined();
+
+	// The source still holds the port: no request leaves until it changes.
+	await save();
+	expect(writes()).toEqual([]);
+	expect(errorText('listen-port')).toBe('Already used by rule "office".');
+	expect(document.activeElement).toBe(field('listen-port'));
+	type('listen-port', '18197');
+	expect(errorText('listen-port')).toBeNull();
+	await save();
+	expect(writes()).toEqual([
+		{
+			method: 'POST',
+			url: '/apis/configs/rules',
+			body: {
+				name: 'office-copy-2',
+				listen: { host: '127.0.0.1', port: 18197, protocols: LEGACY },
+				forward: {
+					way: [
+						{ lb: ['socks5://demo:placeholder@hop-a.example:1080'] },
+						{ lb: ['ssh://ops@bastion.example:22', 'ssh://ops@bastion-2.example:22'] }
+					]
+				}
+			}
+		}
+	]);
+	expect(location.hash).toBe('#/rules/office-copy-2');
+	expect(target.querySelector('h1')?.textContent).toBe('office-copy-2');
+	expect(badge()).toBeNull();
+	expect(rules.find((rule) => rule.name === 'office')?.listen.port).toBe(18097);
+});
+
+test('a copy whose source is gone shows the not-found state with a way back; the name falls back to "-copy" when the list fails', async () => {
+	await render('#/new?rule=ghost');
+	expect(target.querySelector('h1')?.textContent).toBe('New rule');
+	const banner = target.querySelector('main [role="alert"]')!;
+	expect(banner.textContent).toContain('Rule "ghost" was not found.');
+	expect(banner.querySelector('a[href="#/"]')?.textContent?.trim()).toBe('Overview');
+	expect(form()).toBeNull();
+	expect(badge()).toBeNull();
+
+	unmount(app!);
+	app = null;
+	target.remove();
+	fail.set('GET /apis/configs/rules', 'boom');
+	await render('#/new?rule=lab');
+	expect(inputs()).toMatchObject({ 'rule-name': 'lab-copy', 'listen-username': 'demo' });
+	expect(badge()).toBe('Unsaved changes');
+});
+
+test('the editor duplicates through the router: a clean rule opens its copy at once, a dirty one asks first', async () => {
+	await render('#/rules/mirror');
+	click(button('Duplicate rule'));
+	await settle();
+	expect(location.hash).toBe('#/new?rule=mirror');
+	expect(target.querySelector('h1')?.textContent).toBe('New rule');
+	expect(inputs()).toMatchObject({ 'rule-name': 'mirror-copy', 'target-port': '5432' });
+	expect(badge()).toBe('Unsaved changes');
+
+	// Leaving the copy is guarded like any dirty draft.
+	click(button('Cancel', form()!));
+	await settle();
+	expect(confirmDialog()?.textContent).toContain('Discard unsaved changes?');
+	click(confirmDialog()!.querySelectorAll('button')[1]);
+	await settle();
+	expect(location.hash).toBe('#/');
+
+	click(target.querySelector('main article a[href="#/rules/lab"]'));
+	await settle();
+	type('rule-name', 'lab-2');
+	click(button('Duplicate rule'));
+	await settle();
+	expect(confirmDialog()?.textContent).toContain('Discard unsaved changes?');
+	click(confirmDialog()!.querySelectorAll('button')[0]);
+	await settle();
+	expect(location.hash).toBe('#/rules/lab');
+	expect(inputs()).toMatchObject({ 'rule-name': 'lab-2' });
+	expect(writes()).toEqual([]);
+});
+
+test('a name that repeats another rule or contains "/" is refused inline before any request', async () => {
+	await render('#/rules/mirror');
+	type('rule-name', ' office ');
+	await save();
+	expect(writes()).toEqual([]);
+	expect(errorText('rule-name')).toBe('A rule with this name already exists.');
+	expect(field('rule-name').getAttribute('aria-invalid')).toBe('true');
+	expect(document.activeElement).toBe(field('rule-name'));
+	expect(badge()).toBe('Unsaved changes');
+	type('rule-name', 'office/2');
+	expect(errorText('rule-name')).toBeNull();
+	await save();
+	expect(writes()).toEqual([]);
+	expect(errorText('rule-name')).toBe('Names must not contain "/".');
+	// Its own saved name is not a clash, so the rename below goes through.
+	type('rule-name', 'mirror');
+	type('listen-port', '18097');
+	await save();
+	expect(writes()).toEqual([]);
+	expect(errorText('listen-port')).toBe('Already used by rule "office".');
+	expect(document.activeElement).toBe(field('listen-port'));
+	type('listen-port', '1088');
+	await save();
+	expect(writes()).toEqual([]);
+	expect(errorText('listen-port')).toBe('Already used by the web UI.');
+	type('listen-port', '18098');
+	type('rule-name', 'mirror-2');
+	await save();
+	expect(writes().map((call) => `${call.method} ${call.url}`)).toEqual([
+		'PUT /apis/configs/rules/mirror'
+	]);
+	expect(location.hash).toBe('#/rules/mirror-2');
+});
+
+test('the web UI clash reads the configured address, not the bound one; when it cannot be read the server decides', async () => {
+	// Configured on the wildcard host, bound (per status) on 127.0.0.1:1088: the server accepts this.
+	webUI = { host: '0.0.0.0', port: 1088 };
+	await render('#/rules/mirror');
+	expect(requested('GET /apis/configs/web-ui')).toBe(1);
+	type('listen-port', '1088');
+	await save();
+	expect(errorText('listen-port')).toBeNull();
+	expect(writes().map((call) => `${call.method} ${call.url}`)).toEqual([
+		'PUT /apis/configs/rules/mirror'
+	]);
+
+	unmount(app!);
+	app = null;
+	target.remove();
+	toasts.clear();
+	stubApi();
+	fail.set('GET /apis/configs/web-ui', 'boom');
+	await render('#/rules/office');
+	expect(toasts.list).toEqual([]);
+	type('listen-port', '1088');
+	await save();
+	expect(errorText('listen-port')).toBeNull();
+	expect(writes().map((call) => `${call.method} ${call.url}`)).toEqual([
+		'PUT /apis/configs/rules/office'
+	]);
+});
+
+test('a hop URL without a scheme or left blank is marked inline and focused; fixing it clears the mark', async () => {
+	await render('#/rules/office');
+	const urls = () =>
+		Array.from(target.querySelectorAll<HTMLInputElement>('input[id^="exit-url-"]'));
+	type(urls()[0].id, '127.0.0.1:1080');
+	click(button('Add hop', target.querySelector('#exit-hint')!.parentElement!));
+	await settle();
+	expect(urls()).toHaveLength(4);
+	await save();
+	expect(writes()).toEqual([]);
+	expect(urls()[0].getAttribute('aria-invalid')).toBe('true');
+	expect(urls()[0].getAttribute('aria-describedby')).toBe(urls()[0].id + '-error');
+	expect(errorText(urls()[0].id)).toBe('Include the scheme (e.g. socks5://host:1080).');
+	expect(document.activeElement).toBe(urls()[0]);
+	expect(urls()[1].hasAttribute('aria-invalid')).toBe(false);
+	expect(urls()[3].getAttribute('aria-invalid')).toBe('true');
+	expect(errorText(urls()[3].id)).toBe('Enter a proxy URL.');
+	type(urls()[0].id, 'socks5://127.0.0.1:1080');
+	expect(urls()[0].hasAttribute('aria-invalid')).toBe(false);
+	expect(errorText(urls()[0].id)).toBeNull();
+	expect(errorText(urls()[3].id)).toBe('Enter a proxy URL.');
+	type(urls()[3].id, 'ssh://ops@entry.example:22');
+	expect(errorText(urls()[3].id)).toBeNull();
+	await save();
+	expect((writes()[0].body as Rule).forward.way).toEqual([
+		{ lb: ['socks5://127.0.0.1:1080'] },
+		{ lb: ['ssh://ops@bastion.example:22', 'ssh://ops@bastion-2.example:22'] },
+		{ lb: ['ssh://ops@entry.example:22'] }
+	]);
+});
+
+test('credentials the server would refuse are marked on the field to fix: a ":" in a username, a password no username covers', async () => {
+	await render('#/rules/lab');
+	type('listen-username', 'us:er');
+	toggle('protocol-http-custom', true);
+	type('protocol-http-password', 'web-pass');
+	await save();
+	expect(writes()).toEqual([]);
+	expect(errorText('listen-username')).toBe('Usernames must not contain ":".');
+	expect(document.activeElement).toBe(field('listen-username'));
+	// The HTTP row inherits the shared username, so its own password is covered.
+	expect(errorText('protocol-http-password')).toBeNull();
+	type('listen-username', '');
+	expect(errorText('listen-username')).toBeNull();
+	await save();
+	expect(writes()).toEqual([]);
+	expect(errorText('protocol-http-password')).toBe('Set a username for this password.');
+	expect(errorText('listen-password')).toBe('Set a username for this password.');
+	expect(document.activeElement).toBe(field('listen-password'));
+	// Errors stay on the fields they were found on until the next save reads the whole form.
+	type('protocol-http-username', 'web');
+	expect(errorText('protocol-http-password')).toBe('Set a username for this password.');
+	// Shadowsocks reading the shared password is what lets it stand without a username.
+	toggle('protocol-ss', true);
+	await save();
+	expect(errorText('protocol-http-password')).toBeNull();
+	expect(errorText('listen-password')).toBeNull();
+	expect((writes()[0].body as Rule).listen).toEqual({
+		host: '127.0.0.1',
+		port: 18100,
+		password: 'placeholder',
+		protocols: [
+			{ type: 'http', username: 'web', password: 'web-pass' },
+			{ type: 'socks5' },
+			{ type: 'socks4' },
+			{ type: 'ssh' },
+			{ type: 'ss', cipher: 'aes-256-gcm' }
+		]
+	});
 });

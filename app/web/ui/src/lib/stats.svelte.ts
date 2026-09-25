@@ -4,10 +4,12 @@ import { createPoller } from './polling.svelte';
 import type { Snapshot } from './types';
 
 export const STATS_INTERVAL_MS = 1_000;
+export const STATS_MAX_INTERVAL_MS = 16_000;
 
 export const stats = createPoller<Snapshot>({
 	load: (signal) => statsApi.get(signal),
-	intervalMs: STATS_INTERVAL_MS
+	intervalMs: STATS_INTERVAL_MS,
+	maxIntervalMs: STATS_MAX_INTERVAL_MS
 });
 
 export async function resetStats(): Promise<void> {

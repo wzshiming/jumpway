@@ -72,13 +72,21 @@
 			</dd>
 		</div>
 		<div class="min-w-0" data-failures>
-			<dt class="mb-0.5 flex items-center gap-1 font-sans text-[11px] text-fg-subtle">
+			<dt class="mb-0.5 flex flex-wrap items-center gap-x-1 font-sans text-[11px] text-fg-subtle">
 				{t('dialFailures')}
+				<span class="text-fg-subtle/80">{t('dialsTotals')}</span>
 				{#if !compact}
 					<HelpTip concept={t('dialFailures')} text={t('help.failures')} />
 				{/if}
 			</dt>
-			<dd class="whitespace-nowrap">{stats ? formatCount(stats.dial_failures) : DASH}</dd>
+			<dd>
+				{#if !stats}
+					{DASH}
+				{:else}
+					<span class="whitespace-nowrap">{formatCount(stats.dial_failures)}</span> /
+					<span class="whitespace-nowrap">{formatCount(stats.dials)}</span>
+				{/if}
+			</dd>
 		</div>
 	</dl>
 </div>

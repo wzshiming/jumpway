@@ -8,12 +8,14 @@
 	import IconX from '~icons/lucide/x';
 	import { t, type MessageKey } from '../../i18n.svelte';
 	import { hopTitle, type HopRoles } from '../../rule';
-	import { newHop, newUrl, type HopDraft, type UrlDraft } from '../../ruleEditor';
+	import { newHop, newUrl, type DraftErrors, type HopDraft, type UrlDraft } from '../../ruleEditor';
 	import Button from '../ui/Button.svelte';
 	import IconButton from '../ui/IconButton.svelte';
 
 	interface Props {
 		hops: HopDraft[];
+		// Per-URL errors are read from `urls`, keyed by UrlDraft.id, and cleared as the row is edited.
+		errors: DraftErrors;
 		idPrefix: string;
 		roles: HopRoles;
 		hint: MessageKey;
@@ -21,12 +23,16 @@
 		build: (current: string) => Promise<string | null>;
 	}
 
-	let { hops = $bindable(), idPrefix, roles, hint, build }: Props = $props();
+	let { hops = $bindable(), errors = $bindable(), idPrefix, roles, hint, build }: Props = $props();
 
 	const hintId = $derived(idPrefix + '-hint');
 	const addHopId = $derived(idPrefix + '-add-hop');
 	const hopId = (hop: HopDraft) => `${idPrefix}-hop-${hop.id}`;
 	const urlId = (url: UrlDraft) => `${idPrefix}-url-${url.id}`;
+	const errorOf = (url: UrlDraft): MessageKey | undefined => errors.urls?.[url.id];
+	const clearError = (url: UrlDraft) => {
+		if (errors.urls) delete errors.urls[url.id];
+	};
 
 	async function focus(id: string) {
 		await tick();
@@ -68,6 +74,7 @@
 		const result = await build(url.value);
 		if (result === null) return;
 		url.value = result;
+		clearError(url);
 		void focus(urlId(url));
 	}
 </script>
@@ -110,27 +117,36 @@
 					</div>
 					<div class="mt-2 space-y-2">
 						{#each hop.urls as url, position (url.id)}
-							<div class="flex items-center gap-1.5">
-								<label for={urlId(url)} class="sr-only">
-									{t('proxyURL')}
-									{t('urlNumber', { number: position + 1 })}
-								</label>
-								<input
-									id={urlId(url)}
-									class="input font-mono text-[13px]"
-									type="text"
-									bind:value={url.value}
-									placeholder="socks5://user:pass@host:1080"
-									spellcheck="false"
-									autocomplete="off"
-									autocapitalize="none"
-								/>
-								<IconButton label={t('build')} onclick={() => void openBuilder(url)}>
-									<IconWand class="size-4" aria-hidden="true" />
-								</IconButton>
-								<IconButton label={t('remove')} onclick={() => removeUrl(hop, position)}>
-									<IconX class="size-4" aria-hidden="true" />
-								</IconButton>
+							{@const error = errorOf(url)}
+							<div>
+								<div class="flex items-center gap-1.5">
+									<label for={urlId(url)} class="sr-only">
+										{t('proxyURL')}
+										{t('urlNumber', { number: position + 1 })}
+									</label>
+									<input
+										id={urlId(url)}
+										class="input font-mono text-[13px]"
+										type="text"
+										bind:value={url.value}
+										oninput={() => clearError(url)}
+										placeholder="socks5://user:pass@host:1080"
+										aria-invalid={error ? true : undefined}
+										aria-describedby={error ? `${urlId(url)}-error` : undefined}
+										spellcheck="false"
+										autocomplete="off"
+										autocapitalize="none"
+									/>
+									<IconButton label={t('build')} onclick={() => void openBuilder(url)}>
+										<IconWand class="size-4" aria-hidden="true" />
+									</IconButton>
+									<IconButton label={t('remove')} onclick={() => removeUrl(hop, position)}>
+										<IconX class="size-4" aria-hidden="true" />
+									</IconButton>
+								</div>
+								{#if error}
+									<p id="{urlId(url)}-error" class="mt-1 text-xs text-danger">{t(error)}</p>
+								{/if}
 							</div>
 						{/each}
 						<Button id="{hopId(hop)}-add-url" variant="ghost" onclick={() => addUrl(hop)}>

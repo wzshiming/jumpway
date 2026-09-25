@@ -1,15 +1,11 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
-	import IconSortAsc from '~icons/lucide/arrow-up-narrow-wide';
-	import IconSortDesc from '~icons/lucide/arrow-down-wide-narrow';
-	import IconSearch from '~icons/lucide/search';
-	import IconX from '~icons/lucide/x';
 	import { errorMessage } from '../lib/api';
+	import ListControls from '../lib/components/stats/ListControls.svelte';
 	import StatsToolbar from '../lib/components/stats/StatsToolbar.svelte';
 	import Banner from '../lib/components/ui/Banner.svelte';
 	import Button from '../lib/components/ui/Button.svelte';
-	import IconButton from '../lib/components/ui/IconButton.svelte';
 	import PageHeader from '../lib/components/ui/PageHeader.svelte';
 	import {
 		CONNECTION_SORT_KEYS,
@@ -19,8 +15,7 @@
 		currentConnections,
 		filterConnections,
 		sortConnections,
-		type ConnectionSort,
-		type ConnectionSortKey
+		type ConnectionSort
 	} from '../lib/connections';
 	import { retainFocus } from '../lib/focus.svelte';
 	import { t } from '../lib/i18n.svelte';
@@ -69,13 +64,6 @@
 		return names;
 	});
 
-	function flipDirection() {
-		sort = {
-			key: sort.key,
-			direction: sort.direction === 'ascending' ? 'descending' : 'ascending'
-		};
-	}
-
 	function toggleRow(id: number) {
 		if (expanded.has(id)) expanded.delete(id);
 		else expanded.add(id);
@@ -105,69 +93,29 @@
 			<Button variant="secondary" onclick={() => void stats.refresh()}>{t('retry')}</Button>
 		</Banner>
 	{/if}
-	<div class="mb-3 flex flex-wrap items-center gap-2">
-		<select
-			id="connections-rule"
-			class="input w-auto max-w-[14rem]"
-			aria-label={t('ruleLabel')}
-			bind:value={rule}
-			onchange={(event) => selectRule(event.currentTarget.value)}
-		>
-			<option value="">{t('allRules')}</option>
-			{#each ruleNames as name (name)}
-				<option value={name}>{name}</option>
-			{/each}
-		</select>
-		<div class="relative w-64 max-w-full">
-			<IconSearch
-				class="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-fg-subtle"
-				aria-hidden="true"
-			/>
-			<input
-				type="search"
-				class="input pr-8 pl-8 [&::-webkit-search-cancel-button]:hidden"
-				placeholder={t('search')}
-				aria-label={t('search')}
-				autocomplete="off"
-				bind:value={query}
-			/>
-			{#if query}
-				<span class="absolute top-0 right-0">
-					<IconButton label={t('clearSearch')} onclick={() => (query = '')}>
-						<IconX class="size-4" aria-hidden="true" />
-					</IconButton>
-				</span>
-			{/if}
-		</div>
-		<div class="flex items-center gap-1">
+	<ListControls bind:query bind:sort sortKeys={CONNECTION_SORT_KEYS} labelFor={connectionSortLabel}>
+		{#snippet leading()}
 			<select
-				class="input w-auto max-w-[11rem]"
-				aria-label={t('sortBy')}
-				value={sort.key}
-				onchange={(event) =>
-					(sort = {
-						key: event.currentTarget.value as ConnectionSortKey,
-						direction: sort.direction
-					})}
+				id="connections-rule"
+				class="input w-auto max-w-[14rem]"
+				aria-label={t('ruleLabel')}
+				bind:value={rule}
+				onchange={(event) => selectRule(event.currentTarget.value)}
 			>
-				{#each CONNECTION_SORT_KEYS as key (key)}
-					<option value={key}>{connectionSortLabel(key)}</option>
+				<option value="">{t('allRules')}</option>
+				{#each ruleNames as name (name)}
+					<option value={name}>{name}</option>
 				{/each}
 			</select>
-			<IconButton label={t(sort.direction)} onclick={flipDirection}>
-				{#if sort.direction === 'ascending'}
-					<IconSortAsc class="size-4" aria-hidden="true" />
-				{:else}
-					<IconSortDesc class="size-4" aria-hidden="true" />
-				{/if}
-			</IconButton>
-		</div>
-		<p class="text-sm text-fg-muted tabular-nums" data-connection-count>
-			{filtering
-				? t('filteredConnections', { count: filtered.length, total: all.length })
-				: t('connectionCount', { count: all.length })}
-		</p>
-	</div>
+		{/snippet}
+		{#snippet trailing()}
+			<p class="text-sm text-fg-muted tabular-nums" data-connection-count>
+				{filtering
+					? t('filteredConnections', { count: filtered.length, total: all.length })
+					: t('connectionCount', { count: all.length })}
+			</p>
+		{/snippet}
+	</ListControls>
 	{#if !stats.data}
 		{#if !stats.error}
 			<p class="text-sm text-fg-muted">{t('loading')}</p>

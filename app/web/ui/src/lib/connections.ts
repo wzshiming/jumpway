@@ -1,6 +1,7 @@
 import { displayClient, displayURL, text } from './format';
 import { i18n, t } from './i18n.svelte';
-import { DIRECTIONS, TRAFFIC_METRICS, TRAFFIC_METRIC_LABELS } from './traffic';
+import { fuzzyMatch, type ListSort, type SortDirection } from './search';
+import { TRAFFIC_SORT_KEYS, trafficSortLabel } from './traffic';
 import {
 	list,
 	type Connection,
@@ -13,12 +14,9 @@ import {
 export type RuleConnection = Connection & { rule: string };
 
 export type ConnectionSortKey = 'rule' | 'client' | 'target' | 'started' | keyof Stats;
-export type SortDirection = 'ascending' | 'descending';
+export type { SortDirection };
 
-export interface ConnectionSort {
-	key: ConnectionSortKey;
-	direction: SortDirection;
-}
+export type ConnectionSort = ListSort<ConnectionSortKey>;
 
 export const DEFAULT_CONNECTION_SORT: ConnectionSort = { key: 'started', direction: 'descending' };
 
@@ -34,29 +32,19 @@ export function clientLabel(connection: Pick<Connection, 'client' | 'process'>):
 	return connection.process?.name || displayClient(connection.client);
 }
 
-// Subsequence match: "1809" hits "127.0.0.1:18094".
 export function filterConnections(
 	connections: readonly RuleConnection[],
 	rule: string,
 	query: string
 ): RuleConnection[] {
 	const language = i18n.language;
-	const needle = text(query).trim().toLocaleLowerCase(language);
-	const matches = (value: unknown) => {
-		let position = 0;
-		const haystack = text(value).toLocaleLowerCase(language);
-		for (const character of needle) {
-			position = haystack.indexOf(character, position);
-			if (position < 0) return false;
-			position++;
-		}
-		return true;
-	};
 	return connections.filter(
 		(connection) =>
 			(!rule || connection.rule === rule) &&
-			[connection.target, connection.client, connection.rule, connection.process?.name].some(
-				matches
+			fuzzyMatch(
+				query,
+				[connection.target, connection.client, connection.rule, connection.process?.name],
+				language
 			)
 	);
 }
@@ -86,13 +74,13 @@ export function sortConnections(
 	});
 }
 
-// The sort options in menu order: download before upload within each metric, as the pairs read.
+// The sort options in menu order: the identity keys, then the traffic counters.
 export const CONNECTION_SORT_KEYS: readonly ConnectionSortKey[] = [
 	'started',
 	'target',
 	'client',
 	'rule',
-	...TRAFFIC_METRICS.flatMap((metric) => [DIRECTIONS[1][metric], DIRECTIONS[0][metric]])
+	...TRAFFIC_SORT_KEYS
 ];
 
 export function connectionSortLabel(key: ConnectionSortKey): string {
@@ -106,14 +94,7 @@ export function connectionSortLabel(key: ConnectionSortKey): string {
 		case 'rule':
 			return t('ruleLabel');
 	}
-	for (const direction of DIRECTIONS) {
-		for (const metric of TRAFFIC_METRICS) {
-			if (direction[metric] === key) {
-				return t(direction.label) + ' \u00b7 ' + t(TRAFFIC_METRIC_LABELS[metric]);
-			}
-		}
-	}
-	return key;
+	return trafficSortLabel(key);
 }
 
 export function formatConnectionPath(connection: {

@@ -202,7 +202,7 @@ test('a collapsed rule shows all eight traffic values with connections, latency 
 		'#/connections?rule=office'
 	);
 	expect(compact(office.querySelector('[data-latency] dd'))).toBe('41.2 ms / 38.7 ms');
-	expect(compact(office.querySelector('[data-failures] dd'))).toBe('2');
+	expect(compact(office.querySelector('[data-failures] dd'))).toBe('2 / 118');
 	// The band is not part of the toggle.
 	expect(band.closest('button')).toBeNull();
 
@@ -210,12 +210,13 @@ test('a collapsed rule shows all eight traffic values with connections, latency 
 	const details = detailsOf(toggle);
 	expect(details.querySelector('ol[aria-label="Chain"]')).not.toBeNull();
 	expect(ownMetricsOf(office)).toEqual(OFFICE_METRICS);
-	// Every value and count inside the expansion belongs to a hop or one of its URLs.
+	// Every value and count inside the expansion belongs to a hop, one of its URLs or a target.
 	const stray = Array.from(
 		details.querySelectorAll('[data-metric], [data-connections], [data-latency], [data-failures]')
-	).filter((element) => !element.closest('[data-hop-stats], [data-url]'));
+	).filter((element) => !element.closest('[data-hop-stats], [data-url], [data-target]'));
 	expect(stray).toEqual([]);
 	expect(details.querySelectorAll('[data-hop-stats] [data-metric]')).toHaveLength(16);
+	expect(details.querySelectorAll('[data-target] [data-metric]')).toHaveLength(24);
 });
 
 test('a single-endpoint host keeps its statistics only in the collapsed summary', async () => {
@@ -243,7 +244,7 @@ test('a single-endpoint host keeps its statistics only in the collapsed summary'
 	expect(compact(bastion.querySelector('[data-latency] dd'))).toBe(
 		'18.4 ms / ' + hostsTotals.bastionAvgLatency
 	);
-	expect(compact(bastion.querySelector('[data-failures] dd'))).toBe('0');
+	expect(compact(bastion.querySelector('[data-failures] dd'))).toBe('0 / 10');
 
 	const toggle = button('Expand: bastion.example', bastion)!;
 	click(toggle);
@@ -343,9 +344,9 @@ test('every statistics concept carries a circled question mark: its definition s
 	arrows[2].dispatchEvent(new Event('pointerenter'));
 	flushSync();
 	expect(tooltipText()).toBe('Download \u2014 from the target back to the client.');
-	// Nested bands in the expansion repeat no help.
+	// Nested bands in the expansion repeat no help; only the dropped-targets hint has one.
 	click(toggle);
-	expect(helpNames(detailsOf(toggle))).toEqual([]);
+	expect(helpNames(detailsOf(toggle))).toEqual(['About Targets']);
 
 	// Hosts: the summed peak names its bound; the endpoint count is explained too.
 	click(target.querySelector('nav a[href="#/hosts"]')!);
@@ -400,13 +401,17 @@ test('the overview KPIs and the rule card facts are explained too, and the cards
 	);
 	// The KPI rates name their direction for assistive technology.
 	expect(compact(target.querySelector('[data-kpi="rate"]'))).toMatch(/^Upload \S+ \S+ Download /);
-	// Edit, Rule Traffic and Delete are icon controls to the same routes and action as before.
+	// Edit, Duplicate, Rule Traffic and Delete are icon controls to the same routes and action as before.
 	const office = target.querySelector('main article[aria-labelledby]')!;
 	const edit = office.querySelector('a[aria-label="Edit"]')!;
 	expect(edit.getAttribute('href')).toBe('#/rules/office');
 	expect(edit.classList.contains('icon-btn')).toBe(true);
 	expect(edit.textContent?.trim()).toBe('');
 	expect(edit.querySelector('svg')).not.toBeNull();
+	const duplicate = office.querySelector('a[aria-label="Duplicate rule"]')!;
+	expect(duplicate.getAttribute('href')).toBe('#/new?rule=office');
+	expect(duplicate.classList.contains('icon-btn')).toBe(true);
+	expect(duplicate.querySelector('svg')).not.toBeNull();
 	const traffic = office.querySelector('a[aria-label="Rule Traffic"]')!;
 	expect(traffic.getAttribute('href')).toBe('#/stats?rule=office');
 	expect(traffic.querySelector('svg')).not.toBeNull();
@@ -420,7 +425,7 @@ test('the overview KPIs and the rule card facts are explained too, and the cards
 		Array.from(office.querySelectorAll('footer a, footer button')).map((control) =>
 			control.textContent?.trim()
 		)
-	).toEqual(['', '', '']);
+	).toEqual(['', '', '', '']);
 	// The footer rates use the shared arrows, named upload and download (not the hop moves).
 	expect(compact(office.querySelector('footer'))).toMatch(/^Upload \S+ \S+ Download /);
 
@@ -582,7 +587,7 @@ test('#/stats lists every configured rule with status, traffic, connections, lat
 		...FOUR_LABELS,
 		'Connections Active / total',
 		'Latency Last / average',
-		'Failures'
+		'Failures Failed / attempted'
 	]);
 	expect(traffic(band)).toEqual([
 		'12.0 KB/s',
@@ -598,7 +603,7 @@ test('#/stats lists every configured rule with status, traffic, connections, lat
 	expect(compact(connections)).toBe('3 / 120');
 	expect(connections.querySelector('a')?.getAttribute('href')).toBe('#/connections?rule=office');
 	expect(compact(block.querySelector('[data-latency] dd'))).toBe('41.2 ms / 38.7 ms');
-	expect(compact(block.querySelector('[data-failures] dd'))).toBe('2');
+	expect(compact(block.querySelector('[data-failures] dd'))).toBe('2 / 118');
 	// Expanding adds the chain below the band and repeats none of it.
 	const toggle = button('Expand: office', office)!;
 	click(toggle);
@@ -621,7 +626,7 @@ test('#/stats lists every configured rule with status, traffic, connections, lat
 	expect(tunnel.querySelector('[data-state]')?.getAttribute('data-state')).toBe('retrying');
 	expect(compact(tunnel.querySelector('[data-mode]'))).toBe('Port forward \u00b7 remote');
 	expect(compact(tunnel.querySelector('[data-latency] dd'))).toBe('\u2014 / \u2014');
-	expect(compact(tunnel.querySelector('[data-failures] dd'))).toBe('3');
+	expect(compact(tunnel.querySelector('[data-failures] dd'))).toBe('3 / 3');
 	expect(compact(tunnel.querySelector('[data-connections] dd'))).toBe('0 / 0');
 	expect(tunnel.querySelector('[data-connections] a')).toBeNull();
 
@@ -630,6 +635,7 @@ test('#/stats lists every configured rule with status, traffic, connections, lat
 	expect(lab.querySelector('[data-state]')?.getAttribute('data-state')).toBe('disabled');
 	expect(traffic(bandOf(lab))).toEqual(Array(8).fill('\u2014'));
 	expect(compact(lab.querySelector('[data-connections] dd'))).toBe('\u2014');
+	expect(compact(lab.querySelector('[data-failures] dd'))).toBe('\u2014');
 
 	// Toolbar: since, reset and Prometheus.
 	expect(target.querySelector('main')?.textContent).toContain('Since ');
@@ -708,16 +714,23 @@ test('expanding a rule shows its chain with per-hop and per-URL statistics and t
 	expect(traffic(urls[1]).slice(4, 8)).toEqual(['244.1 KB/s', '1.9 MB/s', '23.8 MB', '15 min ago']);
 	expect(compact(urls[1].querySelector('[data-connections] dd'))).toBe('1 / 3');
 	expect(compact(urls[1].querySelector('[data-latency] dd'))).toBe('25.0 ms / 22.3 ms');
-	expect(compact(urls[1].querySelector('[data-failures] dd'))).toBe('1');
+	expect(compact(urls[1].querySelector('[data-failures] dd'))).toBe('1 / 3');
 	// Hop 1 sits behind hop 2.
 	expect(compact(stages[3].querySelector('[data-parent]'))).toBe('via Hop 2');
 	expect(compact(stages[3].querySelector('[data-endpoint]'))).toBe('socks5://hop-a.example:1080');
 	expect(details.innerHTML).not.toContain('demo:placeholder');
-	// Targets: distinct count and the live connections link, not the target list.
+	// Targets: distinct count, the live connections link, the dropped-targets hint and the list
+	// itself, most recently active first, the never-active one last.
 	const targets = stages[4];
-	expect(compact(targets)).toBe('Targets 3 distinct targets 3 connections');
+	expect(compact(targets)).toContain('Targets 3 distinct targets 3 connections');
 	expect(targets.querySelector('a')?.getAttribute('href')).toBe('#/connections?rule=office');
-	expect(targets.textContent).not.toContain('example.com:443');
+	expect(compact(targets.querySelector('[data-evicted]'))).toBe(
+		'3 older targets were dropped from this list'
+	);
+	expect(
+		Array.from(targets.querySelectorAll('[data-target] [data-target-address]')).map(compact)
+	).toEqual(['cdn.example.net:443', 'example.com:443', '10.1.2.3:8080']);
+	expect(targets.querySelector('[data-targets-more]')).toBeNull();
 
 	// Items and the expansion survive a poll unchanged (same elements).
 	snapshot.rules![0].stats.rate_up = 24_576;
@@ -751,7 +764,7 @@ test('the listen chain of a remote rule is shown from the clients side and a rul
 		'Hop 1 \u00b7 binds the port \u00b7 dialed from this machine'
 	);
 	expect(compact(stages[1].querySelector('[data-endpoint]'))).toBe('ssh://edge.example:22');
-	expect(compact(stages[1].querySelector('[data-failures] dd'))).toBe('3');
+	expect(compact(stages[1].querySelector('[data-failures] dd'))).toBe('3 / 3');
 	// A forward rule names its fixed target; no connection has been seen yet.
 	expect(compact(stages[4])).toBe('Targets 127.0.0.1:5432 No connections yet');
 
@@ -1000,7 +1013,7 @@ test('#/hosts aggregates hop URLs by hostname with usage links that stay inside 
 	expect(compact(block.querySelector('[data-latency] dd'))).toBe(
 		'18.4 ms / ' + hostsTotals.bastionAvgLatency
 	);
-	expect(compact(block.querySelector('[data-failures] dd'))).toBe('0');
+	expect(compact(block.querySelector('[data-failures] dd'))).toBe('0 / 10');
 	// Summed peaks are an upper bound: labelled as a sum, said so on the peak values.
 	expect(labels(band).filter((label) => label?.startsWith('peak'))).toEqual(['peak (sum)']);
 	const peak = band.querySelector('[data-metric="peak_rate_down"]')!;
@@ -1029,7 +1042,7 @@ test('#/hosts aggregates hop URLs by hostname with usage links that stay inside 
 	const edge = list[3];
 	const edgeBlock = edge.querySelector('[data-stats]')!;
 	expect(compact(edgeBlock.querySelector('[data-latency] dd'))).toBe('\u2014 / \u2014');
-	expect(compact(edgeBlock.querySelector('[data-failures] dd'))).toBe('3');
+	expect(compact(edgeBlock.querySelector('[data-failures] dd'))).toBe('3 / 3');
 	click(button('Expand: edge.example', edge)!);
 	const edgeDetails = detailsOf(button('Collapse: edge.example', edge)!);
 	expect(compact(edgeDetails.querySelector('[data-use]'))).toBe(
@@ -1596,4 +1609,266 @@ test('virtual rows label channels as virtual:// and link peers from the loaded r
 	await render('#/stats');
 	expect(rows().map((row) => row.dataset.rule)).toContain('orphan');
 	expect(target.querySelector('main [data-virtual-peers]')).toBeNull();
+});
+
+const input = (element: HTMLInputElement | HTMLSelectElement, value: string) => {
+	element.value = value;
+	element.dispatchEvent(
+		new Event(element instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true })
+	);
+	flushSync();
+};
+const searchBox = () => target.querySelector<HTMLInputElement>('main input[type="search"]')!;
+const sortSelect = () =>
+	target.querySelector<HTMLSelectElement>('main select[aria-label="Sort by"]')!;
+const ruleNames = () => rows().map((row) => row.dataset.rule);
+const hostNames = () => rows('main article[data-host]').map((row) => row.dataset.host);
+
+test('the failures cell pairs failed with attempted dials and explains both numbers in both languages; compact bands carry the pair without help', async () => {
+	await render('#/stats');
+	const office = rows()[0];
+	const cell = office.querySelector('[data-failures]')!;
+	expect(compact(cell.querySelector('dt'))).toBe('Failures Failed / attempted');
+	expect(compact(cell.querySelector('dd'))).toBe('2 / 118');
+	expect(Array.from(cell.querySelectorAll('dd span')).map(compact)).toEqual(['2', '118']);
+	let text = helpText('About Failures', office);
+	expect(text).toMatch(/^Failures: /);
+	expect(text).toContain('did not connect');
+	expect(text).toContain('all dial attempts');
+	switchLanguage('中文');
+	expect(compact(cell.querySelector('dt'))).toBe('失败 失败 / 尝试');
+	text = helpText('失败说明', office);
+	expect(text).toContain('未能建连的尝试次数');
+	expect(text).toContain('全部建连尝试次数');
+	switchLanguage('English');
+	// A URL band inside the expansion shows the same pair, without a help tip.
+	click(button('Expand: office', office)!);
+	const url = detailsOf(button('Collapse: office', office)!).querySelectorAll('[data-url]')[1];
+	expect(compact(url.querySelector('[data-failures] dt'))).toBe('Failures Failed / attempted');
+	expect(compact(url.querySelector('[data-failures] dd'))).toBe('1 / 3');
+	expect(url.querySelector('[data-failures] [data-help]')).toBeNull();
+});
+
+test('an expanded rule lists its targets most recently active first with their hop and counters, notes dropped targets only when there are any, and caps the list at 20', async () => {
+	await render('#/stats');
+	const office = rows()[0];
+	click(button('Expand: office', office)!);
+	const details = detailsOf(button('Collapse: office', office)!);
+	const stage = details.querySelector('[data-stage="target"]')!;
+	// Dropped targets: the hint and its definition.
+	const evicted = stage.querySelector('[data-evicted]')!;
+	expect(compact(evicted)).toBe('3 older targets were dropped from this list');
+	expect(helpText('About Targets', stage)).toContain('at most 1000 targets');
+	expect(helpText('About Targets', stage)).toContain('stays in the rule totals');
+	// The list: cdn (newest) first, the never-active 10.1.2.3 last; each with its own band.
+	const items = Array.from(stage.querySelectorAll('[data-targets] > [data-target]'));
+	expect(items.map((item) => compact(item.querySelector('[data-target-address]')))).toEqual([
+		'cdn.example.net:443',
+		'example.com:443',
+		'10.1.2.3:8080'
+	]);
+	expect(items.map((item) => compact(item.querySelector('[data-via]')))).toEqual([
+		'via ssh://bastion-2.example:22',
+		'via ssh://bastion.example:22',
+		null
+	]);
+	items[1].querySelector('[data-via]')!.dispatchEvent(new Event('pointerenter'));
+	flushSync();
+	expect(tooltipText()).toBe('ssh://xxxxx@bastion.example:22');
+	expect(details.innerHTML).not.toContain('ops@');
+	expect(traffic(items[0])).toEqual([
+		'0 B/s',
+		'0 B/s',
+		'1.9 MB',
+		'\u2014',
+		'0 B/s',
+		'0 B/s',
+		'38.1 MB',
+		'\u2014'
+	]);
+	expect(compact(items[0].querySelector('[data-connections] dd'))).toBe('1 / 30');
+	expect(compact(items[0].querySelector('[data-latency] dd'))).toBe('22.0 ms / 24.5 ms');
+	expect(compact(items[0].querySelector('[data-failures] dd'))).toBe('0 / 30');
+	expect(compact(items[1].querySelector('[data-failures] dd'))).toBe('2 / 80');
+	// Compact bands: no help tips of their own.
+	expect(stage.querySelectorAll('[data-target] [data-help]')).toHaveLength(0);
+	expect(stage.querySelector('[data-targets-more]')).toBeNull();
+
+	// mirror has nothing dropped: no hint; its single target is listed.
+	click(button('Expand: mirror')!);
+	const mirror = detailsOf(button('Collapse: mirror')!).querySelector('[data-stage="target"]')!;
+	expect(mirror.querySelector('[data-evicted]')).toBeNull();
+	expect(
+		Array.from(mirror.querySelectorAll('[data-target] [data-target-address]')).map(compact)
+	).toEqual(['10.0.0.5:5432']);
+
+	// 25 targets on the next poll: 20 listed, the note says so; the hint follows the count.
+	const template = snapshot.rules![0].targets![0];
+	snapshot.rules![0].targets = Array.from({ length: 25 }, (_, index) => ({
+		...structuredClone(template),
+		address: `10.9.0.${index}:443`,
+		stats: statsOf({
+			last_active: new Date(NOW - (25 - index) * 60_000).toISOString()
+		})
+	}));
+	snapshot.rules![0].targets_evicted = 1;
+	await poll();
+	const listed = Array.from(stage.querySelectorAll('[data-target] [data-target-address]')).map(
+		compact
+	);
+	expect(listed).toHaveLength(20);
+	expect(listed[0]).toBe('10.9.0.24:443');
+	expect(listed[19]).toBe('10.9.0.5:443');
+	expect(compact(stage.querySelector('[data-targets-more]'))).toBe('Showing 20 of 25 targets');
+	expect(compact(stage.querySelector('[data-evicted]'))).toBe(
+		'1 older targets were dropped from this list'
+	);
+	expect(stage.textContent).toContain('25 distinct targets');
+	snapshot.rules![0].targets_evicted = 0;
+	await poll();
+	expect(stage.querySelector('[data-evicted]')).toBeNull();
+});
+
+test('#/stats has a search box and sort controls: the search narrows the rows by name, address or target and reports the count; sorting reorders by a counter and the direction button flips it', async () => {
+	await render('#/stats');
+	expect(ruleNames()).toEqual(['office', 'mirror', 'db-tunnel', 'lab']);
+	expect(target.querySelector('[data-rule-count]')).toBeNull();
+	const search = searchBox();
+	expect(search.getAttribute('aria-label')).toBe('Search');
+	input(search, '1809');
+	expect(ruleNames()).toEqual(['office', 'mirror', 'db-tunnel']);
+	expect(compact(target.querySelector('[data-rule-count]'))).toBe('3 of 4 rules');
+	input(search, 'tun');
+	expect(ruleNames()).toEqual(['db-tunnel']);
+	expect(compact(target.querySelector('[data-rule-count]'))).toBe('1 of 4 rules');
+	// The forward target is searched too.
+	input(search, '5432');
+	expect(ruleNames()).toEqual(['mirror', 'db-tunnel']);
+	input(search, 'zzz');
+	expect(ruleNames()).toEqual([]);
+	expect(target.querySelector('main')?.textContent).toContain('No matches');
+	expect(target.querySelector('main')?.textContent).not.toContain('No rules yet.');
+	expect(compact(target.querySelector('[data-rule-count]'))).toBe('0 of 4 rules');
+	click(button('Clear search'));
+	expect(search.value).toBe('');
+	expect(ruleNames()).toEqual(['office', 'mirror', 'db-tunnel', 'lab']);
+	expect(target.querySelector('[data-rule-count]')).toBeNull();
+
+	// Sorting: configured order by default; a counter reorders; the button flips.
+	const sortBy = sortSelect();
+	expect(sortBy.value).toBe('configured');
+	expect(Array.from(sortBy.options).map((option) => option.value)).toEqual([
+		'configured',
+		'name',
+		'rate_down',
+		'rate_up',
+		'peak_rate_down',
+		'peak_rate_up',
+		'down',
+		'up',
+		'last_down',
+		'last_up',
+		'active',
+		'dial_failures'
+	]);
+	expect(Array.from(sortBy.options).map((option) => option.textContent)).toEqual([
+		'Configured order',
+		'Rule',
+		'Download \u00b7 now',
+		'Upload \u00b7 now',
+		'Download \u00b7 peak',
+		'Upload \u00b7 peak',
+		'Download \u00b7 total',
+		'Upload \u00b7 total',
+		'Download \u00b7 last',
+		'Upload \u00b7 last',
+		'Connections',
+		'Failures'
+	]);
+	const direction = button('Ascending')!;
+	input(sortBy, 'down');
+	expect(ruleNames()).toEqual(['db-tunnel', 'lab', 'mirror', 'office']);
+	click(direction);
+	expect(direction.getAttribute('aria-label')).toBe('Descending');
+	expect(ruleNames()).toEqual(['office', 'mirror', 'db-tunnel', 'lab']);
+	input(sortBy, 'dial_failures');
+	expect(ruleNames()).toEqual(['db-tunnel', 'office', 'mirror', 'lab']);
+	input(sortBy, 'name');
+	expect(ruleNames()).toEqual(['office', 'mirror', 'lab', 'db-tunnel']);
+	input(sortBy, 'configured');
+	expect(ruleNames()).toEqual(['lab', 'db-tunnel', 'mirror', 'office']);
+	click(direction);
+	expect(ruleNames()).toEqual(['office', 'mirror', 'db-tunnel', 'lab']);
+
+	// A poll that moves a focused row keeps its element, expansion and focus.
+	input(sortBy, 'down');
+	click(direction);
+	expect(ruleNames()).toEqual(['office', 'mirror', 'db-tunnel', 'lab']);
+	const mirror = rows()[1];
+	click(button('Expand: mirror', mirror)!);
+	const toggle = button('Collapse: mirror', mirror)!;
+	toggle.focus();
+	snapshot.rules![1].stats.down = 500_000_000;
+	await poll();
+	expect(ruleNames()).toEqual(['mirror', 'office', 'db-tunnel', 'lab']);
+	expect(rows()[0]).toBe(mirror);
+	expect(toggle.getAttribute('aria-expanded')).toBe('true');
+	expect(document.activeElement).toBe(toggle);
+	// The search applies on top of the sort.
+	input(search, 'o');
+	expect(ruleNames()).toEqual(['mirror', 'office']);
+});
+
+test('#/hosts has the same controls: the search matches host names and endpoint labels, sorting by host name orders alphabetically and the count line appears while filtering', async () => {
+	await render('#/hosts');
+	expect(hostNames()).toEqual(hostsTotals.order);
+	expect(target.querySelector('[data-host-count]')).toBeNull();
+	const search = searchBox();
+	input(search, 'bastion');
+	expect(hostNames()).toEqual(['bastion.example', 'bastion-2.example']);
+	expect(compact(target.querySelector('[data-host-count]'))).toBe('2 of 4 hosts');
+	// Endpoint labels are searched: only the exit hop is a SOCKS URL.
+	input(search, 'socks5');
+	expect(hostNames()).toEqual(['hop-a.example']);
+	input(search, 'zzz');
+	expect(hostNames()).toEqual([]);
+	expect(target.querySelector('main')?.textContent).toContain('No matches');
+	expect(target.querySelector('main')?.textContent).not.toContain('No proxy hosts.');
+	click(button('Clear search'));
+	expect(hostNames()).toEqual(hostsTotals.order);
+	expect(target.querySelector('[data-host-count]')).toBeNull();
+
+	const sortBy = sortSelect();
+	expect(sortBy.value).toBe('traffic');
+	expect(Array.from(sortBy.options).map((option) => option.textContent)).toEqual([
+		'Traffic',
+		'Host',
+		'Current rate',
+		'Connections',
+		'Failures',
+		'Latency'
+	]);
+	const direction = button('Descending')!;
+	input(sortBy, 'host');
+	expect(hostNames()).toEqual([
+		'hop-a.example',
+		'edge.example',
+		'bastion.example',
+		'bastion-2.example'
+	]);
+	click(direction);
+	expect(direction.getAttribute('aria-label')).toBe('Ascending');
+	expect(hostNames()).toEqual([
+		'bastion-2.example',
+		'bastion.example',
+		'edge.example',
+		'hop-a.example'
+	]);
+	click(direction);
+	input(sortBy, 'dial_failures');
+	expect(hostNames()[0]).toBe('edge.example');
+	input(sortBy, 'traffic');
+	expect(hostNames()).toEqual(hostsTotals.order);
+	click(direction);
+	expect(hostNames()).toEqual([...hostsTotals.order].reverse());
 });
