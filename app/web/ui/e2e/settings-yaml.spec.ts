@@ -615,7 +615,9 @@ test('#/yaml shows the file verbatim; Ctrl+S saves it and re-reads the stored te
 	expect(api.raw.yaml).toBe(edited);
 	await expect(source).toHaveValue(edited);
 	await expect(toast(page, 'Saved and applied.')).toBeVisible();
-	expect(api.requests.filter((entry) => entry === 'GET /apis/configs/raw')).toHaveLength(2);
+	await expect
+		.poll(() => api.requests.filter((entry) => entry === 'GET /apis/configs/raw'))
+		.toHaveLength(2);
 	await expect(notice(page)).toHaveCount(0);
 });
 

@@ -6,18 +6,32 @@
 	import ChainFlow, { type HopStage } from '../lib/components/rules/ChainFlow.svelte';
 	import VirtualPeers from '../lib/components/rules/VirtualPeers.svelte';
 	import Disclosure from '../lib/components/stats/Disclosure.svelte';
+	import ListControls from '../lib/components/stats/ListControls.svelte';
 	import StatsToolbar from '../lib/components/stats/StatsToolbar.svelte';
 	import TrafficDetail from '../lib/components/stats/TrafficDetail.svelte';
 	import Banner from '../lib/components/ui/Banner.svelte';
 	import Button from '../lib/components/ui/Button.svelte';
+	import HelpTip from '../lib/components/ui/HelpTip.svelte';
 	import PageHeader from '../lib/components/ui/PageHeader.svelte';
 	import StatusChip, { type ChipState } from '../lib/components/ui/StatusChip.svelte';
+	import { retainFocus } from '../lib/focus.svelte';
 	import { DASH, displayURL, redactURL } from '../lib/format';
-	import { t } from '../lib/i18n.svelte';
+	import { i18n, t } from '../lib/i18n.svelte';
 	import { router } from '../lib/router.svelte';
 	import { statsRoute } from '../lib/routes';
 	import { forwardTarget, isForward, listenAddress } from '../lib/rule';
 	import { stats } from '../lib/stats.svelte';
+	import {
+		DEFAULT_RULE_SORT,
+		RULE_SORT_KEYS,
+		buildRows,
+		filterRows,
+		ruleSortLabel,
+		sortRows,
+		visibleTargets,
+		type RuleSort,
+		type StatsRow
+	} from '../lib/statsRows';
 	import { ruleState, status } from '../lib/status.svelte';
 	import {
 		list,
@@ -25,7 +39,6 @@
 		type Nullable,
 		type Rule,
 		type RuleStats,
-		type RuleStatus,
 		type WayHop,
 		type WayNode
 	} from '../lib/types';
@@ -69,45 +82,32 @@
 		};
 	});
 
-	interface Row {
-		name: string;
-		rule: Rule | null;
-		runtime: RuleStatus | null;
-		entry: RuleStats | null;
-	}
-
 	const runtimeRules = $derived(list(status.data?.rules));
 	const snapshotRules = $derived(list(stats.data?.rules));
-	// Configured rules first; a snapshot may still name a rule the config no longer has.
-	const rows = $derived.by((): Row[] => {
-		const names = rules ? rules.map((rule) => rule.name) : [];
-		const seen = new Set(names);
-		for (const entry of snapshotRules) {
-			if (!seen.has(entry.name)) {
-				seen.add(entry.name);
-				names.push(entry.name);
-			}
-		}
-		return names.map((name) => ({
-			name,
-			rule: rules?.find((rule) => rule.name === name) ?? null,
-			runtime: runtimeRules.find((rule) => rule.name === name) ?? null,
-			entry: snapshotRules.find((entry) => entry.name === name) ?? null
-		}));
-	});
+	const rows = $derived(buildRows(rules, runtimeRules, snapshotRules));
 	const ready = $derived(rules !== null || stats.data !== null);
 
-	function chip(row: Row): { state: ChipState; label: string } {
+	let query = $state('');
+	let sort = $state<RuleSort>(DEFAULT_RULE_SORT);
+	const filtering = $derived(query.trim() !== '');
+
+	function chip(row: StatsRow): { state: ChipState; label: string } {
 		if (row.rule?.disabled) return { state: 'disabled', label: t('disabled') };
 		if (!row.runtime) return { state: 'unknown', label: t('checking') };
 		const state = ruleState(row.runtime);
 		return { state, label: t(state, { attempt: row.runtime.attempt ?? 0 }) };
 	}
 
-	const addressOf = (row: Row) => row.runtime?.address ?? (row.rule ? listenAddress(row.rule) : '');
-	const targetOf = (row: Row) => row.runtime?.target ?? (row.rule ? forwardTarget(row.rule) : '');
-	const remoteOf = (row: Row) =>
+	const addressOf = (row: StatsRow) =>
+		row.runtime?.address ?? (row.rule ? listenAddress(row.rule) : '');
+	const targetOf = (row: StatsRow) =>
+		row.runtime?.target ?? (row.rule ? forwardTarget(row.rule) : '');
+	const remoteOf = (row: StatsRow) =>
 		row.runtime?.remote ?? (row.rule ? normalizeWay(row.rule.listen.way).length > 0 : false);
+
+	const filtered = $derived(filterRows(rows, query, i18n.language, addressOf, targetOf));
+	const shown = $derived(sortRows(filtered, sort, i18n.language));
+	retainFocus('[data-rule]', () => shown);
 
 	// Hops the server has seen carry the statistics; the configured way is the fallback.
 	function wayOf(hops: Nullable<Hop[]>, configured: Nullable<WayNode[]>): WayHop[] {
@@ -172,15 +172,26 @@
 			<Button variant="secondary" onclick={() => void stats.refresh()}>{t('retry')}</Button>
 		</Banner>
 	{/if}
+	<ListControls bind:query bind:sort sortKeys={RULE_SORT_KEYS} labelFor={ruleSortLabel}>
+		{#snippet trailing()}
+			{#if filtering}
+				<p class="text-sm text-fg-muted tabular-nums" data-rule-count>
+					{t('filteredRules', { count: filtered.length, total: rows.length })}
+				</p>
+			{/if}
+		{/snippet}
+	</ListControls>
 	{#if !ready}
 		{#if !error}
 			<p class="text-sm text-fg-muted">{t('loading')}</p>
 		{/if}
 	{:else if rows.length === 0}
 		<p class="text-sm text-fg-muted">{t('noRules')}</p>
+	{:else if shown.length === 0}
+		<p class="text-sm text-fg-muted">{t('noMatches')}</p>
 	{:else}
 		<div class="space-y-3">
-			{#each rows as row (row.name)}
+			{#each shown as row (row.name)}
 				{@const state = chip(row)}
 				{@const address = addressOf(row)}
 				{@const target = targetOf(row)}
@@ -223,6 +234,8 @@
 				{#snippet targetsDetail()}
 					{@const distinct = new Set(list(entry?.targets).map((item) => item.address)).size}
 					{@const live = list(entry?.connections).length}
+					{@const evicted = entry?.targets_evicted ?? 0}
+					{@const visible = visibleTargets(entry?.targets)}
 					{#if target}
 						<p class="font-mono text-[13px] [overflow-wrap:anywhere] text-fg">{target}</p>
 					{/if}
@@ -237,6 +250,43 @@
 							>
 								{t('connectionCount', { count: live })}
 							</a>
+						{/if}
+					{/if}
+					{#if evicted > 0}
+						<p class="flex flex-wrap items-center gap-x-1 text-xs text-fg-muted" data-evicted>
+							{t('targetsEvicted', { count: evicted })}
+							<HelpTip concept={t('targets')} text={t('help.targetsEvicted')} />
+						</p>
+					{/if}
+					{#if visible.shown.length > 0}
+						<ul class="mt-3 divide-y divide-line border-l-2 border-line pl-3" data-targets>
+							{#each visible.shown as item (item.address + '\n' + item.via)}
+								<li class="py-2.5 first:pt-0 last:pb-0" data-target>
+									<p
+										class="font-mono text-[13px] [overflow-wrap:anywhere] text-fg"
+										data-target-address
+									>
+										{item.address}
+									</p>
+									{#if item.via}
+										<p
+											class="text-xs [overflow-wrap:anywhere] text-fg-muted"
+											data-via
+											use:tooltip={redactURL(item.via)}
+										>
+											{t('viaEndpoint', { endpoint: displayURL(item.via) })}
+										</p>
+									{/if}
+									<div class="mt-1.5">
+										<TrafficDetail stats={item.stats} compact />
+									</div>
+								</li>
+							{/each}
+						</ul>
+						{#if visible.total > visible.shown.length}
+							<p class="mt-2 text-xs text-fg-muted" data-targets-more>
+								{t('showingTargets', { shown: visible.shown.length, total: visible.total })}
+							</p>
 						{/if}
 					{/if}
 				{/snippet}

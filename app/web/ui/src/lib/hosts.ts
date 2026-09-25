@@ -1,7 +1,7 @@
-import { displayURL } from './format';
+import { displayURL, text } from './format';
+import { t } from './i18n.svelte';
+import { fuzzyMatch, type ListSort } from './search';
 import { list, type Nullable, type RuleStats, type Stats } from './types';
-
-const text = (value: unknown) => String(value ?? '');
 
 const SUMMED = [
 	'up',
@@ -146,4 +146,77 @@ export function aggregateHosts(rules: Nullable<RuleStats[]>): HostAggregate[] {
 	}).sort(
 		(left, right) => totalBytes(right) - totalBytes(left) || left.host.localeCompare(right.host)
 	);
+}
+
+export type HostSortKey = 'traffic' | 'host' | 'rate' | 'active' | 'dial_failures' | 'latency';
+export type HostSort = ListSort<HostSortKey>;
+
+// Descending traffic is the order aggregateHosts already yields.
+export const DEFAULT_HOST_SORT: HostSort = { key: 'traffic', direction: 'descending' };
+
+export const HOST_SORT_KEYS: readonly HostSortKey[] = [
+	'traffic',
+	'host',
+	'rate',
+	'active',
+	'dial_failures',
+	'latency'
+];
+
+export function hostSortLabel(key: HostSortKey): string {
+	switch (key) {
+		case 'traffic':
+			return t('traffic');
+		case 'host':
+			return t('host');
+		case 'rate':
+			return t('currentRate');
+		case 'active':
+			return t('connections');
+		case 'dial_failures':
+			return t('dialFailures');
+		case 'latency':
+			return t('latency');
+	}
+}
+
+export function filterHosts(
+	hosts: readonly HostAggregate[],
+	query: string,
+	language: string
+): HostAggregate[] {
+	return hosts.filter((host) =>
+		fuzzyMatch(query, [host.host, ...host.endpoints.map((endpoint) => endpoint.endpoint)], language)
+	);
+}
+
+const hostValue = (host: HostAggregate, key: Exclude<HostSortKey, 'host'>): number => {
+	switch (key) {
+		case 'traffic':
+			return host.stats.up + host.stats.down;
+		case 'rate':
+			return host.stats.rate_up + host.stats.rate_down;
+		case 'active':
+			return host.stats.active;
+		case 'dial_failures':
+			return host.stats.dial_failures;
+		case 'latency':
+			return host.stats.avg_latency_ms;
+	}
+};
+
+// Ties keep the aggregate order (traffic, then host name) in either direction.
+export function sortHosts(
+	hosts: readonly HostAggregate[],
+	sort: HostSort,
+	language: string
+): HostAggregate[] {
+	const direction = sort.direction === 'ascending' ? 1 : -1;
+	const key = sort.key;
+	const compare =
+		key === 'host'
+			? (left: HostAggregate, right: HostAggregate) =>
+					left.host.localeCompare(right.host, language, { numeric: true })
+			: (left: HostAggregate, right: HostAggregate) => hostValue(left, key) - hostValue(right, key);
+	return hosts.slice().sort((left, right) => compare(left, right) * direction);
 }

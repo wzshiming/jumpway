@@ -1,6 +1,15 @@
+import { text } from './format';
 import type { MessageKey } from './i18n/en';
-import { isVirtualChannel } from './rule';
-import { list, type Forward, type Listen, type Protocol, type Rule, type WayHop } from './types';
+import { isVirtualChannel, joinHostPort, virtualAddress } from './rule';
+import {
+	list,
+	type Address,
+	type Forward,
+	type Listen,
+	type Protocol,
+	type Rule,
+	type WayHop
+} from './types';
 import { fieldsOf, layoutFor } from './urlBuilder';
 import { normalizeWay, serializeWay } from './way';
 
@@ -79,8 +88,6 @@ export const newHop = (urls: readonly string[] = ['']): HopDraft => ({
 	urls: urls.map(newUrl)
 });
 
-const text = (value: unknown) => (value === undefined || value === null ? '' : String(value));
-
 const hopsFrom = (way: Rule['listen']['way']): HopDraft[] =>
 	normalizeWay(way).map((hop) => newHop(hop.lb));
 
@@ -135,15 +142,48 @@ export const emptyDraft = (): RuleDraft =>
 export const wayOf = (hops: readonly HopDraft[]): WayHop[] =>
 	serializeWay(hops.map((hop) => ({ lb: hop.urls.map((url) => url.value) })));
 
+// The suggested name of a copy: "<name>-copy", counting up past taken ones; copying a copy
+// counts from the original name rather than stacking suffixes.
+export function duplicateName(name: string, taken: readonly string[]): string {
+	const names = new Set(taken);
+	const base = name.replace(/-copy(-\d+)?$/, '') + '-copy';
+	if (!names.has(base)) return base;
+	for (let n = 2; ; n++) {
+		const candidate = `${base}-${n}`;
+		if (!names.has(candidate)) return candidate;
+	}
+}
+
+export interface ProtocolFieldErrors {
+	username?: MessageKey;
+	password?: MessageKey;
+}
+
 export interface DraftErrors {
 	name?: MessageKey;
 	listenPort?: MessageKey;
 	listenVirtual?: MessageKey;
+	// The rule named by a listenAddressTaken error.
+	listenAddressOwner?: string;
+	listenUsername?: MessageKey;
+	listenPassword?: MessageKey;
 	protocols?: MessageKey;
+	protocolErrors?: Partial<Record<ProtocolType, ProtocolFieldErrors>>;
 	ssCipher?: MessageKey;
 	ssPassword?: MessageKey;
 	targetPort?: MessageKey;
 	targetVirtual?: MessageKey;
+	// Keyed by UrlDraft.id.
+	urls?: Record<number, MessageKey>;
+}
+
+// What the stored configuration already holds, for the checks the server runs across rules.
+export interface ReadContext {
+	others: readonly Rule[];
+	// The saved name of the rule being edited; its stored copy is not a peer.
+	self: string | null;
+	// The configured (not the bound) web UI address, or null while unknown.
+	webUI: Address | null;
 }
 
 export type ReadResult = { ok: true; rule: Rule } | { ok: false; errors: DraftErrors };
@@ -160,16 +200,80 @@ function parseChannel(value: string): string | null {
 	return isVirtualChannel(trimmed) ? trimmed : null;
 }
 
+// Go's url.Parse scheme: a letter, then letters, digits, "+", "-" or ".", up to the colon.
+const SCHEME = /^[a-z][a-z0-9+.-]*:/i;
+
+// Blank rows beside a usable URL are dropped as before; a hop left with none needs one.
+function readWay(hops: readonly HopDraft[], errors: DraftErrors): WayHop[] {
+	for (const hop of hops) {
+		const usable = hop.urls.some((url) => url.value.trim());
+		for (const url of hop.urls) {
+			const value = url.value.trim();
+			if (!value) {
+				if (!usable) (errors.urls ??= {})[url.id] = 'hopUrlEmpty';
+			} else if (!SCHEME.test(value)) {
+				(errors.urls ??= {})[url.id] = 'hopUrlNoScheme';
+			}
+		}
+	}
+	return wayOf(hops);
+}
+
+// Rules the server checks listen addresses against: enabled, bound here, on a port or channel.
+const listens = (rule: Rule): boolean =>
+	!rule.disabled &&
+	normalizeWay(rule.listen.way).length === 0 &&
+	(rule.listen.port !== 0 || !!rule.listen.virtual);
+
+// Mirrors Listen.Address(): the string Validate compares, brackets and all.
+const configuredAddress = (listen: Listen): string =>
+	listen.virtual ? virtualAddress(listen.virtual) : joinHostPort(listen.host, listen.port);
+
+const protocolFields = (type: ProtocolType): readonly string[] =>
+	PROTOCOLS.find((entry) => entry.type === type)!.fields;
+
+// Mirrors validateListenAuth for an explicit protocol list: a row's own credentials win, empty
+// ones inherit the shared pair, and the shared password may serve Shadowsocks alone.
+function readAuth(listen: RuleDraft['listen'], errors: DraftErrors) {
+	// Only a field the row shows can carry an error; anything else is left to the server's 400.
+	const report = (row: ProtocolDraft, field: 'username' | 'password', key: MessageKey) => {
+		if (!protocolFields(row.type).includes(field)) return;
+		((errors.protocolErrors ??= {})[row.type] ??= {})[field] = key;
+	};
+	if (listen.username.includes(':')) errors.listenUsername = 'usernameColon';
+	const rows = listen.protocols.filter((row) => row.enabled);
+	const sharedForSS = rows.some((row) => row.type === 'ss' && !(row.custom && row.password));
+	for (const row of rows) {
+		const ownUsername = row.custom ? row.username : '';
+		const ownPassword = row.custom ? row.password : '';
+		if (ownUsername.includes(':')) report(row, 'username', 'usernameColon');
+		if (row.type === 'ss') continue;
+		if (!(ownPassword || listen.password) || ownUsername || listen.username) continue;
+		if (ownPassword) {
+			// SOCKS4 shows no password field; its stored password is reported on the username.
+			const field = protocolFields(row.type).includes('password') ? 'password' : 'username';
+			report(row, field, 'passwordNeedsUsername');
+		} else if (!sharedForSS) {
+			errors.listenPassword = 'passwordNeedsUsername';
+		}
+	}
+}
+
 // An empty protocol list enables legacy defaults, so proxy saves must list their selections.
-export function readRule(draft: RuleDraft): ReadResult {
+// Without a context only the checks that need no other rule run.
+export function readRule(draft: RuleDraft, context?: ReadContext): ReadResult {
 	const errors: DraftErrors = {};
 	const name = draft.name.trim();
 	if (!name) errors.name = 'ruleNameRequired';
+	else if (name.includes('/')) errors.name = 'ruleNameSlash';
+	else if (context?.others.some((rule) => rule.name === name && rule.name !== context.self))
+		errors.name = 'ruleNameTaken';
 	const listenVirtual = draft.listen.kind === 'virtual';
 	const listenPort = listenVirtual ? 0 : parsePort(draft.listen.port, 0);
 	if (listenPort === null) errors.listenPort = 'invalidPort';
 	const listenChannel = listenVirtual ? parseChannel(draft.listen.virtual) : '';
 	if (listenChannel === null) errors.listenVirtual = 'invalidVirtualChannel';
+	const listenWay = listenVirtual ? [] : readWay(draft.listen.way, errors);
 	const forwarding = draft.mode === 'forward';
 	const protocols: Protocol[] = [];
 	for (const row of draft.listen.protocols) {
@@ -185,6 +289,7 @@ export function readRule(draft: RuleDraft): ReadResult {
 		protocols.push(entry);
 	}
 	if (!forwarding && !protocols.length) errors.protocols = 'protocolRequired';
+	if (!forwarding) readAuth(draft.listen, errors);
 	const targetVirtual = forwarding && draft.target.kind === 'virtual';
 	const targetPort = forwarding && !targetVirtual ? parsePort(draft.target.port, 1) : 0;
 	if (targetPort === null) errors.targetPort = 'invalidForwardPort';
@@ -192,16 +297,40 @@ export function readRule(draft: RuleDraft): ReadResult {
 	if (targetChannel === null) errors.targetVirtual = 'invalidVirtualChannel';
 	else if (targetChannel && targetChannel === listenChannel)
 		errors.targetVirtual = 'virtualSelfLoop';
+	const forwardWay = targetVirtual ? [] : readWay(draft.forward.way, errors);
+
+	// Like Validate: disabled and remote rules and port 0 never clash, nor does a web UI on port 0.
+	if (
+		context &&
+		draft.enabled &&
+		listenPort !== null &&
+		listenChannel !== null &&
+		(listenVirtual || (listenPort !== 0 && listenWay.length === 0))
+	) {
+		const address = listenVirtual
+			? virtualAddress(listenChannel)
+			: joinHostPort(draft.listen.host.trim(), listenPort);
+		const field = listenVirtual ? 'listenVirtual' : 'listenPort';
+		const owner = context.others.find(
+			(rule) =>
+				rule.name !== context.self && listens(rule) && configuredAddress(rule.listen) === address
+		);
+		if (owner) {
+			errors[field] = 'listenAddressTaken';
+			errors.listenAddressOwner = owner.name;
+		} else if (
+			context.webUI?.port &&
+			joinHostPort(context.webUI.host, context.webUI.port) === address
+		) {
+			errors[field] = 'listenAddressWebUI';
+		}
+	}
 	if (
 		listenPort === null ||
 		listenChannel === null ||
 		targetPort === null ||
 		targetChannel === null ||
-		errors.name ||
-		errors.protocols ||
-		errors.ssCipher ||
-		errors.ssPassword ||
-		errors.targetVirtual
+		Object.keys(errors).length
 	) {
 		return { ok: false, errors };
 	}
@@ -214,7 +343,6 @@ export function readRule(draft: RuleDraft): ReadResult {
 		if (draft.listen.password) listen.password = draft.listen.password;
 		listen.protocols = protocols;
 	}
-	const listenWay = listenVirtual ? [] : wayOf(draft.listen.way);
 	if (listenWay.length) listen.way = listenWay;
 
 	const forward: Forward = {};
@@ -225,7 +353,6 @@ export function readRule(draft: RuleDraft): ReadResult {
 		if (host) forward.host = host;
 		forward.port = targetPort;
 	}
-	const forwardWay = targetVirtual ? [] : wayOf(draft.forward.way);
 	if (forwardWay.length) forward.way = forwardWay;
 
 	const rule: Rule = { name, listen, forward };

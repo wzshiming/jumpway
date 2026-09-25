@@ -3,7 +3,7 @@ import type { Stats } from './types';
 
 export const DASH = '\u2014';
 
-const text = (value: unknown) => String(value ?? '');
+export const text = (value: unknown) => String(value ?? '');
 
 const UNITS = ['B', 'KB', 'MB', 'GB', 'TB'];
 
@@ -27,7 +27,7 @@ export function formatLatency(
 		: Number(entry[key] || 0).toFixed(1) + ' ms';
 }
 
-export function formatElapsed(seconds: number, short = false): string {
+function formatElapsed(seconds: number, short = false): string {
 	if (seconds < 60) return seconds + ' s';
 	if (seconds < 3600) {
 		return Math.floor(seconds / 60) + ' min' + (short ? '' : ' ' + (seconds % 60) + ' s');

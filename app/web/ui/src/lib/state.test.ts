@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { ApiError } from './api';
 import { busy } from './busy.svelte';
 import { confirm, confirmService } from './confirm';
-import { createPoller } from './polling.svelte';
+import { createPoller, type Poller } from './polling.svelte';
 import { disconnectConnection, resetStats, stats } from './stats.svelte';
 import { ruleState, runtimeState, status } from './status.svelte';
 import { THEME_STORAGE_KEY, theme } from './theme.svelte';
@@ -287,6 +287,124 @@ describe('createPoller', () => {
 		expect(poller.answered).toBe(5);
 		unsubscribe();
 	});
+
+	describe('backoff', () => {
+		const failure = new ApiError('network', 'Failed to fetch', null);
+
+		// Fails the load under way and checks that the next one starts exactly `wait` ms later.
+		async function failThenWait(
+			poller: Poller<number>,
+			fake: ReturnType<typeof fakeLoader<number>>,
+			wait: number
+		) {
+			const started = fake.load.mock.calls.length;
+			fake.pending[started - 1].reject(failure);
+			await tick();
+			expect(poller.error).toBe(failure);
+			await vi.advanceTimersByTimeAsync(wait - 1);
+			expect(fake.load).toHaveBeenCalledTimes(started);
+			await vi.advanceTimersByTimeAsync(1);
+			expect(fake.load).toHaveBeenCalledTimes(started + 1);
+		}
+
+		test('consecutive failures double the delay up to maxIntervalMs', async () => {
+			const fake = fakeLoader<number>();
+			const poller = createPoller({ load: fake.load, intervalMs: 1000, maxIntervalMs: 16_000 });
+			const unsubscribe = poller.subscribe();
+			for (const [index, wait] of [2000, 4000, 8000, 16_000, 16_000].entries()) {
+				await failThenWait(poller, fake, wait);
+				expect(poller.failures).toBe(index + 1);
+			}
+			unsubscribe();
+		});
+
+		test('a success resets the delay to intervalMs', async () => {
+			const fake = fakeLoader<number>();
+			const poller = createPoller({ load: fake.load, intervalMs: 1000, maxIntervalMs: 16_000 });
+			const unsubscribe = poller.subscribe();
+			await failThenWait(poller, fake, 2000);
+			await failThenWait(poller, fake, 4000);
+			expect(poller.failures).toBe(2);
+			fake.pending[2].resolve(1);
+			await tick();
+			expect(poller.failures).toBe(0);
+			expect(poller.error).toBeNull();
+			await vi.advanceTimersByTimeAsync(999);
+			expect(fake.load).toHaveBeenCalledTimes(3);
+			await vi.advanceTimersByTimeAsync(1);
+			expect(fake.load).toHaveBeenCalledTimes(4);
+			unsubscribe();
+		});
+
+		test('refresh loads at once and restarts the backoff from its own outcome', async () => {
+			const fake = fakeLoader<number>();
+			const poller = createPoller({ load: fake.load, intervalMs: 1000, maxIntervalMs: 16_000 });
+			const unsubscribe = poller.subscribe();
+			await failThenWait(poller, fake, 2000);
+			await failThenWait(poller, fake, 4000);
+			fake.pending[2].reject(failure);
+			await tick();
+			expect(poller.failures).toBe(3);
+			const refreshed = poller.refresh();
+			expect(fake.load).toHaveBeenCalledTimes(4);
+			expect(poller.failures).toBe(0);
+			fake.pending[3].reject(failure);
+			await expect(refreshed).resolves.toBeNull();
+			expect(poller.failures).toBe(1);
+			// One failure since the retry: the next poll is 2 s away, not 16 s.
+			await vi.advanceTimersByTimeAsync(1999);
+			expect(fake.load).toHaveBeenCalledTimes(4);
+			await vi.advanceTimersByTimeAsync(1);
+			expect(fake.load).toHaveBeenCalledTimes(5);
+			unsubscribe();
+		});
+
+		test('showing the document again restarts the backoff', async () => {
+			const fake = fakeLoader<number>();
+			const poller = createPoller({ load: fake.load, intervalMs: 1000, maxIntervalMs: 4000 });
+			const unsubscribe = poller.subscribe();
+			await failThenWait(poller, fake, 2000);
+			await failThenWait(poller, fake, 4000);
+			fake.pending[2].reject(failure);
+			await tick();
+			expect(poller.failures).toBe(3);
+			setVisibility('hidden');
+			await vi.advanceTimersByTimeAsync(10_000);
+			expect(fake.load).toHaveBeenCalledTimes(3);
+			setVisibility('visible');
+			expect(fake.load).toHaveBeenCalledTimes(4);
+			expect(poller.failures).toBe(0);
+			await failThenWait(poller, fake, 2000);
+			expect(poller.failures).toBe(1);
+			unsubscribe();
+		});
+
+		test('without maxIntervalMs failures keep the fixed cadence', async () => {
+			const fake = fakeLoader<number>();
+			const poller = createPoller({ load: fake.load, intervalMs: 1000 });
+			const unsubscribe = poller.subscribe();
+			for (let index = 0; index < 3; index++) {
+				await failThenWait(poller, fake, 1000);
+				expect(poller.failures).toBe(index + 1);
+			}
+			unsubscribe();
+		});
+
+		test('an aborted load is not a failure', async () => {
+			const fake = fakeLoader<number>();
+			const poller = createPoller({ load: fake.load, intervalMs: 1000, maxIntervalMs: 16_000 });
+			const unsubscribe = poller.subscribe();
+			fake.pending[0].reject(new ApiError('aborted', 'aborted', null));
+			await tick();
+			expect(poller.failures).toBe(0);
+			expect(poller.error).toBeNull();
+			await vi.advanceTimersByTimeAsync(999);
+			expect(fake.load).toHaveBeenCalledTimes(1);
+			await vi.advanceTimersByTimeAsync(1);
+			expect(fake.load).toHaveBeenCalledTimes(2);
+			unsubscribe();
+		});
+	});
 });
 
 describe('status and stats stores', () => {
@@ -331,6 +449,29 @@ describe('status and stats stores', () => {
 		expect(status.error).toMatchObject({ unreachable: true });
 		expect(runtimeState()).toBe('unknown');
 		unsubscribe();
+	});
+
+	test('status and stats back off while unreachable: 10 → 20 s and 1 → 2 s', async () => {
+		const fetchMock = vi.fn(() => Promise.reject(new TypeError('Failed to fetch')));
+		vi.stubGlobal('fetch', fetchMock);
+		const unsubscribe = status.subscribe();
+		await tick();
+		expect(status.failures).toBe(1);
+		await vi.advanceTimersByTimeAsync(19_999);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		await vi.advanceTimersByTimeAsync(1);
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		unsubscribe();
+
+		fetchMock.mockClear();
+		const unsubscribeStats = stats.subscribe();
+		await tick();
+		expect(stats.failures).toBe(1);
+		await vi.advanceTimersByTimeAsync(1999);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		await vi.advanceTimersByTimeAsync(1);
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		unsubscribeStats();
 	});
 
 	test('stats polls /apis/stats every second; reset and disconnect refresh afterwards', async () => {

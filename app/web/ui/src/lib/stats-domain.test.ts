@@ -10,7 +10,16 @@ import {
 	formatConnectionPath,
 	sortConnections
 } from './connections';
-import { aggregateHosts, sumStats } from './hosts';
+import {
+	DEFAULT_HOST_SORT,
+	HOST_SORT_KEYS,
+	aggregateHosts,
+	filterHosts,
+	hostSortLabel,
+	sortHosts,
+	sumStats,
+	type HostAggregate
+} from './hosts';
 import { i18n } from './i18n.svelte';
 import type { RuleStats, Stats } from './types';
 
@@ -200,6 +209,130 @@ describe('aggregateHosts', () => {
 
 	test('tolerates null snapshots', () => {
 		expect(aggregateHosts(null)).toEqual([]);
+	});
+});
+
+describe('host sort and filter', () => {
+	const host = (
+		name: string,
+		partial: Partial<Stats>,
+		endpoints: string[] = [`ssh://${name}:22`]
+	): HostAggregate => ({
+		host: name,
+		rules: [],
+		stats: stats(partial),
+		endpoints: endpoints.map((endpoint) => ({ endpoint, urls: [endpoint], uses: [], stats: ZERO }))
+	});
+	const names = (hosts: readonly HostAggregate[]) => hosts.map((item) => item.host);
+	// In aggregate order: bytes descending, then name.
+	const hosts = [
+		host('hop-10.example', { up: 50, down: 250, rate_down: 1, active: 3, avg_latency_ms: 30 }),
+		host(
+			'bastion.example',
+			{ up: 100, down: 100, rate_up: 5, dial_failures: 2, avg_latency_ms: 10 },
+			['ssh://bastion.example:22', 'ssh://bastion.example:2222']
+		),
+		host('edge.example', { up: 100, down: 100, rate_down: 5, active: 1, avg_latency_ms: 20 }),
+		host('hop-9.example', { dial_failures: 7 }, ['socks5://hop-9.example:1080'])
+	];
+
+	test('the sort menu offers traffic, host, rate, connections, failures and latency, labelled in the active language', () => {
+		i18n.init();
+		expect(DEFAULT_HOST_SORT).toEqual({ key: 'traffic', direction: 'descending' });
+		expect(HOST_SORT_KEYS).toEqual([
+			'traffic',
+			'host',
+			'rate',
+			'active',
+			'dial_failures',
+			'latency'
+		]);
+		expect(HOST_SORT_KEYS.map(hostSortLabel)).toEqual([
+			'Traffic',
+			'Host',
+			'Current rate',
+			'Connections',
+			'Failures',
+			'Latency'
+		]);
+		i18n.setLanguage('zh');
+		expect(HOST_SORT_KEYS.map(hostSortLabel)).toEqual([
+			'\u6d41\u91cf',
+			'\u4e3b\u673a',
+			'\u5f53\u524d\u901f\u7387',
+			'\u8fde\u63a5',
+			'\u5931\u8d25',
+			'\u5ef6\u8fdf'
+		]);
+	});
+
+	test('filterHosts matches the host name and every endpoint label as a case-insensitive subsequence', () => {
+		expect(names(filterHosts(hosts, '', 'en'))).toEqual(names(hosts));
+		expect(names(filterHosts(hosts, 'BASTION', 'en'))).toEqual(['bastion.example']);
+		expect(names(filterHosts(hosts, '2222', 'en'))).toEqual(['bastion.example']);
+		expect(names(filterHosts(hosts, 'socks', 'en'))).toEqual(['hop-9.example']);
+		expect(names(filterHosts(hosts, 'hop-', 'en'))).toEqual(['hop-10.example', 'hop-9.example']);
+		// "hop" is also a subsequence of ssh://bastion.example:22.
+		expect(names(filterHosts(hosts, 'hop', 'en'))).toEqual([
+			'hop-10.example',
+			'bastion.example',
+			'hop-9.example'
+		]);
+		expect(names(filterHosts(hosts, 'zzz', 'en'))).toEqual([]);
+	});
+
+	test('the default traffic sort keeps the aggregate order and reverses it ascending; ties keep that order', () => {
+		expect(names(sortHosts(hosts, DEFAULT_HOST_SORT, 'en'))).toEqual(names(hosts));
+		expect(sortHosts(hosts, DEFAULT_HOST_SORT, 'en')).not.toBe(hosts);
+		expect(names(sortHosts(hosts, { key: 'traffic', direction: 'ascending' }, 'en'))).toEqual([
+			'hop-9.example',
+			'bastion.example',
+			'edge.example',
+			'hop-10.example'
+		]);
+	});
+
+	test('host sorts by locale with numeric collation; the other keys by their counter', () => {
+		expect(names(sortHosts(hosts, { key: 'host', direction: 'ascending' }, 'en'))).toEqual([
+			'bastion.example',
+			'edge.example',
+			'hop-9.example',
+			'hop-10.example'
+		]);
+		expect(names(sortHosts(hosts, { key: 'host', direction: 'descending' }, 'en'))).toEqual([
+			'hop-10.example',
+			'hop-9.example',
+			'edge.example',
+			'bastion.example'
+		]);
+		// rate = up + down; bastion and edge tie at 5 and keep the aggregate order.
+		expect(names(sortHosts(hosts, { key: 'rate', direction: 'descending' }, 'en'))).toEqual([
+			'bastion.example',
+			'edge.example',
+			'hop-10.example',
+			'hop-9.example'
+		]);
+		expect(names(sortHosts(hosts, { key: 'active', direction: 'descending' }, 'en'))).toEqual([
+			'hop-10.example',
+			'edge.example',
+			'bastion.example',
+			'hop-9.example'
+		]);
+		expect(
+			names(sortHosts(hosts, { key: 'dial_failures', direction: 'descending' }, 'en'))
+		).toEqual(['hop-9.example', 'bastion.example', 'hop-10.example', 'edge.example']);
+		expect(names(sortHosts(hosts, { key: 'latency', direction: 'ascending' }, 'en'))).toEqual([
+			'hop-9.example',
+			'bastion.example',
+			'edge.example',
+			'hop-10.example'
+		]);
+		expect(names(hosts)).toEqual([
+			'hop-10.example',
+			'bastion.example',
+			'edge.example',
+			'hop-9.example'
+		]);
 	});
 });
 

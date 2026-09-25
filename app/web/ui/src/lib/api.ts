@@ -1,6 +1,6 @@
 import { redactCredentials } from './format';
 import { t } from './i18n.svelte';
-import type { Address, Config, NoProxy, RawConfig, Rule, Snapshot, Status } from './types';
+import type { Address, NoProxy, RawConfig, Rule, Snapshot, Status } from './types';
 
 // Mirrors configs.SavedPrefix: the config was written, only the reload failed.
 export const SAVED_PREFIX = 'saved, but ';
@@ -104,9 +104,6 @@ export async function request<T>(
 const rulePath = (name: string) => CONFIGS + '/rules/' + encodeURIComponent(name);
 
 export const configsApi = {
-	get: (signal?: AbortSignal) => request<Config>(CONFIGS, { signal }),
-	update: (config: Config, signal?: AbortSignal) =>
-		request<null>(CONFIGS, { method: 'PUT', body: config, signal }),
 	getWebUI: (signal?: AbortSignal) => request<Address>(CONFIGS + '/web-ui', { signal }),
 	updateWebUI: (address: Address, signal?: AbortSignal) =>
 		request<null>(CONFIGS + '/web-ui', { method: 'PUT', body: address, signal }),

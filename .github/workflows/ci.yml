@@ -73,6 +73,12 @@ jobs:
     - name: E2E tests
       run: pnpm exec playwright test --project=chromium --workers=1
 
+    - name: Build
+      run: pnpm build:dist
+
+    - name: Verify committed statics
+      run: diff -r dist ../statics
+
     - name: Upload test results
       if: failure()
       uses: actions/upload-artifact@v4

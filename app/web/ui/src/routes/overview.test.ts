@@ -168,7 +168,7 @@ const pageHeader = () => target.querySelector('main h1')!.closest('header')!;
 const breadcrumb = () => target.querySelector('main nav[aria-label="Breadcrumb"] a');
 const grid = () => target.querySelector<HTMLElement>('main section[aria-label="Rules"] > div')!;
 
-test('the overview manages the rules: a New rule card closes the grid and Edit, Rule Traffic, Delete sit on every card', async () => {
+test('the overview manages the rules: a New rule card closes the grid and Edit, Duplicate, Rule Traffic, Delete sit on every card', async () => {
 	await render();
 	expect(pageHeader().querySelector('a[href="#/new"]')).toBeNull();
 	const create = grid().lastElementChild!;
@@ -185,6 +185,7 @@ test('the overview manages the rules: a New rule card closes the grid and Edit, 
 		);
 		expect(controls).toEqual([
 			['A', 'Edit'],
+			['A', 'Duplicate rule'],
 			['A', 'Rule Traffic'],
 			['BUTTON', 'Delete']
 		]);
