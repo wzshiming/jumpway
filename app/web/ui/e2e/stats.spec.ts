@@ -1677,6 +1677,87 @@ test('#/stats holds three row skeletons behind a busy section until the snapshot
 	await expectNoDocumentOverflow(page, 'stats-loaded-1280');
 });
 
+test('#/stats draws a rate line under every collapsed rule that fills in with the polls; the expanded chain, hosts and connections carry none', async ({
+	page,
+	api
+}) => {
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await page.goto('/#/stats');
+	await expect(ruleRows(page)).toHaveCount(4);
+	const lines = page.locator('svg[data-sparkline]');
+	await expect(lines).toHaveCount(4);
+	// Every line sits in the "now" column of its row's own band, in a definition of its own.
+	const placement = await ruleRows(page).evaluateAll((rows) =>
+		rows.map((row) => {
+			const svg = row.querySelector('svg[data-sparkline]')!;
+			return [
+				row.querySelectorAll('svg[data-sparkline]').length,
+				svg.closest('[data-column]')?.getAttribute('data-column'),
+				svg.parentElement?.tagName,
+				svg.closest('[data-traffic]') === row.querySelector('[data-traffic]'),
+				svg.getAttribute('aria-hidden')
+			];
+		})
+	);
+	expect(placement).toEqual(Array(4).fill([1, 'rate', 'DD', true, 'true']));
+	const office = api.snapshot.rules![0].stats;
+	for (let step = 1; step <= 4; step++) {
+		office.rate_up = 12_288 * (1 + (step % 3));
+		office.rate_down = 1_048_576 / (1 + (step % 4));
+		await page.waitForResponse((response) => response.url().endsWith('/apis/stats'));
+	}
+	const points = (locator: Locator) =>
+		locator
+			.locator('polyline')
+			.evaluateAll((lines) => lines.map((line) => line.getAttribute('points')!.split(' ').length));
+	const officeLine = ruleRows(page).nth(0).locator('svg[data-sparkline]');
+	await expect.poll(() => points(officeLine)).toHaveLength(2);
+	for (const count of await points(officeLine)) expect(count).toBeGreaterThanOrEqual(3);
+	// The disabled rule has no statistics: its box stays empty.
+	await expect(ruleRows(page).nth(3).locator('svg[data-sparkline]')).toHaveAttribute(
+		'data-samples',
+		'0'
+	);
+	expect(await points(ruleRows(page).nth(3).locator('svg[data-sparkline]'))).toEqual([]);
+	// 20px tall, no wider than its column's cap.
+	const box = (await officeLine.boundingBox())!;
+	expect(Math.round(box.height)).toBe(20);
+	expect(box.width).toBeGreaterThanOrEqual(100);
+	expect(box.width).toBeLessThanOrEqual(160);
+	await expectMetricsFit(page, 'stats-trend-1280');
+	await expectNoDocumentOverflow(page, 'stats-trend-1280');
+	// The "now" help names the line here.
+	await hover(page, ruleRows(page).nth(0).getByRole('button', { name: 'About now' }));
+	await expect(tooltip(page)).toContainText('The line traces the last minute of samples');
+	if (process.env.JW_SHOTS)
+		await page.screenshot({
+			path: '/tmp/jw-polish-s4b-shots/stats-1280-trend.png',
+			animations: 'disabled'
+		});
+
+	await ruleRows(page).nth(0).locator('button[aria-controls]').click();
+	const details = await detailsOf(page, ruleRows(page).nth(0).locator('button[aria-controls]'));
+	await expect(details.locator('[data-url]')).toHaveCount(3);
+	expect(await details.locator('[data-traffic]').count()).toBeGreaterThanOrEqual(8);
+	await expect(details.locator('svg[data-sparkline]')).toHaveCount(0);
+	await expect(lines).toHaveCount(4);
+
+	await page
+		.getByRole('navigation', { name: 'Navigation' })
+		.getByRole('link', { name: 'Proxy Hosts' })
+		.click();
+	await expect(hostRows(page)).toHaveCount(4);
+	await expect(lines).toHaveCount(0);
+	await hover(page, hostRows(page).nth(0).getByRole('button', { name: 'About now' }));
+	await expect(tooltip(page)).not.toContainText('The line');
+	await page
+		.getByRole('navigation', { name: 'Navigation' })
+		.getByRole('link', { name: 'Live Connections' })
+		.click();
+	await expect(connectionRows(page)).toHaveCount(4);
+	await expect(lines).toHaveCount(0);
+});
+
 test.describe('screenshots', () => {
 	// #main scrolls on its own, so a shot covers the viewport; `scroll` moves #main first to show
 	// the lower part of an expanded item.

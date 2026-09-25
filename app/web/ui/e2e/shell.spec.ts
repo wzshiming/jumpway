@@ -276,6 +276,131 @@ test('while the rule list is pending the overview grid holds three card skeleton
 	}
 });
 
+test('the rate KPI and every card trace the recent rates: the lines fill in with the polls, sized by their tiles, in the arrow colours of both themes', async ({
+	page,
+	api
+}) => {
+	const shots = process.env.JW_SHOTS ? '/tmp/jw-polish-s4b-shots/' : '';
+	const shoot = async (name: string, target: Page | Locator = page) => {
+		if (shots) await target.screenshot({ path: shots + name + '.png', animations: 'disabled' });
+	};
+	const kpiLine = page.locator('[data-kpi="rate"] ~ svg[data-sparkline]');
+	const cards = page.getByRole('article');
+	const cardLine = cards.nth(0).locator('footer svg[data-sparkline]');
+	const office = api.snapshot.rules![0].stats;
+	// Rates that move each second, so the lines have a shape worth looking at.
+	const wobble = async (steps: number) => {
+		for (let step = 1; step <= steps; step++) {
+			office.rate_up = 12_288 * (1 + (step % 3));
+			office.rate_down = 1_048_576 / (1 + (step % 4));
+			await page.waitForResponse((response) => response.url().endsWith('/apis/stats'));
+		}
+	};
+	const points = (locator: Locator) =>
+		locator.locator('polyline').evaluateAll((lines) =>
+			lines.map((line) =>
+				line
+					.getAttribute('points')!
+					.split(' ')
+					.map((p) => p.split(',').map(Number))
+			)
+		);
+	const overflow = () =>
+		page.evaluate(() => {
+			const main = document.getElementById('main')!;
+			return main.scrollWidth - main.clientWidth;
+		});
+	// The lines' resolved stroke colours and the opaque background behind the first one.
+	const colours = (locator: Locator) =>
+		locator.locator('polyline').evaluateAll((lines) => {
+			const opaque = (element: Element | null): string => {
+				for (let node = element; node; node = node.parentElement) {
+					const background = getComputedStyle(node).backgroundColor;
+					if (background && background !== 'rgba(0, 0, 0, 0)' && background !== 'transparent')
+						return background;
+				}
+				return getComputedStyle(document.body).backgroundColor;
+			};
+			return {
+				strokes: lines.map((line) => {
+					const style = getComputedStyle(line);
+					return style.stroke === 'currentcolor' ? style.color : style.stroke;
+				}),
+				background: opaque(lines[0]?.closest('svg') ?? null)
+			};
+		});
+
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await page.goto('/');
+	await expect(cards).toHaveCount(4);
+	await expect(kpiLine).toHaveCount(1);
+	await expect(cards.locator('footer svg[data-sparkline]')).toHaveCount(4);
+	await expect(page.locator('[data-kpi="total"] ~ svg[data-sparkline]')).toHaveCount(0);
+	await wobble(4);
+	await expect.poll(async () => (await points(kpiLine)).length).toBe(2);
+	await expect.poll(async () => (await points(cardLine)).length).toBe(2);
+	for (const locator of [kpiLine, cardLine]) {
+		const lines = await points(locator);
+		for (const line of lines) {
+			expect(line.length).toBeGreaterThanOrEqual(3);
+			expect(line.at(-1)![0]).toBe(119);
+		}
+		await expect(locator).toHaveAttribute('aria-hidden', 'true');
+	}
+	// The tile's width and 24px tall; 64×16 inside a card footer, after both rates.
+	const kpiBox = (await kpiLine.boundingBox())!;
+	expect(kpiBox.width).toBeGreaterThanOrEqual(100);
+	expect(Math.round(kpiBox.height)).toBe(24);
+	const cardBox = (await cardLine.boundingBox())!;
+	expect([Math.round(cardBox.width), Math.round(cardBox.height)]).toEqual([64, 16]);
+	const rates = (await cards.nth(0).locator('footer > span').first().boundingBox())!;
+	expect(cardBox.x).toBeGreaterThan(rates.x);
+	expect(cardBox.x + cardBox.width).toBeLessThanOrEqual(rates.x + rates.width + 1);
+	// The numbers read as before; the line adds no text.
+	expect(await compact(kpi(page, 'rate'))).toMatch(/^Upload \S+ \S+ Download \S+ \S+$/);
+	expect(await overflow()).toBeLessThanOrEqual(0);
+	const light = await colours(kpiLine);
+	expect(new Set([...light.strokes, light.background]).size).toBe(3);
+	await shoot('overview-1280-trend');
+	await shoot('kpi-rate', kpi(page, 'rate').locator('..'));
+	await shoot('card-footer', cards.nth(0).locator('footer'));
+
+	// Dark theme: still two distinct colours, neither the background's.
+	await page.addInitScript(() => localStorage.setItem('jumpway.theme', 'dark'));
+	await page.goto('/');
+	await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+	await expect(cards).toHaveCount(4);
+	await wobble(3);
+	await expect.poll(async () => (await points(kpiLine)).length).toBe(2);
+	const dark = await colours(kpiLine);
+	expect(new Set([...dark.strokes, dark.background]).size).toBe(3);
+	expect(dark.background).not.toBe(light.background);
+	expect(await overflow()).toBeLessThanOrEqual(0);
+	await shoot('overview-1280-trend-dark');
+
+	// A phone: the footer wraps its actions under the rates; nothing leaves the card.
+	await page.addInitScript(() => localStorage.removeItem('jumpway.theme'));
+	await page.setViewportSize({ width: 375, height: 812 });
+	await page.goto('/');
+	await expect(cards).toHaveCount(4);
+	await wobble(3);
+	await expect.poll(async () => (await points(cardLine)).length).toBe(2);
+	expect(await overflow()).toBeLessThanOrEqual(0);
+	const inside = await cards.evaluateAll((articles) =>
+		articles.every((article) => {
+			const box = article.getBoundingClientRect();
+			return Array.from(
+				article.querySelectorAll('svg[data-sparkline], footer a, footer button')
+			).every((element) => {
+				const rect = element.getBoundingClientRect();
+				return rect.left >= box.left - 1 && rect.right <= box.right + 1;
+			});
+		})
+	);
+	expect(inside).toBe(true);
+	await shoot('overview-375-trend');
+});
+
 test('sidebar links use current routes and unknown addresses return home', async ({ page }) => {
 	await page.goto('/');
 	await expectNavLabelsFit(page, EN_LABELS);

@@ -6,6 +6,7 @@
 	import { ApiError, configsApi, errorMessage, isAborted } from '../lib/api';
 	import { busy } from '../lib/busy.svelte';
 	import DirectionArrow from '../lib/components/stats/DirectionArrow.svelte';
+	import Sparkline from '../lib/components/stats/Sparkline.svelte';
 	import Banner from '../lib/components/ui/Banner.svelte';
 	import Button from '../lib/components/ui/Button.svelte';
 	import HelpTip from '../lib/components/ui/HelpTip.svelte';
@@ -28,6 +29,7 @@
 	import { countRuleStates, status, type RuleCardState } from '../lib/status.svelte';
 	import { toasts } from '../lib/toast.svelte';
 	import { DIRECTIONS, type Direction } from '../lib/traffic';
+	import { trend } from '../lib/trend.svelte';
 	import { list, type Rule } from '../lib/types';
 	import RuleCard from './overview/RuleCard.svelte';
 
@@ -274,6 +276,7 @@
 			{@render directional('rate', (direction) =>
 				totals ? formatRate(totals[direction.rate]) : DASH
 			)}
+			<Sparkline series={trend.total} class="mt-1.5 h-6 w-full" />
 		</div>
 		<div>
 			{@render kpiLabel(t('totalTraffic'), t('help.kpi.total'))}

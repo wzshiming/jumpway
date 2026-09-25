@@ -5,6 +5,7 @@
 	import IconTrash from '~icons/lucide/trash-2';
 	import { tooltip } from '../../lib/actions/tooltip.svelte';
 	import DirectionArrow from '../../lib/components/stats/DirectionArrow.svelte';
+	import Sparkline from '../../lib/components/stats/Sparkline.svelte';
 	import VirtualPeers from '../../lib/components/rules/VirtualPeers.svelte';
 	import HelpTip from '../../lib/components/ui/HelpTip.svelte';
 	import IconButton from '../../lib/components/ui/IconButton.svelte';
@@ -15,6 +16,7 @@
 	import { forwardTarget, isForward, listenAddress } from '../../lib/rule';
 	import { cardState } from '../../lib/status.svelte';
 	import { DIRECTIONS } from '../../lib/traffic';
+	import { trend } from '../../lib/trend.svelte';
 	import type { Rule, RuleStatus, Stats } from '../../lib/types';
 	import { normalizeWay } from '../../lib/way';
 
@@ -146,6 +148,7 @@
 					{stats ? formatRate(stats[direction.rate]) : DASH}
 				</span>
 			{/each}
+			<Sparkline series={trend.of(rule.name)} class="h-4 w-16 self-center" />
 		</span>
 		<!-- Icon actions one row tall, sitting on the card's own edge. -->
 		<span class="-my-1.5 ml-auto flex items-center gap-0.5">

@@ -3,16 +3,18 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import {
 	rulesFixture,
 	snapshotFixture,
+	snapshotTotals,
 	statusFixture,
 	virtualRulesFixture
 } from '../../e2e/fixtures/api';
 import App from '../App.svelte';
 import { SAVED_PREFIX } from '../lib/api';
-import { formatCount, formatDateTime, formatShortTime } from '../lib/format';
+import { formatCount, formatDateTime, formatRate, formatShortTime } from '../lib/format';
 import { sumStats } from '../lib/hosts';
 import { router } from '../lib/router.svelte';
 import { toasts } from '../lib/toast.svelte';
-import { list, type Rule, type Status } from '../lib/types';
+import { trend } from '../lib/trend.svelte';
+import { list, type Rule, type Snapshot, type Status } from '../lib/types';
 
 // The overview's rule cards switch a rule on and off against a method-aware in-memory /apis stub.
 
@@ -27,6 +29,8 @@ let app: ReturnType<typeof mount> | null = null;
 let rules: Rule[];
 // What GET /apis/configs/status answers; the fixture unless a test replaces it.
 let runtime: Status;
+// What GET /apis/stats answers; tests mutate it between polls.
+let snapshot: Snapshot;
 let calls: Call[];
 // `${method} ${url}` → 400 text. A "saved, but " text still applies the mutation first.
 let fail: Map<string, string>;
@@ -46,6 +50,7 @@ const text = (status: number, body: string) => new Response(body, { status });
 function stubApi() {
 	rules = structuredClone(rulesFixture);
 	runtime = structuredClone(statusFixture);
+	snapshot = structuredClone(snapshotFixture);
 	calls = [];
 	fail = new Map();
 	delay = new Map();
@@ -65,7 +70,7 @@ function stubApi() {
 					return injected === undefined ? json(null) : text(400, injected);
 				};
 				if (url === '/apis/configs/status') return json(runtime);
-				if (url === '/apis/stats') return json(snapshotFixture);
+				if (url === '/apis/stats') return json(snapshot);
 				if (url === '/apis/configs/rules') return json(rules);
 				const match = /^\/apis\/configs\/rules\/([^/]+)$/.exec(url);
 				if (!match) return text(404, 'not found');
@@ -87,6 +92,7 @@ function stubApi() {
 }
 
 const settle = () => vi.advanceTimersByTimeAsync(0);
+const poll = () => vi.advanceTimersByTimeAsync(1_000);
 const requested = (entry: string) =>
 	calls.filter((call) => `${call.method} ${call.url}` === entry).length;
 const writes = () => calls.filter((call) => call.method !== 'GET');
@@ -139,6 +145,7 @@ beforeEach(() => {
 afterEach(() => {
 	teardown();
 	toasts.clear();
+	trend.reset();
 	vi.useRealTimers();
 	vi.unstubAllGlobals();
 	vi.restoreAllMocks();
@@ -903,4 +910,105 @@ test('while the rule list is pending the grid holds three card skeletons behind 
 	expect(after.querySelectorAll('[data-skeleton], [data-skeleton-card]')).toHaveLength(0);
 	expect(cards()).toHaveLength(4);
 	expect(after.lastElementChild?.getAttribute('href')).toBe('#/new');
+});
+
+// The rate line beside the KPI: a sibling of the `<dl>` inside the same tile.
+const kpiTrend = () =>
+	target.querySelector<SVGSVGElement>('[data-kpi="rate"] ~ svg[data-sparkline]');
+const polylines = (svg: Element | null | undefined) =>
+	Array.from(svg?.querySelectorAll('polyline') ?? []).map((line) =>
+		line
+			.getAttribute('points')!
+			.split(' ')
+			.map((point) => point.split(',').map(Number) as [number, number])
+	);
+const officeRate = (up: number) => {
+	snapshot.rules![0].stats.rate_up = up;
+};
+
+test('the Current rate tile keeps an empty line box after the first snapshot and traces one point per poll, right-aligned, without touching the numbers', async () => {
+	await render();
+	const svg = kpiTrend();
+	expect(svg).not.toBeNull();
+	expect(svg!.getAttribute('data-samples')).toBe('1');
+	expect(svg!.getAttribute('aria-hidden')).toBe('true');
+	expect(svg!.getAttribute('viewBox')).toBe('0 0 120 24');
+	expect(svg!.getAttribute('preserveAspectRatio')).toBe('none');
+	expect(svg!.querySelectorAll('polyline')).toHaveLength(0);
+	expect(compact(target.querySelector('[data-kpi="rate"]'))).toBe(
+		`Upload ${snapshotTotals.rateUp} Download ${snapshotTotals.rateDown}`
+	);
+	// The total tile has no line.
+	expect(target.querySelector('[data-kpi="total"] ~ [data-sparkline]')).toBeNull();
+
+	officeRate(24_576);
+	await poll();
+	expect(kpiTrend()).toBe(svg);
+	expect(svg!.getAttribute('data-samples')).toBe('2');
+	officeRate(49_152);
+	await poll();
+	expect(svg!.getAttribute('data-samples')).toBe('3');
+	const lines = polylines(svg);
+	expect(lines).toHaveLength(2);
+	for (const line of lines) {
+		expect(line).toHaveLength(3);
+		expect(line.at(-1)![0]).toBe(120 - 1);
+		expect(line[0][0]).toBeLessThan(line[1][0]);
+	}
+	// Upload grew each poll: the line rises (y shrinks) towards the newest sample.
+	const [up, down] = lines;
+	expect(up[0][1]).toBeGreaterThan(up[1][1]);
+	expect(up[1][1]).toBeGreaterThan(up[2][1]);
+	// One scale for both: download (1.0 MB/s) is the maximum and sits at the top pad.
+	expect(down.every(([, y]) => y === 1)).toBe(true);
+	const strokes = Array.from(svg!.querySelectorAll('polyline')).map((line) => [
+		line.getAttribute('stroke'),
+		line.getAttribute('fill'),
+		line.getAttribute('vector-effect'),
+		line.parentElement?.getAttribute('class')
+	]);
+	expect(strokes).toEqual([
+		['currentColor', 'none', 'non-scaling-stroke', 'text-link'],
+		['currentColor', 'none', 'non-scaling-stroke', 'text-accent']
+	]);
+	const totals = sumStats(list(snapshot.rules).map((rule) => rule.stats));
+	expect(compact(target.querySelector('[data-kpi="rate"]'))).toBe(
+		`Upload ${formatRate(totals.rate_up)} Download ${formatRate(totals.rate_down)}`
+	);
+});
+
+test('every card footer carries one hidden rate line after its rates; a rule without statistics keeps an empty box', async () => {
+	await render();
+	officeRate(24_576);
+	await poll();
+	officeRate(49_152);
+	await poll();
+	for (const name of names()) {
+		const footer = card(name!).querySelector('footer')!;
+		const lines = footer.querySelectorAll('svg[data-sparkline]');
+		expect(lines, name).toHaveLength(1);
+		expect(lines[0].getAttribute('aria-hidden'), name).toBe('true');
+		// The last item of the rates group: after both rates, apart from the icon actions.
+		const group = lines[0].parentElement!;
+		expect(group.querySelectorAll(':scope > span'), name).toHaveLength(2);
+		expect(lines[0].previousElementSibling?.tagName, name).toBe('SPAN');
+		expect(lines[0].nextElementSibling, name).toBeNull();
+		expect(group.querySelector('.icon-btn'), name).toBeNull();
+		expect(footer.querySelectorAll('.icon-btn'), name).toHaveLength(4);
+	}
+	const office = card('office').querySelector('footer svg[data-sparkline]')!;
+	expect(office.getAttribute('data-samples')).toBe('3');
+	expect(polylines(office).map((line) => line.length)).toEqual([3, 3]);
+	const lab = card('lab').querySelector('footer svg[data-sparkline]')!;
+	expect(lab.getAttribute('data-samples')).toBe('0');
+	expect(lab.querySelectorAll('polyline')).toHaveLength(0);
+	expect(compact(card('office').querySelector('footer'))).toMatch(
+		/^Upload 48\.0 KB\/s Download 1\.0 MB\/s/
+	);
+	expect(
+		Array.from(target.querySelectorAll('[data-sparkline]')).every(
+			(svg) => svg.getAttribute('aria-hidden') === 'true' && svg.textContent === ''
+		)
+	).toBe(true);
+	expect(target.querySelectorAll('[data-sparkline]')).toHaveLength(5);
 });

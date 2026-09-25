@@ -11,8 +11,10 @@
 		type TrafficMetric
 	} from '../../traffic';
 	import type { Stats } from '../../types';
+	import type { RateSample } from '../../trend';
 	import HelpTip from '../ui/HelpTip.svelte';
 	import DirectionArrow from './DirectionArrow.svelte';
+	import Sparkline from './Sparkline.svelte';
 
 	// The eight traffic counters as a matrix: a column per metric, upload above download, equal tracks.
 	interface Props {
@@ -21,14 +23,22 @@
 		peakHint?: string | null;
 		// Tighter spacing and no help tips for the bands nested under hop URLs and host endpoints.
 		compact?: boolean;
+		// Recent rate samples drawn under the "now" values; only the items that keep a series pass them.
+		trend?: readonly RateSample[] | null;
 	}
 
-	let { stats, peakHint = null, compact = false }: Props = $props();
+	let { stats, peakHint = null, compact = false, trend = null }: Props = $props();
 
 	const labelOf = (metric: TrafficMetric) =>
 		t(metric === 'peak' && peakHint ? 'peakSum' : TRAFFIC_METRIC_LABELS[metric]);
 	const helpOf = (metric: TrafficMetric) =>
-		t(metric === 'peak' && peakHint ? 'help.peakSum' : TRAFFIC_METRIC_HELP[metric]);
+		t(
+			metric === 'peak' && peakHint
+				? 'help.peakSum'
+				: metric === 'rate' && trend
+					? 'help.nowTrend'
+					: TRAFFIC_METRIC_HELP[metric]
+		);
 
 	function valueOf(direction: Direction, metric: TrafficMetric): string {
 		if (!stats) return DASH;
@@ -82,6 +92,9 @@
 						</span>
 					</dd>
 				{/each}
+				{#if metric === 'rate' && trend}
+					<dd><Sparkline series={trend} class="mt-1 h-5 w-full max-w-40" /></dd>
+				{/if}
 			</div>
 		{/each}
 	</dl>

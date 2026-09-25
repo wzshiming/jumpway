@@ -13,6 +13,7 @@ import { formatDateTime } from '../lib/format';
 import { stats } from '../lib/stats.svelte';
 import { toasts } from '../lib/toast.svelte';
 import { DIRECTIONS, TRAFFIC_METRICS } from '../lib/traffic';
+import { trend } from '../lib/trend.svelte';
 import type { Rule, Snapshot } from '../lib/types';
 
 // Statistics, Hosts and Connections mounted in jsdom against an in-memory /apis stub whose
@@ -167,6 +168,7 @@ afterEach(() => {
 	app = null;
 	target?.remove();
 	toasts.clear();
+	trend.reset();
 	vi.useRealTimers();
 	vi.unstubAllGlobals();
 	vi.restoreAllMocks();
@@ -2004,4 +2006,91 @@ test('#/hosts has the same controls: the search matches host names and endpoint 
 	expect(hostNames()).toEqual(hostsTotals.order);
 	click(direction);
 	expect(hostNames()).toEqual([...hostsTotals.order].reverse());
+});
+
+const sparklines = (root: ParentNode = target) =>
+	Array.from(root.querySelectorAll<SVGSVGElement>('svg[data-sparkline]'));
+const pointsOf = (svg: Element) =>
+	Array.from(svg.querySelectorAll('polyline')).map(
+		(line) => line.getAttribute('points')!.split(' ').length
+	);
+
+test('#/stats draws one rate line per rule under its "now" column once two snapshots are in; the expanded chain, its targets and the hosts page carry none', async () => {
+	await render('#/stats');
+	expect(rows()).toHaveLength(4);
+	const first = sparklines();
+	expect(first).toHaveLength(4);
+	expect(first.map((svg) => svg.getAttribute('data-samples'))).toEqual(['1', '1', '1', '0']);
+	expect(first.every((svg) => svg.querySelectorAll('polyline').length === 0)).toBe(true);
+	snapshot.rules![0].stats.rate_up = 24_576;
+	await poll();
+	snapshot.rules![0].stats.rate_up = 49_152;
+	await poll();
+	const lines = sparklines();
+	expect(lines).toEqual(first);
+	for (const row of rows()) {
+		const name = row.dataset.rule!;
+		const own = sparklines(row);
+		expect(own, name).toHaveLength(1);
+		// Under the two "now" values, inside a definition of its own, hidden from assistive technology.
+		const column = own[0].closest('[data-column]') as HTMLElement;
+		expect(column.dataset.column, name).toBe('rate');
+		expect(own[0].parentElement?.tagName, name).toBe('DD');
+		expect(own[0].parentElement?.previousElementSibling?.tagName, name).toBe('DD');
+		expect(own[0].getAttribute('aria-hidden'), name).toBe('true');
+		expect(bandOf(row).contains(own[0]), name).toBe(true);
+		expect(own[0].closest('button'), name).toBeNull();
+		if (name === 'lab') {
+			expect(own[0].getAttribute('data-samples'), name).toBe('0');
+			expect(pointsOf(own[0]), name).toEqual([]);
+		} else {
+			expect(own[0].getAttribute('data-samples'), name).toBe('3');
+			expect(pointsOf(own[0]), name).toEqual([3, 3]);
+		}
+	}
+	// The band still reads as before: labels, columns and the arrows' spans.
+	const office = rows()[0];
+	expect(labels(bandOf(office))).toEqual(FOUR_LABELS);
+	expect(columnsOf(bandOf(office))).toEqual(METRIC_COLUMNS);
+	expect(compact(office.querySelector('[data-metric="rate_up"]'))).toBe('48.0 KB/s');
+	const toggle = button('Expand: office', office)!;
+	click(toggle);
+	const details = detailsOf(toggle);
+	expect(details.querySelectorAll('[data-traffic]').length).toBeGreaterThan(3);
+	expect(sparklines(details)).toEqual([]);
+	expect(sparklines(office)).toHaveLength(1);
+
+	click(target.querySelector('nav a[href="#/hosts"]')!);
+	await settle();
+	expect(rows('main article[data-host]')).toHaveLength(4);
+	expect(sparklines()).toEqual([]);
+	click(target.querySelector('nav a[href="#/connections"]')!);
+	await settle();
+	expect(rows('main [data-connection]')).toHaveLength(4);
+	expect(sparklines()).toEqual([]);
+});
+
+test('a reset starts the rate lines over: the re-read snapshot with its new `since` is their only sample', async () => {
+	await render('#/stats');
+	await poll();
+	await poll();
+	const office = rows()[0];
+	const line = sparklines(office)[0];
+	expect(line.getAttribute('data-samples')).toBe('3');
+	expect(pointsOf(line)).toEqual([3, 3]);
+	click(button('Reset statistics'));
+	await settle();
+	snapshot.since = '2026-09-19T09:00:02Z';
+	click(button('Confirm', confirmDialog()!));
+	await settle();
+	expect(requested('DELETE /apis/stats')).toBe(1);
+	expect(requested('GET /apis/stats')).toBe(4);
+	const after = sparklines(office)[0];
+	expect(after).toBe(line);
+	expect(after.getAttribute('data-samples')).toBe('1');
+	expect(pointsOf(after)).toEqual([]);
+	expect(sparklines().map((svg) => svg.getAttribute('data-samples'))).toEqual(['1', '1', '1', '0']);
+	await poll();
+	expect(after.getAttribute('data-samples')).toBe('2');
+	expect(pointsOf(after)).toEqual([2, 2]);
 });

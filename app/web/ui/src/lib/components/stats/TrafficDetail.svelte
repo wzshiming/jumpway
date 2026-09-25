@@ -2,6 +2,7 @@
 	import { DASH, formatCount, formatLatency } from '../../format';
 	import { t } from '../../i18n.svelte';
 	import type { Stats } from '../../types';
+	import type { RateSample } from '../../trend';
 	import HelpTip from '../ui/HelpTip.svelte';
 	import TrafficMetrics from './TrafficMetrics.svelte';
 
@@ -16,6 +17,8 @@
 		compact?: boolean;
 		// Replaces the plain latency definition where the stats aggregate several endpoints.
 		latencyHelp?: string | null;
+		// Recent rate samples drawn under the "now" values.
+		trend?: readonly RateSample[] | null;
 	}
 
 	let {
@@ -23,13 +26,14 @@
 		peakHint = null,
 		connectionsHref = null,
 		compact = false,
-		latencyHelp = null
+		latencyHelp = null,
+		trend = null
 	}: Props = $props();
 </script>
 
 <!-- @container: the meta row flips to four tracks together with the traffic band above it. -->
 <div class="@container grid {compact ? 'gap-y-2' : 'gap-y-3'}" data-stats>
-	<TrafficMetrics {stats} {peakHint} {compact} />
+	<TrafficMetrics {stats} {peakHint} {compact} {trend} />
 	<dl
 		class="grid grid-cols-2 {compact
 			? 'gap-x-3 gap-y-1.5'

@@ -220,6 +220,8 @@ export const en = {
 
 	// Concept definitions behind the circled question marks
 	'help.now': 'Current rate: bytes per second over the last completed one-second window.',
+	'help.nowTrend':
+		'Current rate: bytes per second over the last completed one-second window. The line traces the last minute of samples while the page is open; it starts over after a reset or a pause.',
 	'help.peak': 'Peak: the highest one-second rate seen since the statistics were last reset.',
 	'help.peakSum':
 		'Peak (sum): the peaks of the endpoints added together \u2014 an upper bound, as they need not have happened at the same time.',
@@ -249,7 +251,7 @@ export const en = {
 	'help.kpi.active':
 		'Connections across all rules opened since JumpWay started or the last reset and still open, and how many were opened in total since then.',
 	'help.kpi.rate':
-		'Bytes per second across all rules over the last completed second: \u2191 upload from clients towards targets, \u2193 download back.',
+		'Bytes per second across all rules over the last completed second: \u2191 upload from clients towards targets, \u2193 download back. The line traces the last minute of samples while the page is open; it starts over after a reset or a pause.',
 	'help.kpi.total':
 		'Bytes transferred across all rules since JumpWay started or the statistics were last reset: \u2191 upload, \u2193 download.',
 	'help.state':

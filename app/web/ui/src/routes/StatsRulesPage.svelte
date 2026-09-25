@@ -34,6 +34,7 @@
 		type StatsRow
 	} from '../lib/statsRows';
 	import { ruleState, status } from '../lib/status.svelte';
+	import { trend } from '../lib/trend.svelte';
 	import {
 		list,
 		type Hop,
@@ -347,6 +348,7 @@
 						<TrafficDetail
 							stats={entry?.stats}
 							connectionsHref={statsRoute('connections', row.name)}
+							trend={trend.of(row.name)}
 						/>
 					{/snippet}
 					<ChainFlow
