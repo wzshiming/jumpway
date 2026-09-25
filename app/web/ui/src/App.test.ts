@@ -11,10 +11,13 @@ import {
 } from '../e2e/fixtures/api';
 import App from './App.svelte';
 import { confirm } from './lib/confirm';
+import { formatCount, formatShortTime } from './lib/format';
+import { sumStats } from './lib/hosts';
 import { router } from './lib/router.svelte';
 import { stats } from './lib/stats.svelte';
 import { status } from './lib/status.svelte';
 import { toasts } from './lib/toast.svelte';
+import { list } from './lib/types';
 
 let target: HTMLElement;
 let app: ReturnType<typeof mount> | null = null;
@@ -134,8 +137,13 @@ test('the overview shows KPIs and one card per configured rule from status, rule
 	expect(requests).toContain('/apis/configs/rules');
 	expect(requests).toContain('/apis/stats');
 	const kpi = (name: string) => target.querySelector(`[data-kpi="${name}"]`)?.textContent?.trim();
-	expect(kpi('rules')).toBe('2/4');
+	expect(kpi('rules')).toBe('2 Running');
+	expect(kpi('rule-states')?.replace(/\s+/g, ' ')).toBe('4 configured · 1 Retrying · 1 Disabled');
 	expect(kpi('active')).toBe(String(snapshotTotals.active));
+	const total = sumStats(list(snapshotFixture.rules).map((rule) => rule.stats)).total;
+	expect(kpi('connections-total')?.replace(/\s+/g, ' ')).toBe(
+		`${formatCount(total)} total · since ${formatShortTime(snapshotFixture.since)}`
+	);
 	// The direction arrows carry their names for assistive technology.
 	expect(kpi('rate')?.replace(/\s+/g, ' ')).toBe(
 		`Upload ${snapshotTotals.rateUp} Download ${snapshotTotals.rateDown}`

@@ -108,7 +108,10 @@ test('the overview cards carry state, name, mode, address, target and chain size
 	await expect(cards(page)).toHaveCount(3);
 	await expect(cardNames(page)).toHaveText(['office', 'db-tunnel', 'lab']);
 	// mirror was running: the re-read status counts it out as well.
-	await expect(page.locator('[data-kpi="rules"]')).toHaveText('1/3');
+	await expect(page.locator('[data-kpi="rules"]')).toHaveText('1 Running');
+	await expect(page.locator('[data-kpi="rule-states"]')).toHaveText(
+		'3 configured · 1 Retrying · 1 Disabled'
+	);
 	expect(writes(api)).toEqual(['DELETE /apis/configs/rules/mirror']);
 	await expect(page.getByRole('status').filter({ hasText: 'Rule deleted.' })).toBeVisible();
 	await expect(page).toHaveURL(/#\/$/);

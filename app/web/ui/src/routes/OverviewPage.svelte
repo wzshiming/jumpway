@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import IconPlus from '~icons/lucide/plus';
+	import { tooltip } from '../lib/actions/tooltip.svelte';
 	import { ApiError, configsApi, errorMessage, isAborted } from '../lib/api';
 	import { busy } from '../lib/busy.svelte';
 	import DirectionArrow from '../lib/components/stats/DirectionArrow.svelte';
@@ -9,13 +10,21 @@
 	import Button from '../lib/components/ui/Button.svelte';
 	import HelpTip from '../lib/components/ui/HelpTip.svelte';
 	import PageHeader from '../lib/components/ui/PageHeader.svelte';
+	import { TEXT_CLASSES } from '../lib/components/ui/StatusChip.svelte';
 	import { confirm } from '../lib/confirm';
-	import { DASH, formatBytes, formatCount, formatRate } from '../lib/format';
+	import {
+		DASH,
+		formatBytes,
+		formatCount,
+		formatDateTime,
+		formatRate,
+		formatShortTime
+	} from '../lib/format';
 	import { sumStats } from '../lib/hosts';
-	import { t } from '../lib/i18n.svelte';
+	import { t, type MessageKey } from '../lib/i18n.svelte';
 	import { NEW_RULE_ROUTE } from '../lib/routes';
 	import { stats } from '../lib/stats.svelte';
-	import { status } from '../lib/status.svelte';
+	import { countRuleStates, status, type RuleCardState } from '../lib/status.svelte';
 	import { toasts } from '../lib/toast.svelte';
 	import { DIRECTIONS, type Direction } from '../lib/traffic';
 	import { list, type Rule } from '../lib/types';
@@ -156,11 +165,25 @@
 	}
 
 	const runtimeRules = $derived(list(status.data?.rules));
-	const running = $derived(runtimeRules.filter((rule) => rule.running).length);
-	const total = $derived(rules?.length ?? runtimeRules.length);
+	const counts = $derived(countRuleStates(rules, status.data?.rules));
+	// The states other than running, most severe first; zero counts are left out.
+	const STATE_SEGMENTS: readonly { state: RuleCardState; label: MessageKey }[] = [
+		{ state: 'stopped', label: 'stopped' },
+		{ state: 'retrying', label: 'retryingLabel' },
+		{ state: 'unknown', label: 'checking' },
+		{ state: 'disabled', label: 'disabled' }
+	];
+	const segments = $derived(
+		STATE_SEGMENTS.filter((segment) => counts[segment.state] > 0).map((segment) => ({
+			...segment,
+			count: counts[segment.state]
+		}))
+	);
 	const totals = $derived(
 		stats.data ? sumStats(list(stats.data.rules).map((rule) => rule.stats)) : null
 	);
+	// The time sits mid-sentence: the words around it are rendered apart so only it carries the tooltip.
+	const sinceWords = $derived(t('sinceTime', { time: '\0' }).split('\0'));
 	const runtimeOf = (name: string) => runtimeRules.find((rule) => rule.name === name) ?? null;
 	const statsOf = (name: string) =>
 		list(stats.data?.rules).find((rule) => rule.name === name)?.stats ?? null;
@@ -173,6 +196,13 @@
 		{label}
 		<HelpTip concept={label} text={help} />
 	</p>
+{/snippet}
+
+{#snippet stateDot(state: RuleCardState)}
+	<span
+		class="size-1.5 shrink-0 self-center rounded-full bg-current {TEXT_CLASSES[state]}"
+		aria-hidden="true"
+	></span>
 {/snippet}
 
 {#snippet directional(kpi: string, value: (direction: Direction) => string)}
@@ -189,39 +219,69 @@
 	</dl>
 {/snippet}
 
-<section
-	class="grid grid-cols-2 gap-x-6 gap-y-5 border-b border-line pb-5 md:grid-cols-4"
-	aria-label={t('overview')}
->
-	<div>
-		{@render kpiLabel(t('rules'), t('help.kpi.rules'))}
-		<p class="mt-1 font-mono text-2xl leading-none tabular-nums" data-kpi="rules">
-			{running}<span class="text-fg-subtle">/{total}</span>
-		</p>
-		<p class="mt-1.5 text-xs text-fg-muted">{t('rulesRunning', { running, total })}</p>
-	</div>
-	<div>
-		{@render kpiLabel(t('activeConnections'), t('help.kpi.active'))}
-		<p class="mt-1 font-mono text-2xl leading-none tabular-nums" data-kpi="active">
-			{totals ? formatCount(totals.active) : DASH}
-		</p>
-		<p class="mt-1.5 text-xs text-fg-muted">
-			{totals ? t('connectionsShort', { active: totals.active, total: totals.total }) : DASH}
-		</p>
-	</div>
-	<div>
-		{@render kpiLabel(t('currentRate'), t('help.kpi.rate'))}
-		{@render directional('rate', (direction) =>
-			totals ? formatRate(totals[direction.rate]) : DASH
-		)}
-	</div>
-	<div>
-		{@render kpiLabel(t('totalTraffic'), t('help.kpi.total'))}
-		{@render directional('total', (direction) =>
-			totals ? formatBytes(totals[direction.total]) : DASH
-		)}
-	</div>
-</section>
+<!-- @container: four columns once the content beside the sidebar is 42rem wide; else a 2×2 grid. -->
+<div class="@container">
+	<section
+		class="grid grid-cols-2 gap-x-6 gap-y-5 border-b border-line pb-5 @2xl:grid-cols-4"
+		aria-label={t('overview')}
+	>
+		<div>
+			{@render kpiLabel(t('rules'), t('help.kpi.rules'))}
+			<p class="mt-1 flex flex-wrap items-baseline gap-x-2" data-kpi="rules">
+				<span class="font-mono text-2xl leading-none tabular-nums">
+					{status.data ? counts.running : DASH}
+				</span>
+				<span class="inline-flex items-baseline gap-1 text-xs text-fg-muted"
+					>{@render stateDot('running')}{t('running')}</span
+				>
+			</p>
+			<!-- A segment carries its trailing separator and never wraps: lines break only between segments. -->
+			<p class="mt-1.5 text-xs text-fg-muted" data-kpi="rule-states">
+				<span class="whitespace-nowrap"
+					>{t('rulesConfigured', {
+						total: counts.total
+					})}{#if segments.length}&nbsp;&middot;{/if}</span
+				>{#each segments as segment, index (segment.state)}
+					{' '}<span class="whitespace-nowrap"
+						><span class="inline-flex items-baseline gap-1" data-rule-state={segment.state}
+							>{@render stateDot(segment.state)}{t('stateCount', {
+								count: segment.count,
+								state: t(segment.label)
+							})}</span
+						>{#if index < segments.length - 1}&nbsp;&middot;{/if}</span
+					>{/each}
+			</p>
+		</div>
+		<div>
+			{@render kpiLabel(t('activeConnections'), t('help.kpi.active'))}
+			<p class="mt-1 font-mono text-2xl leading-none tabular-nums" data-kpi="active">
+				{totals ? formatCount(totals.active) : DASH}
+			</p>
+			<p class="mt-1.5 text-xs text-fg-muted" data-kpi="connections-total">
+				{#if totals}
+					{t('connectionsTotal', { total: formatCount(totals.total) })}&nbsp;&middot;
+					{sinceWords[0]}<span use:tooltip={formatDateTime(stats.data?.since)}
+						>{formatShortTime(stats.data?.since)}</span
+					>{sinceWords[1] ?? ''}
+				{:else}
+					{DASH}
+				{/if}
+			</p>
+		</div>
+		<div>
+			{@render kpiLabel(t('currentRate'), t('help.kpi.rate'))}
+			{@render directional('rate', (direction) =>
+				totals ? formatRate(totals[direction.rate]) : DASH
+			)}
+		</div>
+		<div>
+			{@render kpiLabel(t('totalTraffic'), t('help.kpi.total'))}
+			{@render directional('total', (direction) =>
+				totals ? formatBytes(totals[direction.total]) : DASH
+			)}
+		</div>
+	</section>
+</div>
 
 <section class="pt-5" aria-label={t('rules')} aria-busy={loading}>
 	{#if error}

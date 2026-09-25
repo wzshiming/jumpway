@@ -68,13 +68,15 @@ switches between the pages and holds the English/中文 and system/light/dark
 theme switches. On desktop it can collapse into an icon rail and remembers
 that choice; language and theme remain available from Preferences.
 
-- `Overview`: how many rules are running, the active connections, current rates
-  and total traffic, and one card per rule with its state, address, target,
-  exit chain and rates. The card's `Enabled` switch stops or restarts that rule
-  alone (it writes `disabled` to the file and applies it). Pencil and chart icons
-  open the rule editor and its traffic statistics; the trash icon deletes the
-  rule after confirmation. `New rule` and the rule names open the editor. A
-  rule is an **entry** (`listen`) and an **exit** (`forward`):
+- `Overview`: how many rules are running (with the others counted as retrying,
+  stopped or disabled), the active connections and the total opened since the
+  statistics started, current rates and total traffic, and one card per rule
+  with its state, address, target, exit chain and rates. The card's `Enabled`
+  switch stops or restarts that rule alone (it writes `disabled` to the file and
+  applies it). Pencil and chart icons open the rule editor and its traffic
+  statistics; the trash icon deletes the rule after confirmation. `New rule` and
+  the rule names open the editor. A rule is an **entry** (`listen`) and an
+  **exit** (`forward`):
     - `listen`: the host and port clients connect to, with optional proxy
       credentials. `protocols` lists the proxy protocols served on the port
       (`http`, `socks5`, `socks4`, `ssh`, `ss`) and may give each its own

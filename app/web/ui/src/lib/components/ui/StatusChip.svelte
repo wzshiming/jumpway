@@ -1,12 +1,23 @@
 <script module lang="ts">
-	export type ChipState = 'running' | 'retrying' | 'stopped' | 'unknown' | 'disabled';
+	import type { RuleCardState } from '../../status.svelte';
+
+	export type ChipState = RuleCardState;
+
+	// The text colour per state; the KPI strip's dots reuse it so they match the chips.
+	export const TEXT_CLASSES: Record<ChipState, string> = {
+		running: 'text-running',
+		retrying: 'text-warning',
+		stopped: 'text-danger',
+		unknown: 'text-fg-muted',
+		disabled: 'text-fg-subtle'
+	};
 
 	const CLASSES: Record<ChipState, string> = {
-		running: 'bg-running-soft text-running',
-		retrying: 'bg-warning-soft text-warning',
-		stopped: 'bg-danger-soft text-danger',
-		unknown: 'bg-surface-2 text-fg-muted',
-		disabled: 'bg-surface-2 text-fg-subtle'
+		running: 'bg-running-soft ' + TEXT_CLASSES.running,
+		retrying: 'bg-warning-soft ' + TEXT_CLASSES.retrying,
+		stopped: 'bg-danger-soft ' + TEXT_CLASSES.stopped,
+		unknown: 'bg-surface-2 ' + TEXT_CLASSES.unknown,
+		disabled: 'bg-surface-2 ' + TEXT_CLASSES.disabled
 	};
 </script>
 

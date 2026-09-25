@@ -59,7 +59,6 @@ export const zh = {
 	newRule: '新建规则',
 	noRules: '尚无规则。',
 	direct: '直连',
-	connectionsShort: '连接 {active}/{total}',
 	stats: '统计',
 	hosts: '主机',
 	traffic: '流量',
@@ -240,7 +239,8 @@ export const zh = {
 		'监听或出口链路中出现的每台跳板主机，汇总其所有 URL 和规则。峰值合计为上界；平均延迟按成功建连次数加权。',
 	'help.page.connections':
 		'当前打开的连接，每条对应一个客户端连接，显示所用规则和实际路径；最多列出 200 条。',
-	'help.kpi.rules': '监听正在运行的规则数 / 已配置的规则总数；已禁用的规则不算运行中。',
+	'help.kpi.rules':
+		'监听正在运行的规则数；其余规则为重试中（监听失败、仍在尝试）、已停止、已禁用，状态尚未加载时显示为状态未知。',
 	'help.kpi.active':
 		'所有规则中自上次重置以来新建且仍然打开的连接数，以及自那以来累计打开的连接数。',
 	'help.kpi.rate':
@@ -260,7 +260,11 @@ export const zh = {
 		'路径：此连接实际经过的路线，从本机依次经过各代理 URL 到达目标；“复用连接”表示该节点通过已有的传输通道到达。',
 
 	// Overview
-	rulesRunning: '{total} 条规则中 {running} 条运行中',
+	rulesConfigured: '共 {total} 条',
+	stateCount: '{state} {count}',
+	retryingLabel: '重试中',
+	connectionsTotal: '累计 {total}',
+	sinceTime: '自 {time} 起',
 	activeConnections: '活动连接',
 	currentRate: '当前速率',
 	totalTraffic: '累计流量',

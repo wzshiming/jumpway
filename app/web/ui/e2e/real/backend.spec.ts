@@ -258,7 +258,8 @@ test('overview, sidebar status and resource links reflect the live backend', asy
 	await expect(aside.locator('[data-state]').first()).toHaveText('Running');
 	await expect(aside).toContainText(status.address);
 	const running = (status.rules ?? []).filter((rule) => rule.running).length;
-	await expect(kpi(page, 'rules')).toHaveText(`${running}/${rules.length}`);
+	await expect(kpi(page, 'rules')).toHaveText(`${running} Running`);
+	await expect(kpi(page, 'rule-states')).toContainText(`${rules.length} configured`);
 	await expect(page.getByRole('article')).toHaveCount(rules.length);
 
 	const links = await aside

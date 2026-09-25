@@ -9,6 +9,7 @@ import {
 	formatDuration,
 	formatLatency,
 	formatRate,
+	formatShortTime,
 	redactCredentials
 } from './format';
 import { i18n } from './i18n.svelte';
@@ -121,6 +122,39 @@ describe('durations', () => {
 		);
 		expect(formatDateTime('nope')).toBe('\u2014');
 	});
+
+	test.each(['en', 'zh'] as const)(
+		'formatShortTime (%s) shows the clock on the same local day, month/day and clock otherwise',
+		(language) => {
+			i18n.init();
+			i18n.setLanguage(language);
+			const clock = { hour: '2-digit', minute: '2-digit' } as const;
+			// Noon local time: the same day reaches from 09:00 to 15:00 in every zone.
+			const now = new Date(2026, 8, 18, 12, 0, 0).getTime();
+			const earlier = new Date(now - 3 * 3600_000);
+			expect(formatShortTime(earlier.toISOString(), now)).toBe(
+				earlier.toLocaleTimeString(language, clock)
+			);
+			const later = new Date(now + 3 * 3600_000);
+			expect(formatShortTime(later.toISOString(), now)).toBe(
+				later.toLocaleTimeString(language, clock)
+			);
+			const yesterday = new Date(now - 24 * 3600_000);
+			const dated = { month: 'numeric', day: 'numeric', ...clock } as const;
+			expect(formatShortTime(yesterday.toISOString(), now)).toBe(
+				yesterday.toLocaleString(language, dated)
+			);
+			expect(formatShortTime(yesterday.toISOString(), now)).not.toBe(
+				yesterday.toLocaleTimeString(language, clock)
+			);
+			const lastYear = new Date(now - 400 * 24 * 3600_000);
+			expect(formatShortTime(lastYear.toISOString(), now)).toBe(
+				lastYear.toLocaleString(language, dated)
+			);
+			expect(formatShortTime('nope', now)).toBe('\u2014');
+			expect(formatShortTime(undefined, now)).toBe('\u2014');
+		}
+	);
 });
 
 describe('formatCount', () => {

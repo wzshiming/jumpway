@@ -58,7 +58,6 @@ export const en = {
 	newRule: 'New rule',
 	noRules: 'No rules yet.',
 	direct: 'direct',
-	connectionsShort: '{active}/{total} conns',
 	stats: 'Statistics',
 	hosts: 'Hosts',
 	traffic: 'Traffic',
@@ -245,7 +244,7 @@ export const en = {
 	'help.page.connections':
 		'Connections open right now, one per client connection, with the rule it uses and the route it took; at most 200 are listed.',
 	'help.kpi.rules':
-		'Rules with a running listener out of all configured rules; a disabled rule is not running.',
+		'Rules whose listener is running right now, out of all configured rules; the rest are retrying (listen keeps failing, still trying), stopped, disabled, or of unknown state while the status has not loaded.',
 	'help.kpi.active':
 		'Connections across all rules opened since JumpWay started or the last reset and still open, and how many were opened in total since then.',
 	'help.kpi.rate':
@@ -268,7 +267,11 @@ export const en = {
 		'Path: the route this connection took, from this machine through each proxy URL to the target. \u201creused\u201d marks a hop reached over an existing transport.',
 
 	// Overview
-	rulesRunning: '{running} of {total} running',
+	rulesConfigured: '{total} configured',
+	stateCount: '{count} {state}',
+	retryingLabel: 'Retrying',
+	connectionsTotal: '{total} total',
+	sinceTime: 'since {time}',
 	activeConnections: 'Active connections',
 	currentRate: 'Current rate',
 	totalTraffic: 'Total traffic',
