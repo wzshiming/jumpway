@@ -1628,6 +1628,55 @@ test('long targets, IPv6 clients, process names and rule names wrap across mobil
 	await expectNoDocumentOverflow(page, 'connections-long-selected');
 });
 
+test('#/stats holds three row skeletons behind a busy section until the snapshot answers, fitting a phone and a desktop', async ({
+	page,
+	api
+}) => {
+	await page.setViewportSize({ width: 375, height: 800 });
+	let release!: () => void;
+	const held = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	api.delay.set('GET /apis/stats', held);
+	api.delay.set('GET /apis/configs/rules', held);
+	await page.goto('/#/stats');
+	const section = page.locator('section[aria-label="Statistics"]');
+	const skeletonRows = section.locator('[data-skeleton-row]');
+	await expect(section).toHaveAttribute('aria-busy', 'true');
+	await expect(skeletonRows).toHaveCount(3);
+	await expect(skeletonRows.first().locator('[data-skeleton]').first()).toBeVisible();
+	await expect(section.locator('.sr-only', { hasText: 'Loading...' })).toHaveCount(1);
+	await expect(ruleRows(page)).toHaveCount(0);
+	await expectNoDocumentOverflow(page, 'stats-skeleton-375');
+	const shots = process.env.JW_SHOTS ? '/tmp/jw-polish-s5-shots/' : '';
+	const shoot = async (name: string) => {
+		if (shots) await page.screenshot({ path: shots + name + '.png', animations: 'disabled' });
+	};
+	await shoot('stats-skeleton-375');
+	// Two metric columns on a phone, four on a desktop, like the band that follows: the four
+	// placeholders take two rows, then one.
+	const bandRowsOf = (row: Locator) =>
+		row
+			.locator('> div')
+			.last()
+			.locator('> div')
+			.evaluateAll(
+				(cells) => new Set(cells.map((cell) => Math.round(cell.getBoundingClientRect().top))).size
+			);
+	expect(await bandRowsOf(skeletonRows.first())).toBe(2);
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await expect(skeletonRows).toHaveCount(3);
+	await expect.poll(() => bandRowsOf(skeletonRows.first())).toBe(1);
+	await expectNoDocumentOverflow(page, 'stats-skeleton-1280');
+	await shoot('stats-skeleton-1280');
+	release();
+	await expect(ruleRows(page)).toHaveCount(4);
+	await expect(page.locator('[data-skeleton], [data-skeleton-row]')).toHaveCount(0);
+	await expect(section).not.toHaveAttribute('aria-busy', 'true');
+	await expect(section.locator('.sr-only', { hasText: 'Loading...' })).toHaveCount(0);
+	await expectNoDocumentOverflow(page, 'stats-loaded-1280');
+});
+
 test.describe('screenshots', () => {
 	// #main scrolls on its own, so a shot covers the viewport; `scroll` moves #main first to show
 	// the lower part of an expanded item.

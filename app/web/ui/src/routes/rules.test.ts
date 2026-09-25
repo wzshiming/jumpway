@@ -38,6 +38,8 @@ let webUI: Address;
 let calls: Call[];
 // `${method} ${url}` → 400 text. A "saved, but " text still applies the mutation first.
 let fail: Map<string, string>;
+// `${method} ${url}` whose next answer waits for the promise; its body is fixed when the request arrives.
+let delay: Map<string, Promise<void>>;
 
 const json = (body: unknown) =>
 	new Response(JSON.stringify(body), {
@@ -51,12 +53,16 @@ function stubApi() {
 	webUI = structuredClone(webUIFixture);
 	calls = [];
 	fail = new Map();
+	delay = new Map();
 	vi.stubGlobal(
 		'fetch',
 		vi.fn(async (url: string, init?: RequestInit) => {
 			const method = init?.method ?? 'GET';
 			const body: unknown = init?.body ? JSON.parse(String(init.body)) : undefined;
 			calls.push({ method, url, body });
+			const held = delay.get(`${method} ${url}`);
+			delay.delete(`${method} ${url}`);
+			if (held) await held;
 			const injected = fail.get(`${method} ${url}`);
 			if (injected !== undefined && !injected.startsWith(SAVED_PREFIX)) return text(400, injected);
 			const answer = () => (injected === undefined ? json(null) : text(400, injected));
@@ -1477,4 +1483,32 @@ test('credentials the server would refuse are marked on the field to fix: a ":" 
 			{ type: 'ss', cipher: 'aes-256-gcm' }
 		]
 	});
+});
+
+test('editing a rule shows field skeletons behind a busy wrapper until the rule answers', async () => {
+	let release!: () => void;
+	delay.set(
+		'GET /apis/configs/rules/office',
+		new Promise<void>((resolve) => {
+			release = resolve;
+		})
+	);
+	await render('#/rules/office');
+	expect(form()).toBeNull();
+	const wrapper = target.querySelector<HTMLElement>('main [aria-busy="true"]');
+	expect(wrapper).not.toBeNull();
+	expect(
+		Array.from(wrapper!.querySelectorAll('.sr-only')).some(
+			(element) => element.textContent?.trim() === 'Loading...'
+		)
+	).toBe(true);
+	const bars = Array.from(wrapper!.querySelectorAll('[data-skeleton]'));
+	expect(bars.length).toBeGreaterThanOrEqual(4);
+	expect(bars.every((bar) => bar.getAttribute('aria-hidden') === 'true')).toBe(true);
+	expect(wrapper!.querySelectorAll('.band').length).toBeGreaterThanOrEqual(2);
+	release();
+	await settle();
+	expect(target.querySelectorAll('main [data-skeleton]')).toHaveLength(0);
+	expect(target.querySelector('main [aria-busy="true"]')).toBeNull();
+	expect(field('rule-name').value).toBe('office');
 });

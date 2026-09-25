@@ -175,6 +175,75 @@ afterEach(() => {
 	history.replaceState(null, '', '/');
 });
 
+const loadingAnnounced = (root: ParentNode) =>
+	Array.from(root.querySelectorAll('.sr-only')).some(
+		(element) => element.textContent?.trim() === 'Loading...'
+	);
+const LIST_PAGES = [
+	['#/stats', 'Statistics', 'article[data-rule]'],
+	['#/hosts', 'Hosts', 'article[data-host]'],
+	['#/connections', 'Connections', 'article[data-connection]']
+] as const;
+
+// First in this file: the snapshot poller keeps its last answer, so only a fresh module has none.
+test('until the first snapshot answers, every list page holds three row skeletons behind a busy section; the rows then take their place', async () => {
+	const hold = () => {
+		let release!: () => void;
+		const held = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		delay.set('GET /apis/stats', held);
+		delay.set('GET /apis/configs/rules', held);
+		return release;
+	};
+	const section = (label: string) =>
+		target.querySelector<HTMLElement>(`main section[aria-label="${label}"]`)!;
+	for (const [hash, label, selector] of LIST_PAGES) {
+		const release = hold();
+		await render(hash);
+		const busy = section(label);
+		expect(busy.getAttribute('aria-busy'), hash).toBe('true');
+		expect(loadingAnnounced(busy), hash).toBe(true);
+		expect(busy.querySelectorAll('[data-skeleton-row]'), hash).toHaveLength(3);
+		const bars = Array.from(busy.querySelectorAll('[data-skeleton]'));
+		expect(bars.length, hash).toBeGreaterThan(3);
+		expect(
+			bars.every((bar) => bar.getAttribute('aria-hidden') === 'true'),
+			hash
+		).toBe(true);
+		expect(
+			bars.every((bar) => bar.textContent === ''),
+			hash
+		).toBe(true);
+		expect(busy.querySelector('[data-skeleton-row]')?.closest('.space-y-3'), hash).not.toBeNull();
+		expect(rows(selector), hash).toHaveLength(0);
+		if (hash !== '#/connections') {
+			// An answer to a page that was left is dropped, so the next page starts without one too.
+			unmount(app!);
+			app = null;
+			target.remove();
+			release();
+			await settle();
+			continue;
+		}
+		release();
+		await settle();
+		expect(busy.getAttribute('aria-busy')).not.toBe('true');
+		expect(loadingAnnounced(busy)).toBe(false);
+		expect(busy.querySelectorAll('[data-skeleton], [data-skeleton-row]')).toHaveLength(0);
+		expect(rows(selector)).toHaveLength(4);
+	}
+	for (const [hash, label, selector] of LIST_PAGES.slice(0, 2)) {
+		unmount(app!);
+		target.remove();
+		await render(hash);
+		expect(section(label).getAttribute('aria-busy'), hash).not.toBe('true');
+		expect(section(label).querySelectorAll('[data-skeleton]'), hash).toHaveLength(0);
+		expect(loadingAnnounced(section(label)), hash).toBe(false);
+		expect(rows(selector), hash).toHaveLength(4);
+	}
+});
+
 const OFFICE_METRICS = {
 	rate_up: '12.0 KB/s',
 	peak_rate_up: '64.0 KB/s',

@@ -10,6 +10,7 @@
 	import Button from '../lib/components/ui/Button.svelte';
 	import HelpTip from '../lib/components/ui/HelpTip.svelte';
 	import PageHeader from '../lib/components/ui/PageHeader.svelte';
+	import Skeleton from '../lib/components/ui/Skeleton.svelte';
 	import { TEXT_CLASSES } from '../lib/components/ui/StatusChip.svelte';
 	import { confirm } from '../lib/confirm';
 	import {
@@ -289,28 +290,66 @@
 		<Banner kind="error" title={errorMessage(error)} message={null}>
 			<Button variant="secondary" onclick={load}>{t('retry')}</Button>
 		</Banner>
-	{:else if rules}
-		<div class="grid grid-cols-[repeat(auto-fill,minmax(18rem,1fr))] gap-3">
-			{#each rules as rule (rule.name)}
-				<RuleCard
-					{rule}
-					{rules}
-					runtime={runtimeOf(rule.name)}
-					stats={statsOf(rule.name)}
-					pending={pending.has(rule.name)}
-					onToggle={(enabled) => void setEnabled(rule.name, enabled)}
-					onDelete={() => void remove(rule.name)}
-				/>
-			{/each}
-			<a
-				href={NEW_RULE_ROUTE}
-				class="flex min-h-40 flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-line-strong text-sm text-fg-muted transition-colors hover:border-accent hover:text-accent"
-			>
-				<IconPlus class="size-6" aria-hidden="true" />
-				{t('newRule')}
-			</a>
-		</div>
 	{:else}
-		<p class="text-sm text-fg-muted">{t('loading')}</p>
+		{#if !rules}
+			<span class="sr-only">{t('loading')}</span>
+		{/if}
+		<!-- One grid for the skeletons and the cards: what lands does not move. -->
+		<div class="grid grid-cols-[repeat(auto-fill,minmax(18rem,1fr))] gap-3">
+			{#if rules}
+				{#each rules as rule (rule.name)}
+					<RuleCard
+						{rule}
+						{rules}
+						runtime={runtimeOf(rule.name)}
+						stats={statsOf(rule.name)}
+						pending={pending.has(rule.name)}
+						onToggle={(enabled) => void setEnabled(rule.name, enabled)}
+						onDelete={() => void remove(rule.name)}
+					/>
+				{/each}
+				<a
+					href={NEW_RULE_ROUTE}
+					class="flex min-h-40 flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-line-strong text-sm text-fg-muted transition-colors hover:border-accent hover:text-accent"
+				>
+					<IconPlus class="size-6" aria-hidden="true" />
+					{t('newRule')}
+				</a>
+			{:else}
+				{#each { length: 3 } as _, index (index)}
+					<div
+						class="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4"
+						data-skeleton-card
+					>
+						<!-- Bars one line (1lh) of the type they stand in for, so a card lands exactly where its placeholder was. -->
+						<div class="flex items-start justify-between gap-3">
+							<div class="min-w-0 flex-1">
+								<Skeleton class="h-[1lh] w-2/5 text-[15px]" />
+								<Skeleton class="mt-0.5 h-[1lh] w-1/4 text-xs" />
+							</div>
+							<div class="flex shrink-0 items-center gap-2">
+								<Skeleton class="h-5 w-16 rounded-full" />
+								<Skeleton class="h-5 w-9 rounded-full" />
+							</div>
+						</div>
+						<div class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1">
+							{#each { length: 3 } as _, row (row)}
+								<Skeleton class="my-0.5 h-4 w-14" />
+								<Skeleton class="my-0.5 h-4 w-3/4" />
+							{/each}
+						</div>
+						<!-- Sized like the rates and the icon actions so the footer wraps where a card's does. -->
+						<div
+							class="mt-auto flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-line pt-3"
+						>
+							<Skeleton class="h-[1lh] w-[17rem] text-[13px]" />
+							<span class="-my-1.5 ml-auto flex h-8 items-center">
+								<Skeleton class="h-4 w-[8.5rem]" />
+							</span>
+						</div>
+					</div>
+				{/each}
+			{/if}
+		</div>
 	{/if}
 </section>

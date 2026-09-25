@@ -7,6 +7,7 @@
 	import Banner from '../lib/components/ui/Banner.svelte';
 	import Button from '../lib/components/ui/Button.svelte';
 	import PageHeader from '../lib/components/ui/PageHeader.svelte';
+	import SkeletonRows from '../lib/components/ui/SkeletonRows.svelte';
 	import {
 		CONNECTION_PAGE_SIZE,
 		CONNECTION_SORT_KEYS,
@@ -109,7 +110,7 @@
 	<StatsToolbar />
 </PageHeader>
 
-<section aria-label={t('connections')}>
+<section aria-label={t('connections')} aria-busy={!stats.data && !stats.error}>
 	{#if stats.error}
 		<Banner kind="error" title={errorMessage(stats.error)} message={null}>
 			<Button variant="secondary" onclick={() => void stats.refresh()}>{t('retry')}</Button>
@@ -140,7 +141,7 @@
 	</ListControls>
 	{#if !stats.data}
 		{#if !stats.error}
-			<p class="text-sm text-fg-muted">{t('loading')}</p>
+			<SkeletonRows />
 		{/if}
 	{:else if shown.length === 0}
 		<p class="text-sm text-fg-muted">{t('noConnections')}</p>

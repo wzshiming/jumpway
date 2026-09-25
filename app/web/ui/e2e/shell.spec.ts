@@ -177,6 +177,105 @@ test('the KPI strip folds to two columns beside the expanded sidebar and never s
 	expect(await overflow()).toBeLessThanOrEqual(0);
 });
 
+test('while the rule list is pending the overview grid holds three card skeletons, and the cards replace them in place', async ({
+	page,
+	api
+}) => {
+	await page.setViewportSize({ width: 1280, height: 800 });
+	const hold = () => {
+		let release!: () => void;
+		api.delay.set(
+			'GET /apis/configs/rules',
+			new Promise<void>((resolve) => {
+				release = resolve;
+			})
+		);
+		return release;
+	};
+	const release = hold();
+	await page.goto('/');
+	const section = page.locator('section[aria-label="Rules"]');
+	const grid = section.locator('> div').first();
+	const skeletonCards = grid.locator('[data-skeleton-card]');
+	await expect(section).toHaveAttribute('aria-busy', 'true');
+	await expect(skeletonCards).toHaveCount(3);
+	await expect(skeletonCards.locator('[data-skeleton]').first()).toBeVisible();
+	await expect(section.locator('.sr-only', { hasText: 'Loading...' })).toHaveCount(1);
+	await expect(page.getByRole('article')).toHaveCount(0);
+	// Tops are relative to the grid: the KPI line above it gains its state dots when the rules land.
+	const boxes = (locator: Locator) =>
+		locator.evaluateAll((elements) =>
+			elements.map((element) => {
+				const box = element.getBoundingClientRect();
+				const grid = element.parentElement!.getBoundingClientRect();
+				return { top: Math.round(box.top - grid.top), height: Math.round(box.height) };
+			})
+		);
+	const overflow = () =>
+		page.evaluate(() => {
+			const main = document.getElementById('main')!;
+			return main.scrollWidth - main.clientWidth;
+		});
+	// Three columns at 1280: the placeholders share one row and stand about as tall as a card.
+	const placeholders = await boxes(skeletonCards);
+	expect(new Set(placeholders.map((box) => box.top)).size).toBe(1);
+	for (const box of placeholders) expect(box.height).toBeGreaterThan(160);
+	expect(await overflow()).toBeLessThanOrEqual(0);
+	const gridBefore = (await grid.boundingBox())!;
+	if (process.env.JW_SHOTS)
+		await page.screenshot({
+			path: '/tmp/jw-polish-s5-shots/overview-skeleton-1280.png',
+			animations: 'disabled'
+		});
+	release();
+	await expect(page.getByRole('article')).toHaveCount(4);
+	await expect(skeletonCards).toHaveCount(0);
+	await expect(page.locator('[data-skeleton]')).toHaveCount(0);
+	await expect(section).not.toHaveAttribute('aria-busy', 'true');
+	await expect(section.locator('.sr-only', { hasText: 'Loading...' })).toHaveCount(0);
+	// The same grid, as wide and in the same column; the first row of cards starts where the
+	// placeholders did.
+	const gridAfter = (await grid.boundingBox())!;
+	expect([gridAfter.x, gridAfter.width]).toEqual([gridBefore.x, gridBefore.width]);
+	expect(Math.abs(gridAfter.y - gridBefore.y)).toBeLessThan(2);
+	const cards = await boxes(page.getByRole('article'));
+	expect(cards.slice(0, 3).map((box) => box.top)).toEqual(placeholders.map((box) => box.top));
+	expect(await overflow()).toBeLessThanOrEqual(0);
+	// One column on a phone, where the card footer wraps its icons under the rates: the
+	// placeholders must wrap the same way, or every card below the first lands lower than its
+	// placeholder stood.
+	await page.setViewportSize({ width: 375, height: 900 });
+	const releasePhone = hold();
+	await page.goto('/');
+	await expect(skeletonCards).toHaveCount(3);
+	const phonePlaceholders = await boxes(skeletonCards);
+	expect(new Set(phonePlaceholders.map((box) => box.top)).size).toBe(3);
+	expect(await overflow()).toBeLessThanOrEqual(0);
+	releasePhone();
+	await expect(page.getByRole('article')).toHaveCount(4);
+	// The first two fixture rules carry no runtime error, so their cards are exactly a placeholder tall.
+	const phoneCards = await boxes(page.getByRole('article'));
+	expect(phoneCards.slice(0, 3).map((box) => box.top)).toEqual(
+		phonePlaceholders.map((box) => box.top)
+	);
+	expect(phoneCards.slice(0, 2).map((box) => box.height)).toEqual(
+		phonePlaceholders.slice(0, 2).map((box) => box.height)
+	);
+	expect(await overflow()).toBeLessThanOrEqual(0);
+	if (process.env.JW_SHOTS) {
+		await page.addInitScript(() => localStorage.setItem('jumpway.theme', 'dark'));
+		const releaseDark = hold();
+		await page.goto('/');
+		await expect(skeletonCards).toHaveCount(3);
+		await page.screenshot({
+			path: '/tmp/jw-polish-s5-shots/overview-skeleton-1280-dark.png',
+			animations: 'disabled'
+		});
+		releaseDark();
+		await expect(page.getByRole('article')).toHaveCount(4);
+	}
+});
+
 test('sidebar links use current routes and unknown addresses return home', async ({ page }) => {
 	await page.goto('/');
 	await expectNavLabelsFit(page, EN_LABELS);

@@ -867,3 +867,40 @@ test('the card grid follows its own width, titles wrap to two lines instead of t
 		}
 	}
 });
+
+const loadingAnnounced = (root: ParentNode) =>
+	Array.from(root.querySelectorAll('.sr-only')).some(
+		(element) => element.textContent?.trim() === 'Loading...'
+	);
+
+test('while the rule list is pending the grid holds three card skeletons behind a busy section; the cards then land in that same grid', async () => {
+	let release!: () => void;
+	delay.set(
+		'GET /apis/configs/rules',
+		new Promise<void>((resolve) => {
+			release = resolve;
+		})
+	);
+	await render();
+	const section = target.querySelector<HTMLElement>('main section[aria-label="Rules"]')!;
+	expect(section.getAttribute('aria-busy')).toBe('true');
+	expect(loadingAnnounced(section)).toBe(true);
+	const before = grid();
+	expect(before.querySelectorAll('[data-skeleton-card]')).toHaveLength(3);
+	const bars = Array.from(before.querySelectorAll('[data-skeleton]'));
+	expect(bars.length).toBeGreaterThan(3);
+	expect(bars.every((bar) => bar.getAttribute('aria-hidden') === 'true')).toBe(true);
+	expect(bars.every((bar) => bar.textContent === '')).toBe(true);
+	expect(before.querySelectorAll('article')).toHaveLength(0);
+	release();
+	await settle();
+	expect(section.getAttribute('aria-busy')).not.toBe('true');
+	expect(loadingAnnounced(section)).toBe(false);
+	// The same grid element: what lands does not move.
+	const after = grid();
+	expect(after).toBe(before);
+	expect(after.className).toBe(before.className);
+	expect(after.querySelectorAll('[data-skeleton], [data-skeleton-card]')).toHaveLength(0);
+	expect(cards()).toHaveLength(4);
+	expect(after.lastElementChild?.getAttribute('href')).toBe('#/new');
+});
