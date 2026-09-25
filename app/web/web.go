@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/pprof"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gorilla/handlers"
@@ -35,9 +36,39 @@ func NewHandler(svc *configs.ConfigsService, statsSvc *stats.StatsService, metri
 	apis := route.RouteConfigsService(mux.NewRouter(), svc)
 	route.RouteStatsService(apis, statsSvc)
 	apiHandler := handlers.CombinedLoggingHandler(os.Stdout, apis)
-	m.PathPrefix("/apis/").Handler(http.StripPrefix("/apis", http.MaxBytesHandler(apiHandler, 1<<20)))
-	m.PathPrefix("/").Handler(http.FileServer(http.FS(staticsFS)))
+	m.PathPrefix("/apis/").Handler(http.StripPrefix("/apis", handlers.CompressHandler(http.MaxBytesHandler(apiHandler, 1<<20))))
+	m.PathPrefix("/").Handler(handlers.CompressHandler(cacheControl(http.FileServer(http.FS(staticsFS)))))
 	return handlers.RecoveryHandler()(m)
+}
+
+// cacheControl caches Vite's content-hashed /assets/ forever and has everything else revalidated.
+func cacheControl(files http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		value := "no-cache"
+		if strings.HasPrefix(r.URL.Path, "/assets/") {
+			value = "public, max-age=31536000, immutable"
+		}
+		w.Header().Set("Cache-Control", value)
+		files.ServeHTTP(&errorHeaders{ResponseWriter: w, encoding: w.Header().Get("Content-Encoding")}, r)
+	})
+}
+
+// errorHeaders restores what FileServer's error path strips since Go 1.23: the encoding the compressing
+// writer already committed to, and a Cache-Control that keeps errors out of caches.
+type errorHeaders struct {
+	http.ResponseWriter
+	encoding string
+}
+
+func (e *errorHeaders) WriteHeader(code int) {
+	if code >= http.StatusBadRequest {
+		h := e.Header()
+		h.Set("Cache-Control", "no-cache")
+		if e.encoding != "" {
+			h.Set("Content-Encoding", e.encoding)
+		}
+	}
+	e.ResponseWriter.WriteHeader(code)
 }
 
 //go:embed openapi/openapi.json

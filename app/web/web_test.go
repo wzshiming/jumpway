@@ -1,9 +1,12 @@
 package web
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"mime"
 	"net/http"
 	"net/http/httptest"
@@ -89,9 +92,17 @@ func setupConfigAPI(t *testing.T) (http.Handler, *fakeRuntime, *config.Store, *f
 
 func requestAPI(t *testing.T, handler http.Handler, method, target, body string, wantStatus int) *httptest.ResponseRecorder {
 	t.Helper()
+	return requestEncoded(t, handler, method, target, body, "", wantStatus)
+}
+
+func requestEncoded(t *testing.T, handler http.Handler, method, target, body, acceptEncoding string, wantStatus int) *httptest.ResponseRecorder {
+	t.Helper()
 	request := httptest.NewRequest(method, target, strings.NewReader(body))
 	if method == http.MethodPut || method == http.MethodPost {
 		request.Header.Set("Content-Type", "application/json")
+	}
+	if acceptEncoding != "" {
+		request.Header.Set("Accept-Encoding", acceptEncoding)
 	}
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
@@ -99,6 +110,22 @@ func requestAPI(t *testing.T, handler http.Handler, method, target, body string,
 		t.Fatalf("%s %s: status = %d, want %d; body = %s", method, target, response.Code, wantStatus, response.Body.String())
 	}
 	return response
+}
+
+func gunzip(t *testing.T, response *httptest.ResponseRecorder) []byte {
+	t.Helper()
+	if encoding := response.Header().Values("Content-Encoding"); !slices.Equal(encoding, []string{"gzip"}) {
+		t.Fatalf("Content-Encoding = %q, want [gzip]", encoding)
+	}
+	reader, err := gzip.NewReader(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }
 
 func assertConfigYAML(t *testing.T, store *config.Store, want string) {
@@ -397,6 +424,213 @@ func mediaTypeOf(t *testing.T, response *httptest.ResponseRecorder) string {
 		t.Fatalf("Content-Type = %q: %v", response.Header().Get("Content-Type"), err)
 	}
 	return mediaType
+}
+
+func indexScript(t *testing.T, handler http.Handler) string {
+	t.Helper()
+	response := requestAPI(t, handler, http.MethodGet, "/", "", http.StatusOK)
+	document, err := html.Parse(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for node := range document.Descendants() {
+		if node.Type != html.ElementNode || node.Data != "script" {
+			continue
+		}
+		for _, attribute := range node.Attr {
+			if attribute.Key == "src" && strings.HasPrefix(attribute.Val, "/assets/") {
+				return attribute.Val
+			}
+		}
+	}
+	t.Fatal("index.html references no /assets/ script")
+	return ""
+}
+
+func TestStaticsAssetCompression(t *testing.T) {
+	handler, _, _, _ := setupConfigAPI(t)
+	target := indexScript(t, handler)
+	plain := requestAPI(t, handler, http.MethodGet, target, "", http.StatusOK)
+	compressed := requestEncoded(t, handler, http.MethodGet, target, "", "gzip", http.StatusOK)
+	if encoding := plain.Header().Values("Content-Encoding"); len(encoding) != 0 {
+		t.Fatalf("plain Content-Encoding = %q, want none", encoding)
+	}
+	if mediaType := mediaTypeOf(t, plain); mediaType != "text/javascript" && mediaType != "application/javascript" {
+		t.Fatalf("Content-Type = %q, want JavaScript", plain.Header().Get("Content-Type"))
+	}
+	if got, want := compressed.Header().Get("Content-Type"), plain.Header().Get("Content-Type"); got != want {
+		t.Fatalf("gzip Content-Type = %q, want %q", got, want)
+	}
+	const immutable = "public, max-age=31536000, immutable"
+	for name, response := range map[string]*httptest.ResponseRecorder{"plain": plain, "gzip": compressed} {
+		if got := response.Header().Get("Cache-Control"); got != immutable {
+			t.Errorf("%s Cache-Control = %q, want %q", name, got, immutable)
+		}
+	}
+	if vary := strings.Join(compressed.Header().Values("Vary"), ","); !strings.Contains(vary, "Accept-Encoding") {
+		t.Errorf("Vary = %q, want Accept-Encoding", vary)
+	}
+	if compressed.Body.Len() >= plain.Body.Len() {
+		t.Errorf("gzip body = %d bytes, want fewer than %d", compressed.Body.Len(), plain.Body.Len())
+	}
+	if body := gunzip(t, compressed); !bytes.Equal(body, plain.Body.Bytes()) {
+		t.Fatalf("gunzipped body = %d bytes, want the %d plain bytes", len(body), plain.Body.Len())
+	}
+}
+
+func TestStaticsCacheControl(t *testing.T) {
+	handler, _, _, _ := setupConfigAPI(t)
+	for _, test := range []struct {
+		target string
+		status int
+		body   string
+	}{
+		{target: "/", status: http.StatusOK},
+		{target: "/missing.js", status: http.StatusNotFound, body: "404 page not found\n"},
+		{target: "/assets/missing.js", status: http.StatusNotFound, body: "404 page not found\n"},
+	} {
+		t.Run(test.target, func(t *testing.T) {
+			plain := requestAPI(t, handler, http.MethodGet, test.target, "", test.status)
+			compressed := requestEncoded(t, handler, http.MethodGet, test.target, "", "gzip", test.status)
+			for name, response := range map[string]*httptest.ResponseRecorder{"plain": plain, "gzip": compressed} {
+				if got := response.Header().Get("Cache-Control"); got != "no-cache" {
+					t.Errorf("%s Cache-Control = %q, want no-cache", name, got)
+				}
+			}
+			if encoding := plain.Header().Values("Content-Encoding"); len(encoding) != 0 {
+				t.Fatalf("plain Content-Encoding = %q, want none", encoding)
+			}
+			if body := gunzip(t, compressed); !bytes.Equal(body, plain.Body.Bytes()) {
+				t.Fatalf("gunzipped body = %q, want %q", body, plain.Body.Bytes())
+			}
+			if test.body != "" && plain.Body.String() != test.body {
+				t.Fatalf("body = %q, want %q", plain.Body.String(), test.body)
+			}
+		})
+	}
+}
+
+// FileServer answers an unsatisfiable Range through its error path, which drops the headers set before it ran.
+func TestStaticsRangeError(t *testing.T) {
+	handler, _, _, _ := setupConfigAPI(t)
+	target := indexScript(t, handler)
+	for _, target := range []string{target, "/"} {
+		t.Run(target, func(t *testing.T) {
+			responses := map[string]*httptest.ResponseRecorder{}
+			for _, encoding := range []string{"", "gzip"} {
+				request := httptest.NewRequest(http.MethodGet, target, nil)
+				request.Header.Set("Range", "bytes=999999999-")
+				if encoding != "" {
+					request.Header.Set("Accept-Encoding", encoding)
+				}
+				response := httptest.NewRecorder()
+				handler.ServeHTTP(response, request)
+				if response.Code != http.StatusRequestedRangeNotSatisfiable {
+					t.Fatalf("Accept-Encoding %q: status = %d, want 416", encoding, response.Code)
+				}
+				if got := response.Header().Get("Cache-Control"); got != "no-cache" {
+					t.Errorf("Accept-Encoding %q: Cache-Control = %q, want no-cache", encoding, got)
+				}
+				responses[encoding] = response
+			}
+			if encoding := responses[""].Header().Values("Content-Encoding"); len(encoding) != 0 {
+				t.Fatalf("plain Content-Encoding = %q, want none", encoding)
+			}
+			if body := gunzip(t, responses["gzip"]); !bytes.Equal(body, responses[""].Body.Bytes()) {
+				t.Fatalf("gunzipped body = %q, want %q", body, responses[""].Body.Bytes())
+			}
+		})
+	}
+}
+
+func TestStatsCompression(t *testing.T) {
+	handler, _, _, fake := setupConfigAPI(t)
+	fake.snapshot = metrics.Snapshot{
+		Since: "2026-09-15T12:00:00Z",
+		Rules: []metrics.RuleStats{{Name: "a", Stats: metrics.Stats{Up: 10, Down: 20}, Listen: []metrics.Hop{}, Forward: []metrics.Hop{}}},
+	}
+	plain := requestAPI(t, handler, http.MethodGet, "/apis/stats", "", http.StatusOK)
+	compressed := requestEncoded(t, handler, http.MethodGet, "/apis/stats", "", "gzip", http.StatusOK)
+	if got, want := compressed.Header().Get("Content-Type"), plain.Header().Get("Content-Type"); got != want || mediaTypeOf(t, plain) != "application/json" {
+		t.Fatalf("gzip Content-Type = %q, plain = %q; want identical application/json", got, want)
+	}
+	body := gunzip(t, compressed)
+	if !bytes.Equal(body, plain.Body.Bytes()) {
+		t.Fatalf("gunzipped body = %s, want %s", body, plain.Body.Bytes())
+	}
+	var snapshot map[string]any
+	if err := json.Unmarshal(body, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if snapshot["since"] != fake.snapshot.Since {
+		t.Fatalf("since = %#v, want %q", snapshot["since"], fake.snapshot.Since)
+	}
+	rules, ok := snapshot["rules"].([]any)
+	if !ok || len(rules) != 1 {
+		t.Fatalf("rules = %#v, want one rule", snapshot["rules"])
+	}
+	rule, ok := rules[0].(map[string]any)
+	if !ok || rule["name"] != "a" {
+		t.Fatalf("rule = %#v, want rule a", rules[0])
+	}
+	if counters, ok := rule["stats"].(map[string]any); !ok || counters["up"] != float64(10) || counters["down"] != float64(20) {
+		t.Fatalf("stats = %#v, want up 10 and down 20", rule["stats"])
+	}
+}
+
+func TestMetricsCompression(t *testing.T) {
+	var acceptEncoding string
+	exposition := metrics.NewHandler(metrics.NewRegistry())
+	metricsHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		acceptEncoding = r.Header.Get("Accept-Encoding")
+		exposition.ServeHTTP(w, r)
+	})
+	handler := NewHandler(configs.NewConfigsService(config.NewStore(t.TempDir()), &fakeRuntime{}), stats.NewStatsService(&fakeSource{}), metricsHandler)
+	response := requestEncoded(t, handler, http.MethodGet, "/metrics", "", "gzip", http.StatusOK)
+	// CompressHandler drops Accept-Encoding before delegating, so promhttp only sees it when nothing wraps /metrics.
+	if acceptEncoding != "gzip" {
+		t.Fatalf("promhttp saw Accept-Encoding = %q, want gzip", acceptEncoding)
+	}
+	encoding := response.Header().Values("Content-Encoding")
+	if len(encoding) > 1 {
+		t.Fatalf("Content-Encoding = %q, want at most one value", encoding)
+	}
+	body := response.Body.Bytes()
+	if slices.Equal(encoding, []string{"gzip"}) {
+		body = gunzip(t, response)
+	}
+	if !strings.Contains(string(body), "jumpway_stats_reset_timestamp_seconds") {
+		t.Fatalf("body = %.200q, want jumpway_ metrics", body)
+	}
+}
+
+func TestWebUICompression(t *testing.T) {
+	handler, fake, store, _ := setupConfigAPI(t)
+	response := requestEncoded(t, handler, http.MethodPut, "/apis/configs/web-ui", `{"host":"127.0.0.1","port":70000}`, "gzip", http.StatusBadRequest)
+	if mediaType := mediaTypeOf(t, response); mediaType != "text/plain" {
+		t.Fatalf("Content-Type = %q, want text/plain", response.Header().Get("Content-Type"))
+	}
+	if body := gunzip(t, response); !strings.Contains(string(body), "web_ui.port") {
+		t.Fatalf("body = %q, want invalid web_ui.port error", body)
+	}
+	if fake.reloads != 0 {
+		t.Fatalf("reloads = %d, want 0", fake.reloads)
+	}
+	assertConfigYAML(t, store, testConfigYAML)
+	response = requestEncoded(t, handler, http.MethodPut, "/apis/configs/web-ui", `{"host":"localhost","port":1098}`, "gzip", http.StatusOK)
+	if body := gunzip(t, response); strings.TrimSpace(string(body)) != "null" {
+		t.Fatalf("body = %q, want null", body)
+	}
+	if fake.reloads != 1 {
+		t.Fatalf("reloads = %d, want 1", fake.reloads)
+	}
+	conf, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conf.WebUI.Host != "localhost" || conf.WebUI.Port != 1098 {
+		t.Fatalf("saved web_ui = %#v, want localhost:1098", conf.WebUI)
+	}
 }
 
 func TestGetConfig(t *testing.T) {
