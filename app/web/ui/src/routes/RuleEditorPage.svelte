@@ -17,7 +17,7 @@
 	import { confirm } from '../lib/confirm';
 	import { t } from '../lib/i18n.svelte';
 	import { router } from '../lib/router.svelte';
-	import { HOME_ROUTE, ruleRoute } from '../lib/routes';
+	import { duplicateRoute, HOME_ROUTE, ruleRoute } from '../lib/routes';
 	import {
 		chainSummary,
 		EXIT_ROLES,
@@ -28,6 +28,7 @@
 	} from '../lib/rule';
 	import {
 		draftFrom,
+		duplicateName,
 		emptyDraft,
 		readRule,
 		snapshot,
@@ -37,7 +38,7 @@
 	} from '../lib/ruleEditor';
 	import { status } from '../lib/status.svelte';
 	import { toasts } from '../lib/toast.svelte';
-	import { list, type Rule } from '../lib/types';
+	import { list, type Address, type Rule } from '../lib/types';
 
 	// null edits a new rule at #/new.
 	interface Props {
@@ -50,6 +51,9 @@
 	// App remounts this page per route name, so only the initial prop matters.
 	// svelte-ignore state_referenced_locally
 	let savedName = $state<string | null>(name);
+	// #/new?rule=<name> starts from a copy of that rule; App remounts the page when it changes.
+	// svelte-ignore state_referenced_locally
+	const source = name === null ? router.route.rule : '';
 	// Bound by the form; `ready` gates it until the stored rule has been copied in.
 	let draft = $state<RuleDraft>(emptyDraft());
 	let ready = $state(false);
@@ -66,6 +70,9 @@
 	// All rules, for virtual peer links and channel suggestions; null while unknown.
 	let peerRules = $state.raw<Rule[] | null>(null);
 	let peerController: AbortController | null = null;
+	// The configured web UI address the server checks listen addresses against; null while unknown.
+	let webUI = $state.raw<Address | null>(null);
+	let webUIController: AbortController | null = null;
 
 	const dirty = $derived(ready && snapshot(draft) !== baseline);
 	const forwarding = $derived(draft.mode === 'forward');
@@ -99,16 +106,47 @@
 		ready = true;
 	}
 
-	function loadPeers() {
+	// A copy is dirty from the start: leaving asks, and Save creates it under the suggested name.
+	function adoptCopy(rule: Rule, taken: readonly Rule[] | null) {
+		const next = draftFrom(rule);
+		next.name = duplicateName(
+			rule.name,
+			(taken ?? []).map((entry) => entry.name)
+		);
+		draft = next;
+		baseline = snapshot(emptyDraft());
+		ready = true;
+	}
+
+	// Resolves to the rule list, or null once its failure has been reported.
+	function loadPeers(): Promise<Rule[] | null> {
 		peerController?.abort();
 		const own = new AbortController();
 		peerController = own;
-		configsApi.listRules(own.signal).then(
+		return configsApi.listRules(own.signal).then(
 			(value) => {
-				if (peerController === own) peerRules = list(value);
+				if (peerController !== own) return null;
+				peerRules = list(value);
+				return peerRules;
 			},
 			(reason: unknown) => {
 				if (peerController === own && !isAborted(reason)) toasts.error(errorMessage(reason));
+				return null;
+			}
+		);
+	}
+
+	// Only refines a check the server repeats, so a failed load stays quiet and skips it.
+	function loadWebUI() {
+		webUIController?.abort();
+		const own = new AbortController();
+		webUIController = own;
+		configsApi.getWebUI(own.signal).then(
+			(address) => {
+				if (webUIController === own) webUI = address;
+			},
+			() => {
+				if (webUIController === own) webUI = null;
 			}
 		);
 	}
@@ -119,8 +157,10 @@
 		loadError = null;
 		saveError = null;
 		errors = {};
-		loadPeers();
-		if (savedName === null) {
+		const peers = loadPeers();
+		loadWebUI();
+		const stored = savedName ?? (source || null);
+		if (stored === null) {
 			adopt(emptyDraft());
 			return;
 		}
@@ -128,10 +168,14 @@
 		controller = own;
 		loading = true;
 		configsApi
-			.getRule(savedName, own.signal)
+			.getRule(stored, own.signal)
 			.then(
-				(rule) => {
-					if (controller === own) adopt(draftFrom(rule));
+				async (rule) => {
+					// A copy's name suggestion waits for the peer list, which never rejects.
+					const taken = savedName === null ? await peers : null;
+					if (controller !== own) return;
+					if (savedName === null) adoptCopy(rule, taken);
+					else adopt(draftFrom(rule));
 				},
 				(reason: unknown) => {
 					if (controller === own && !isAborted(reason)) loadError = reason;
@@ -153,6 +197,8 @@
 			controller = null;
 			peerController?.abort();
 			peerController = null;
+			webUIController?.abort();
+			webUIController = null;
 		};
 	});
 
@@ -172,7 +218,7 @@
 
 	async function save() {
 		if (!ready || busy.value || loading || building) return;
-		const result = readRule(draft);
+		const result = readRule(draft, { others: peerRules ?? [], self: savedName, webUI });
 		if (!result.ok) {
 			errors = result.errors;
 			await tick();
@@ -236,6 +282,11 @@
 		await router.navigate(HOME_ROUTE, { replace: true });
 	}
 
+	// Through the router so a dirty draft is asked about first.
+	function duplicate() {
+		if (savedName !== null) void router.navigate(duplicateRoute(savedName));
+	}
+
 	async function openBuilder(current: string): Promise<string | null> {
 		if (building || busy.value || !builder) return null;
 		building = true;
@@ -257,7 +308,7 @@
 {#if loadError}
 	<Banner
 		kind="error"
-		title={notFound ? t('ruleNotFound', { name: savedName ?? '' }) : errorMessage(loadError)}
+		title={notFound ? t('ruleNotFound', { name: savedName ?? source }) : errorMessage(loadError)}
 		message={null}
 	>
 		{#if !notFound}
@@ -359,7 +410,9 @@
 					<Field
 						id="listen-virtual"
 						label={t('virtualChannel')}
-						error={errors.listenVirtual ? t(errors.listenVirtual) : null}
+						error={errors.listenVirtual
+							? t(errors.listenVirtual, { name: errors.listenAddressOwner ?? '' })
+							: null}
 					>
 						{#snippet children({ describedBy, invalid })}
 							<input
@@ -402,7 +455,9 @@
 					<Field
 						id="listen-port"
 						label={t('port')}
-						error={errors.listenPort ? t(errors.listenPort) : null}
+						error={errors.listenPort
+							? t(errors.listenPort, { name: errors.listenAddressOwner ?? '' })
+							: null}
 					>
 						{#snippet children({ describedBy, invalid })}
 							<input
@@ -430,6 +485,7 @@
 					<h3 class="mb-2 text-sm font-medium">{t('listenThrough')}</h3>
 					<HopEditor
 						bind:hops={draft.listen.way}
+						bind:errors
 						idPrefix="listen"
 						roles={LISTEN_ROLES}
 						hint="listenThroughHint"
@@ -540,6 +596,7 @@
 					</p>
 					<HopEditor
 						bind:hops={draft.forward.way}
+						bind:errors
 						idPrefix="exit"
 						roles={EXIT_ROLES}
 						hint="hopsHint"
@@ -559,6 +616,9 @@
 					{t('cancel')}
 				</Button>
 				{#if savedName !== null}
+					<Button variant="secondary" disabled={busy.value || loading} onclick={duplicate}>
+						{t('duplicateRule')}
+					</Button>
 					<Button variant="danger" disabled={busy.value} onclick={() => void remove()}>
 						{t('deleteRule')}
 					</Button>

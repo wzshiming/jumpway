@@ -1,16 +1,19 @@
 import { describe, expect, test } from 'vitest';
-import { rulesFixture } from '../../e2e/fixtures/api';
+import { rulesFixture, virtualRulesFixture } from '../../e2e/fixtures/api';
 import {
 	draftFrom,
+	duplicateName,
 	emptyDraft,
 	newHop,
 	PROTOCOLS,
 	readRule,
 	snapshot,
+	type DraftErrors,
 	type ProtocolDraft,
+	type ReadContext,
 	type RuleDraft
 } from './ruleEditor';
-import type { Protocol, Rule } from './types';
+import type { Address, Listen, Protocol, Rule } from './types';
 
 const [office, mirror, dbTunnel, lab] = rulesFixture;
 
@@ -138,12 +141,15 @@ describe('readRule', () => {
 		});
 		const passwordOnly = valid((draft) => {
 			draft.listen.password = 'secret';
+			for (const entry of draft.listen.protocols) entry.enabled = entry.type === 'socks4';
+			row(draft, 'socks4').custom = true;
+			row(draft, 'socks4').username = 'legacy';
 		});
 		expect(passwordOnly.listen).toEqual({
 			host: '127.0.0.1',
 			port: 0,
 			password: 'secret',
-			protocols: LEGACY
+			protocols: [{ type: 'socks4', username: 'legacy' }]
 		});
 		const forward = valid((draft) => {
 			draft.listen.username = 'demo';
@@ -177,12 +183,11 @@ describe('readRule', () => {
 		expect(valid((draft) => (draft.enabled = false)).disabled).toBe(true);
 	});
 
-	test('ways drop blank URLs and hops left without URLs, trimming what remains', () => {
+	test('ways trim URLs and drop blank rows beside a URL and hops without rows; a hop left blank is an error', () => {
 		const rule = valid((draft) => {
 			draft.listen.way = [newHop(['ssh://ops@edge.example:22 '])];
 			draft.forward.way = [
-				newHop(['', '  ']),
-				newHop([' socks5://hop-a.example:1080', 'ssh://ops@bastion.example:22']),
+				newHop([' socks5://hop-a.example:1080', '', 'ssh://ops@bastion.example:22', '  ']),
 				newHop([])
 			];
 		});
@@ -190,7 +195,16 @@ describe('readRule', () => {
 		expect(rule.forward.way).toEqual([
 			{ lb: ['socks5://hop-a.example:1080', 'ssh://ops@bastion.example:22'] }
 		]);
-		expect(valid((draft) => (draft.forward.way = [newHop([''])])).forward).toEqual({});
+		expect(valid((draft) => (draft.forward.way = [newHop([])])).forward).toEqual({});
+		// Unlike a blank row beside a URL, a hop whose rows are all blank is a mistake, not a no-op.
+		const blank = emptyDraft();
+		blank.name = 'r';
+		blank.forward.way = [newHop(['', '  ']), newHop(['socks5://hop-a.example:1080'])];
+		const [first, second] = blank.forward.way[0].urls;
+		expect(readRule(blank)).toEqual({
+			ok: false,
+			errors: { urls: { [first.id]: 'hopUrlEmpty', [second.id]: 'hopUrlEmpty' } }
+		});
 	});
 
 	test('reports every invalid field at once with the legacy messages', () => {
@@ -516,6 +530,8 @@ describe('listen protocols', () => {
 			password: 'placeholder',
 			protocols: [...LEGACY, { type: 'ss', cipher: 'aes-256-gcm' }]
 		});
+		// With its own password the shared one no longer serves ss, so it needs a username.
+		draft.listen.username = 'demo';
 		Object.assign(row(draft, 'ss'), { custom: true, password: 'own', cipher: 'AES_256_GCM' });
 		expect(read(draft).listen.protocols?.at(-1)).toEqual({
 			type: 'ss',
@@ -588,5 +604,320 @@ describe('listen protocols', () => {
 		expect(errorsOf(ss)).toEqual({ ssPassword: 'passwordRequired' });
 		row(ss, 'ss').password = 'own';
 		expect(errorsOf(ss)).toEqual({});
+	});
+});
+
+describe('duplicateName', () => {
+	test('suggests "<name>-copy", counting up past taken names', () => {
+		expect(duplicateName('office', ['office', 'mirror'])).toBe('office-copy');
+		expect(duplicateName('office', ['office', 'office-copy'])).toBe('office-copy-2');
+		expect(duplicateName('office', ['office', 'office-copy', 'office-copy-2'])).toBe(
+			'office-copy-3'
+		);
+		expect(duplicateName('office', ['office', 'office-copy-2'])).toBe('office-copy');
+		expect(duplicateName('office', [])).toBe('office-copy');
+	});
+
+	test('copying a copy counts from the original name instead of stacking suffixes', () => {
+		expect(duplicateName('office-copy', ['office', 'office-copy'])).toBe('office-copy-2');
+		expect(duplicateName('office-copy-2', ['office-copy-2'])).toBe('office-copy');
+		expect(duplicateName('copy', ['copy'])).toBe('copy-copy');
+		expect(duplicateName('-copy', ['-copy'])).toBe('-copy-2');
+	});
+});
+
+// The server's TestValidate table for listen credentials, translated to drafts the editor would
+// send: `null` means the server accepts the rule.
+describe('readRule mirrors validateListenAuth', () => {
+	const proxy = (listen: Partial<Listen>): Rule => ({
+		name: 'a',
+		listen: { host: '127.0.0.1', port: 18200, ...listen },
+		forward: {}
+	});
+	const ss = { type: 'ss', cipher: 'aes-256-gcm' };
+	const cases: [string, Partial<Listen>, DraftErrors | null][] = [
+		[
+			'password_without_username',
+			{ password: 'secret' },
+			{ listenPassword: 'passwordNeedsUsername' }
+		],
+		[
+			'username_with_colon',
+			{ username: 'us:er', password: 'secret' },
+			{ listenUsername: 'usernameColon' }
+		],
+		['username_and_password', { username: 'user', password: 'secret' }, null],
+		['username_only', { username: 'user' }, null],
+		['explicit_protocols', { port: 1080, protocols: [{ type: 'http' }, { type: 'socks5' }] }, null],
+		['ss_only', { protocols: [{ ...ss, password: 'secret' }] }, null],
+		['socks4_username_only', { protocols: [{ type: 'socks4', username: 'alice' }] }, null],
+		[
+			'protocol_username_with_colon',
+			{ protocols: [{ type: 'http', username: 'a:b', password: 'secret' }] },
+			{ protocolErrors: { http: { username: 'usernameColon' } } }
+		],
+		['ss_inherits_shared_password', { password: 'secret', protocols: [ss] }, null],
+		[
+			'shared_password_for_ss_beside_unauthenticated_http',
+			{ password: 'secret', protocols: [...LEGACY, ss] },
+			null
+		],
+		[
+			'protocol_password_without_username',
+			{ protocols: [{ type: 'http', password: 'secret' }] },
+			{ protocolErrors: { http: { password: 'passwordNeedsUsername' } } }
+		],
+		[
+			'protocol_password_without_username_beside_ss',
+			{ password: 'shared', protocols: [ss, { type: 'socks5', password: 'secret' }] },
+			{ protocolErrors: { socks5: { password: 'passwordNeedsUsername' } } }
+		],
+		[
+			'shared_password_without_ss',
+			{ password: 'secret', protocols: [{ type: 'http' }] },
+			{ listenPassword: 'passwordNeedsUsername' }
+		],
+		[
+			'shared_password_unused_by_ss',
+			{ password: 'secret', protocols: [{ type: 'http' }, { ...ss, password: 'other' }] },
+			{ listenPassword: 'passwordNeedsUsername' }
+		],
+		[
+			'protocol_password_with_inherited_username',
+			{ username: 'alice', protocols: [{ type: 'http', password: 'secret' }] },
+			null
+		],
+		[
+			'protocol_usernames_with_shared_password',
+			{
+				password: 'secret',
+				protocols: [
+					{ type: 'http', username: 'alice' },
+					{ type: 'socks5', username: 'bob' }
+				]
+			},
+			null
+		],
+		// SOCKS4 has no password field, so a stored password without a username lands on the username.
+		[
+			'socks4_password_without_username',
+			{ protocols: [{ type: 'socks4', password: 'secret' }] },
+			{ protocolErrors: { socks4: { username: 'passwordNeedsUsername' } } }
+		],
+		// The ss row has no username field to mark, so its stored ":" is left to the server's 400.
+		[
+			'ss_username_with_colon',
+			{ protocols: [{ ...ss, username: 'a:b', password: 'secret' }] },
+			null
+		]
+	];
+
+	test.each(cases)('%s', (_, listen, expected) => {
+		const result = readRule(draftFrom(proxy(listen)));
+		expect(result.ok ? null : result.errors).toEqual(expected);
+	});
+
+	test('a stored ss username the form cannot show is neither refused nor altered', () => {
+		const stored = proxy({ protocols: [{ ...ss, username: 'a:b', password: 'secret' }] });
+		expect(readRule(draftFrom(stored))).toEqual({ ok: true, rule: stored });
+	});
+
+	test('the credential checks apply to proxy rules only and read the typed rows, not stored text', () => {
+		const draft = draftFrom(proxy({ username: 'us:er', password: 'secret' }));
+		draft.mode = 'forward';
+		draft.target.port = '5432';
+		expect(readRule(draft).ok).toBe(true);
+		const typed = draftFrom(proxy({}));
+		Object.assign(row(typed, 'http'), { custom: false, username: 'a:b', password: 'x' });
+		expect(readRule(typed).ok).toBe(true);
+		row(typed, 'http').custom = true;
+		expect(readRule(typed)).toEqual({
+			ok: false,
+			errors: { protocolErrors: { http: { username: 'usernameColon' } } }
+		});
+	});
+});
+
+describe('readRule with the stored rules', () => {
+	const context = (
+		others: readonly Rule[],
+		self: string | null = null,
+		webUI: Address | null = { host: '127.0.0.1', port: 1088 }
+	): ReadContext => ({ others, self, webUI });
+	const errorsOf = (draft: RuleDraft, ctx?: ReadContext): DraftErrors => {
+		const result = readRule(draft, ctx);
+		return result.ok ? {} : result.errors;
+	};
+	const listenOn = (host: string, port: string): RuleDraft => {
+		const draft = emptyDraft();
+		draft.name = 'r';
+		draft.listen.host = host;
+		draft.listen.port = port;
+		return draft;
+	};
+
+	test('names must not contain "/" or repeat another rule; the saved name itself is no clash', () => {
+		const draft = draftFrom(office);
+		draft.name = 'a/b';
+		expect(errorsOf(draft)).toEqual({ name: 'ruleNameSlash' });
+		expect(errorsOf(draft, context(rulesFixture, 'office'))).toEqual({ name: 'ruleNameSlash' });
+		draft.name = ' mirror ';
+		expect(errorsOf(draft)).toEqual({});
+		expect(errorsOf(draft, context(rulesFixture, 'office'))).toEqual({ name: 'ruleNameTaken' });
+		draft.name = 'office';
+		expect(errorsOf(draft, context(rulesFixture, 'office'))).toEqual({});
+		// A copy has no saved name: the source is a peer for both its name and its address.
+		expect(errorsOf(draft, context(rulesFixture))).toEqual({
+			name: 'ruleNameTaken',
+			listenPort: 'listenAddressTaken',
+			listenAddressOwner: 'office'
+		});
+	});
+
+	test('a listen address clashes with enabled, locally bound rules on the same host:port', () => {
+		const taken = { listenPort: 'listenAddressTaken', listenAddressOwner: 'mirror' };
+		expect(errorsOf(listenOn('127.0.0.1', '18098'), context(rulesFixture))).toEqual(taken);
+		expect(errorsOf(listenOn('', ' 18098 '), context(rulesFixture))).toEqual(taken);
+		expect(errorsOf(listenOn('127.0.0.1', '18098'))).toEqual({});
+		// Names are compared as spelled, never resolved.
+		expect(errorsOf(listenOn('localhost', '18098'), context(rulesFixture))).toEqual({});
+		expect(errorsOf(listenOn('0.0.0.0', '18098'), context(rulesFixture))).toEqual({});
+		// lab is disabled and db-tunnel listens through a hop; neither holds its port here.
+		expect(errorsOf(listenOn('127.0.0.1', '18100'), context(rulesFixture))).toEqual({});
+		expect(errorsOf(listenOn('0.0.0.0', '18099'), context(rulesFixture))).toEqual({});
+		// Nor does a disabled or remote draft, or one on port 0.
+		const disabled = listenOn('127.0.0.1', '18098');
+		disabled.enabled = false;
+		expect(errorsOf(disabled, context(rulesFixture))).toEqual({});
+		const remote = listenOn('127.0.0.1', '18098');
+		remote.listen.way = [newHop(['ssh://ops@edge.example:22'])];
+		expect(errorsOf(remote, context(rulesFixture))).toEqual({});
+		const anyPort = { name: 'z', listen: { host: '', port: 0 }, forward: {} };
+		expect(errorsOf(listenOn('', '0'), context([anyPort, ...rulesFixture]))).toEqual({});
+		// Addresses are compared as Go's net.JoinHostPort spells them: brackets are added to any host
+		// with ':', so '[::1]' and '::1' are different addresses, as they are to the server.
+		const six: Rule = { name: 'six', listen: { host: '::1', port: 18300 }, forward: {} };
+		expect(errorsOf(listenOn('::1', '18300'), context([six]))).toEqual({
+			listenPort: 'listenAddressTaken',
+			listenAddressOwner: 'six'
+		});
+		expect(errorsOf(listenOn('[::1]', '18300'), context([six]))).toEqual({});
+		expect(errorsOf(listenOn('127.0.0.1', '18300'), context([six]))).toEqual({});
+		const bracketed: Rule = { name: 'b6', listen: { host: '[::1]', port: 18300 }, forward: {} };
+		expect(errorsOf(listenOn('[::1]', '18300'), context([bracketed]))).toEqual({
+			listenPort: 'listenAddressTaken',
+			listenAddressOwner: 'b6'
+		});
+		expect(errorsOf(listenOn('::1', '18300'), context([bracketed]))).toEqual({});
+		// An invalid port is reported as such before any clash.
+		expect(errorsOf(listenOn('127.0.0.1', 'junk'), context(rulesFixture))).toEqual({
+			listenPort: 'invalidPort'
+		});
+	});
+
+	test('the web UI clashes by its configured address once its port is set; port 0, another host spelling or an unknown address never does', () => {
+		expect(errorsOf(listenOn('127.0.0.1', '1088'), context(rulesFixture))).toEqual({
+			listenPort: 'listenAddressWebUI'
+		});
+		expect(errorsOf(listenOn('', '1088'), context(rulesFixture))).toEqual({
+			listenPort: 'listenAddressWebUI'
+		});
+		expect(errorsOf(listenOn('0.0.0.0', '1088'), context(rulesFixture))).toEqual({});
+		expect(errorsOf(listenOn('127.0.0.1', '1088'), context(rulesFixture, null, null))).toEqual({});
+		// What Validate compares is the configured address, not the one the runtime bound: a wildcard
+		// web UI beside a loopback rule, or one on port 0 beside a rule on its ephemeral port, passes.
+		const wildcard = { host: '0.0.0.0', port: 1088 };
+		expect(errorsOf(listenOn('127.0.0.1', '1088'), context(rulesFixture, null, wildcard))).toEqual(
+			{}
+		);
+		const ephemeral = { host: '127.0.0.1', port: 0 };
+		expect(
+			errorsOf(listenOn('127.0.0.1', '18080'), context(rulesFixture, null, ephemeral))
+		).toEqual({});
+		expect(errorsOf(listenOn('127.0.0.1', '1088'), context(rulesFixture, null, ephemeral))).toEqual(
+			{}
+		);
+		// IPv6 hosts follow net.JoinHostPort on both sides.
+		const six = { host: '::1', port: 1088 };
+		expect(errorsOf(listenOn('::1', '1088'), context(rulesFixture, null, six))).toEqual({
+			listenPort: 'listenAddressWebUI'
+		});
+		expect(errorsOf(listenOn('[::1]', '1088'), context(rulesFixture, null, six))).toEqual({});
+		const bracketed = { host: '[::1]', port: 1088 };
+		expect(errorsOf(listenOn('::1', '1088'), context(rulesFixture, null, bracketed))).toEqual({});
+		expect(errorsOf(listenOn('[::1]', '1088'), context(rulesFixture, null, bracketed))).toEqual({
+			listenPort: 'listenAddressWebUI'
+		});
+		// A rule wins over the web UI in naming the owner.
+		const same: Rule = { name: 'ui-twin', listen: { host: '127.0.0.1', port: 1088 }, forward: {} };
+		expect(errorsOf(listenOn('127.0.0.1', '1088'), context([same]))).toEqual({
+			listenPort: 'listenAddressTaken',
+			listenAddressOwner: 'ui-twin'
+		});
+	});
+
+	test('a virtual listen clashes with an enabled rule on the same channel, on the channel field', () => {
+		const draft = emptyDraft();
+		draft.name = 'r';
+		draft.listen.kind = 'virtual';
+		draft.listen.virtual = ' exit ';
+		expect(errorsOf(draft, context(virtualRulesFixture))).toEqual({
+			listenVirtual: 'listenAddressTaken',
+			listenAddressOwner: 'shared-exit'
+		});
+		expect(errorsOf(draft, context(virtualRulesFixture, 'shared-exit'))).toEqual({});
+		const off = structuredClone(virtualRulesFixture);
+		off[0].disabled = true;
+		expect(errorsOf(draft, context(off))).toEqual({});
+		draft.listen.virtual = 'other';
+		expect(errorsOf(draft, context(virtualRulesFixture))).toEqual({});
+		// A hidden port draft never takes part.
+		draft.listen.port = '18098';
+		expect(errorsOf(draft, context(rulesFixture))).toEqual({});
+	});
+
+	test('hop URLs need a scheme as Go parses one; blank rows are dropped or, alone in a hop, refused', () => {
+		const check = (value: string, side: 'listen' | 'forward' = 'forward') => {
+			const draft = listenOn('127.0.0.1', '18400');
+			draft[side].way = [newHop([value])];
+			const result = readRule(draft);
+			return result.ok ? null : result.errors.urls?.[draft[side].way[0].urls[0].id];
+		};
+		for (const url of [
+			'socks5://h:1',
+			'cmd:nc %h %p',
+			'ssh://u@h',
+			'nc:ssh jump',
+			'SOCKS5://H:1',
+			'ss://aes-256-gcm:pass@host:8388',
+			'host:1080',
+			' socks5://h:1 '
+		]) {
+			expect(check(url), url).toBeNull();
+			expect(check(url, 'listen'), url).toBeNull();
+		}
+		for (const url of ['127.0.0.1:1080', '//x', '/just/a/path', 'x', ':1080', 'a_b:1']) {
+			expect(check(url), url).toBe('hopUrlNoScheme');
+			expect(check(url, 'listen'), url).toBe('hopUrlNoScheme');
+		}
+		expect(check(' ')).toBe('hopUrlEmpty');
+		expect(check('', 'listen')).toBe('hopUrlEmpty');
+		// Every offending row is reported at once, by id, on both sides.
+		const draft = listenOn('127.0.0.1', '18400');
+		draft.listen.way = [newHop(['edge.example', 'ssh://ops@edge.example:22'])];
+		draft.forward.way = [newHop(['', 'socks5://h:1']), newHop(['  '])];
+		expect(errorsOf(draft)).toEqual({
+			urls: {
+				[draft.listen.way[0].urls[0].id]: 'hopUrlNoScheme',
+				[draft.forward.way[1].urls[0].id]: 'hopUrlEmpty'
+			}
+		});
+		// Hops hidden by a virtual endpoint are neither sent nor checked.
+		draft.listen.kind = 'virtual';
+		draft.listen.virtual = 'entry';
+		draft.mode = 'forward';
+		draft.target.kind = 'virtual';
+		draft.target.virtual = 'exit';
+		expect(errorsOf(draft)).toEqual({});
 	});
 });

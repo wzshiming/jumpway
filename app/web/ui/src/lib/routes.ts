@@ -60,5 +60,9 @@ export function routeFor(hash: string): Route {
 
 export const ruleRoute = (name: string): string => '#/rules/' + encodeURIComponent(name);
 
+// The new-rule page prefilled from a stored rule.
+export const duplicateRoute = (name: string): string =>
+	NEW_RULE_ROUTE + '?' + new URLSearchParams({ rule: name });
+
 export const statsRoute = (kind: 'stats' | 'connections', rule = ''): string =>
 	'#/' + kind + (rule ? '?' + new URLSearchParams({ rule }) : '');

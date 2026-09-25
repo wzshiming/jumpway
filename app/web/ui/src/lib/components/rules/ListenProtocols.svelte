@@ -1,6 +1,12 @@
 <script lang="ts">
 	import { t } from '../../i18n.svelte';
-	import { PROTOCOLS, type DraftErrors, type RuleDraft } from '../../ruleEditor';
+	import {
+		PROTOCOLS,
+		type DraftErrors,
+		type ProtocolDraft,
+		type ProtocolType,
+		type RuleDraft
+	} from '../../ruleEditor';
 	import { fieldsOf, layoutFor } from '../../urlBuilder';
 	import Field from '../ui/Field.svelte';
 
@@ -15,9 +21,21 @@
 		fieldsOf(layoutFor('shadowsocks')!).find((input) => input.name === 'encrypto')?.items ?? [];
 
 	const ss = $derived(listen.protocols.find((row) => row.type === 'ss')!);
-	// The password error sits on the field Shadowsocks actually reads.
-	const passwordError = (custom: boolean) =>
-		errors.ssPassword && ss.custom === custom ? t(errors.ssPassword) : null;
+	// The Shadowsocks password error sits on the field it actually reads; the shared field also
+	// answers for a shared password no username covers.
+	const sharedPasswordError = $derived(
+		(ss.custom ? undefined : errors.ssPassword) ?? errors.listenPassword
+	);
+	const rowError = (type: ProtocolType, name: 'username' | 'password') =>
+		errors.protocolErrors?.[type]?.[name];
+	const fieldError = (row: ProtocolDraft, name: 'username' | 'password') =>
+		(row.type === 'ss' && name === 'password' && row.custom ? errors.ssPassword : undefined) ??
+		rowError(row.type, name);
+	const clearFieldError = (row: ProtocolDraft, name: 'username' | 'password') => {
+		if (row.type === 'ss' && name === 'password') errors.ssPassword = undefined;
+		const entry = errors.protocolErrors?.[row.type];
+		if (entry) entry[name] = undefined;
+	};
 </script>
 
 <fieldset class="mt-4">
@@ -43,26 +61,42 @@
 	{/if}
 </fieldset>
 <div class="mt-4 grid gap-4 sm:grid-cols-2">
-	<Field id="listen-username" label={t('username')} optional hint={t('credentialsHint')}>
-		{#snippet children({ describedBy })}
+	<Field
+		id="listen-username"
+		label={t('username')}
+		optional
+		hint={t('credentialsHint')}
+		error={errors.listenUsername ? t(errors.listenUsername) : null}
+	>
+		{#snippet children({ describedBy, invalid })}
 			<input
 				id="listen-username"
 				class="input"
 				type="text"
 				bind:value={listen.username}
+				oninput={() => (errors.listenUsername = undefined)}
+				aria-invalid={invalid || undefined}
 				aria-describedby={describedBy}
 				spellcheck="false"
 			/>
 		{/snippet}
 	</Field>
-	<Field id="listen-password" label={t('password')} optional error={passwordError(false)}>
+	<Field
+		id="listen-password"
+		label={t('password')}
+		optional
+		error={sharedPasswordError ? t(sharedPasswordError) : null}
+	>
 		{#snippet children({ describedBy, invalid })}
 			<input
 				id="listen-password"
 				class="input"
 				type="password"
 				bind:value={listen.password}
-				oninput={() => (errors.ssPassword = undefined)}
+				oninput={() => {
+					errors.ssPassword = undefined;
+					errors.listenPassword = undefined;
+				}}
 				aria-invalid={invalid || undefined}
 				aria-describedby={describedBy}
 				autocomplete="new-password"
@@ -117,19 +151,15 @@
 				{/if}
 				{#if row.custom}
 					{#each PROTOCOLS[index].fields as name (name)}
-						{@const ssPassword = row.type === 'ss' && name === 'password'}
-						<Field
-							id="protocol-{row.type}-{name}"
-							label={t(name)}
-							error={ssPassword ? passwordError(true) : null}
-						>
+						{@const error = fieldError(row, name)}
+						<Field id="protocol-{row.type}-{name}" label={t(name)} error={error ? t(error) : null}>
 							{#snippet children({ describedBy, invalid })}
 								<input
 									id="protocol-{row.type}-{name}"
 									class="input"
 									type={name === 'password' ? 'password' : 'text'}
 									bind:value={row[name]}
-									oninput={ssPassword ? () => (errors.ssPassword = undefined) : undefined}
+									oninput={() => clearFieldError(row, name)}
 									aria-invalid={invalid || undefined}
 									aria-describedby={describedBy}
 									autocomplete={name === 'password' ? 'new-password' : undefined}

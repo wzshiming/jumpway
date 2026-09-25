@@ -401,13 +401,17 @@ test('the overview KPIs and the rule card facts are explained too, and the cards
 	);
 	// The KPI rates name their direction for assistive technology.
 	expect(compact(target.querySelector('[data-kpi="rate"]'))).toMatch(/^Upload \S+ \S+ Download /);
-	// Edit, Rule Traffic and Delete are icon controls to the same routes and action as before.
+	// Edit, Duplicate, Rule Traffic and Delete are icon controls to the same routes and action as before.
 	const office = target.querySelector('main article[aria-labelledby]')!;
 	const edit = office.querySelector('a[aria-label="Edit"]')!;
 	expect(edit.getAttribute('href')).toBe('#/rules/office');
 	expect(edit.classList.contains('icon-btn')).toBe(true);
 	expect(edit.textContent?.trim()).toBe('');
 	expect(edit.querySelector('svg')).not.toBeNull();
+	const duplicate = office.querySelector('a[aria-label="Duplicate rule"]')!;
+	expect(duplicate.getAttribute('href')).toBe('#/new?rule=office');
+	expect(duplicate.classList.contains('icon-btn')).toBe(true);
+	expect(duplicate.querySelector('svg')).not.toBeNull();
 	const traffic = office.querySelector('a[aria-label="Rule Traffic"]')!;
 	expect(traffic.getAttribute('href')).toBe('#/stats?rule=office');
 	expect(traffic.querySelector('svg')).not.toBeNull();
@@ -421,7 +425,7 @@ test('the overview KPIs and the rule card facts are explained too, and the cards
 		Array.from(office.querySelectorAll('footer a, footer button')).map((control) =>
 			control.textContent?.trim()
 		)
-	).toEqual(['', '', '']);
+	).toEqual(['', '', '', '']);
 	// The footer rates use the shared arrows, named upload and download (not the hop moves).
 	expect(compact(office.querySelector('footer'))).toMatch(/^Upload \S+ \S+ Download /);
 

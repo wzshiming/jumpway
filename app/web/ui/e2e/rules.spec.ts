@@ -192,20 +192,20 @@ test('create from the overview, rename in the editor, then manage the new card f
 	await expect(page.getByText('Rule name is required.')).toBeVisible();
 	expect(api.writes).toEqual([]);
 
-	await page.getByLabel('Rule name').fill('lab/2');
+	await page.getByLabel('Rule name').fill('lab 2');
 	await page.getByLabel('Port', { exact: true }).fill('18101');
 	await page.getByLabel('Username').fill('demo');
 	await page.getByLabel('Password', { exact: true }).fill('placeholder');
 	await expect(unsaved(page)).toBeVisible();
 	await page.getByRole('button', { name: 'Save & Apply' }).click();
-	await expect(page).toHaveURL(/#\/rules\/lab%2F2$/);
-	await expect(heading(page)).toHaveText('lab/2');
+	await expect(page).toHaveURL(/#\/rules\/lab%202$/);
+	await expect(heading(page)).toHaveText('lab 2');
 	expect(api.writes).toEqual([
 		{
 			method: 'POST',
 			path: '/apis/configs/rules',
 			body: {
-				name: 'lab/2',
+				name: 'lab 2',
 				listen: {
 					host: '127.0.0.1',
 					port: 18101,
@@ -219,7 +219,7 @@ test('create from the overview, rename in the editor, then manage the new card f
 	]);
 	await expect(page.getByRole('status').filter({ hasText: 'Saved and applied.' })).toBeVisible();
 	await expect(unsaved(page)).toHaveCount(0);
-	await expect(page.getByLabel('Rule name')).toHaveValue('lab/2');
+	await expect(page.getByLabel('Rule name')).toHaveValue('lab 2');
 	await expect(page.getByRole('button', { name: 'Delete' })).toBeVisible();
 
 	// Rename: PUT to the old name with the new body, then the route follows.
@@ -227,7 +227,7 @@ test('create from the overview, rename in the editor, then manage the new card f
 	await page.keyboard.press('ControlOrMeta+s');
 	await expect(page).toHaveURL(/#\/rules\/lab-2$/);
 	await expect(heading(page)).toHaveText('lab-2');
-	expect(writes(api)).toEqual(['POST /apis/configs/rules', 'PUT /apis/configs/rules/lab%2F2']);
+	expect(writes(api)).toEqual(['POST /apis/configs/rules', 'PUT /apis/configs/rules/lab%202']);
 	expect(api.writes[1].body).toMatchObject({ name: 'lab-2' });
 	expect(api.rules.map((rule) => rule.name)).toEqual([
 		...rulesFixture.map((rule) => rule.name),
@@ -307,7 +307,7 @@ test('a dirty editor asks before leaving: custom dialog in-app, native confirm o
 	expect(native.seen).toHaveLength(2);
 });
 
-test('Cancel sits between Save & Apply and Delete: clean leaves at once, dirty asks, a save in flight holds it, Enter never triggers it', async ({
+test('Cancel sits between Save & Apply and Duplicate/Delete: clean leaves at once, dirty asks, a save in flight holds it, Enter never triggers it', async ({
 	page,
 	api,
 	failures
@@ -320,6 +320,7 @@ test('Cancel sits between Save & Apply and Delete: clean leaves at once, dirty a
 	await expect(form(page).locator('[data-form-actions] button')).toHaveText([
 		'Save & Apply',
 		'Cancel',
+		'Duplicate rule',
 		'Delete'
 	]);
 	await expect(cancel()).toHaveAttribute('type', 'button');
@@ -380,8 +381,11 @@ test('Cancel sits between Save & Apply and Delete: clean leaves at once, dirty a
 	expect(writes(api)).toEqual(['POST /apis/configs/rules']);
 
 	// A rejected save leaves the form dirty: Cancel still asks, and discarding sends nothing more.
-	api.fail.set('PUT /apis/configs/rules/draft', 'rules[4].listen.port 18097 is already in use');
-	await page.getByLabel('Port', { exact: true }).fill('18097');
+	api.fail.set(
+		'PUT /apis/configs/rules/draft',
+		'reload failed: listen tcp 127.0.0.1:18105: bind: address already in use'
+	);
+	await page.getByLabel('Port', { exact: true }).fill('18105');
 	await page.keyboard.press('ControlOrMeta+s');
 	await expect(page.getByRole('main').getByRole('alert')).toContainText('already in use');
 	await cancel().click();
@@ -700,14 +704,14 @@ test('a 400 keeps the form dirty on its route and shows the redacted message', a
 		'PUT /apis/configs/rules/mirror',
 		'rules[1].forward.way[0]: invalid proxy URL "socks5://demo:placeholder@bad:port": parse error'
 	);
-	await page.getByLabel('Port', { exact: true }).fill('18097');
+	await page.getByLabel('Port', { exact: true }).fill('18197');
 	await page.keyboard.press('ControlOrMeta+s');
 	const banner = page.getByRole('main').getByRole('alert');
 	await expect(banner).toContainText('invalid proxy URL "socks5://xxxxx@bad:port"');
 	expect(await page.content()).not.toContain('demo:placeholder@bad');
 	await expect(unsaved(page)).toBeVisible();
 	await expect(page).toHaveURL(/#\/rules\/mirror$/);
-	await expect(page.getByLabel('Port', { exact: true })).toHaveValue('18097');
+	await expect(page.getByLabel('Port', { exact: true })).toHaveValue('18197');
 	expect(writes(api)).toEqual(['PUT /apis/configs/rules/mirror']);
 
 	// The same body is retried once the backend accepts it; nothing was duplicated.
@@ -796,7 +800,7 @@ test('a "saved, but" delete is a delete: the list refreshes, the dirty editor re
 	expect(count(api, 'GET /apis/configs/status')).toBeGreaterThan(statusReads);
 });
 
-test('the card footer keeps its three 32px actions and long rates inside the card at 375, 820 and 1280; the delete question fits a phone', async ({
+test('the card footer keeps its four 32px actions and long rates inside the card at 375, 820 and 1280; the delete question fits a phone', async ({
 	page,
 	api
 }) => {
@@ -849,7 +853,7 @@ test('the card footer keeps its three 32px actions and long rates inside the car
 			previousHeight: geometry.trailing.previousHeight
 		});
 		for (const card of geometry.cards) {
-			expect(card.sizes, `${width}px`).toEqual(['32x32', '32x32', '32x32']);
+			expect(card.sizes, `${width}px`).toEqual(['32x32', '32x32', '32x32', '32x32']);
 			expect(card.inside, `${width}px`).toBe(true);
 			expect(card.wide, `${width}px`).toBe(0);
 		}
@@ -1363,6 +1367,188 @@ test('listen and exit headings are spaced below the preceding separators', async
 			await shoot(page, `section-heading-${width}-${name}`);
 		}
 	}
+});
+
+test('Duplicate on a card opens a dirty copy named "<name>-copy"; once its port is free, Save creates it and the overview lists it', async ({
+	page,
+	api
+}) => {
+	await page.goto('/');
+	const office = cards(page).nth(0);
+	const duplicate = office.getByRole('link', { name: 'Duplicate rule' });
+	await expect(duplicate).toHaveAttribute('href', '#/new?rule=office');
+	await hover(page, duplicate);
+	await expect(page.locator('#tooltip')).toHaveText('Duplicate rule');
+	await duplicate.click();
+	await expect(page).toHaveURL(/#\/new\?rule=office$/);
+	await expect(heading(page)).toHaveText('New rule');
+	await expect(page.getByLabel('Rule name')).toHaveValue('office-copy');
+	await expect(page.getByLabel('Port', { exact: true })).toHaveValue('18097');
+	await expect(unsaved(page)).toBeVisible();
+	await expect(form(page).locator('[data-form-actions] button')).toHaveText([
+		'Save & Apply',
+		'Cancel'
+	]);
+	expect(await chainStages(page)).toContain('Hop 1 · exit node socks5://hop-a.example:1080');
+
+	// The source still holds 127.0.0.1:18097: nothing is sent until the port changes.
+	await page.getByRole('button', { name: 'Save & Apply' }).click();
+	await expect(page.locator('#listen-port-error')).toHaveText('Already used by rule "office".');
+	await expect(page.getByLabel('Port', { exact: true })).toBeFocused();
+	expect(api.writes).toEqual([]);
+	await page.getByLabel('Port', { exact: true }).fill('18197');
+	await expect(page.locator('#listen-port-error')).toHaveCount(0);
+	await page.keyboard.press('ControlOrMeta+s');
+	await expect(page).toHaveURL(/#\/rules\/office-copy$/);
+	await expect(heading(page)).toHaveText('office-copy');
+	await expect(unsaved(page)).toHaveCount(0);
+	expect(api.writes).toEqual([
+		{
+			method: 'POST',
+			path: '/apis/configs/rules',
+			body: {
+				name: 'office-copy',
+				listen: { host: '127.0.0.1', port: 18197, protocols: LEGACY },
+				forward: {
+					way: [
+						{ lb: ['socks5://demo:placeholder@hop-a.example:1080'] },
+						{ lb: ['ssh://ops@bastion.example:22', 'ssh://ops@bastion-2.example:22'] }
+					]
+				}
+			}
+		}
+	]);
+
+	await page.getByRole('navigation', { name: 'Breadcrumb' }).getByRole('link').click();
+	await expect(cardNames(page)).toHaveText(['office', 'mirror', 'db-tunnel', 'lab', 'office-copy']);
+	await expect(cards(page).nth(4)).toContainText('127.0.0.1:18197');
+	await expect(cards(page).nth(4).getByRole('link', { name: 'Duplicate rule' })).toHaveAttribute(
+		'href',
+		'#/new?rule=office-copy'
+	);
+});
+
+test('the editor duplicates through the router: a dirty draft asks first, a clean one opens the copy', async ({
+	page,
+	api
+}) => {
+	await page.goto('/#/rules/mirror');
+	await expect(heading(page)).toHaveText('mirror');
+	await page.getByLabel('Port', { exact: true }).fill('18198');
+	await page.getByRole('button', { name: 'Duplicate rule' }).click();
+	await expect(confirmDialog(page)).toContainText('Discard unsaved changes?');
+	await confirmDialog(page).getByRole('button', { name: 'Cancel' }).click();
+	await expect(page).toHaveURL(/#\/rules\/mirror$/);
+	await expect(page.getByLabel('Port', { exact: true })).toHaveValue('18198');
+
+	await page.getByLabel('Port', { exact: true }).fill('18098');
+	await expect(unsaved(page)).toHaveCount(0);
+	await page.getByRole('button', { name: 'Duplicate rule' }).click();
+	await expect(page).toHaveURL(/#\/new\?rule=mirror$/);
+	await expect(heading(page)).toHaveText('New rule');
+	await expect(page.getByLabel('Rule name')).toHaveValue('mirror-copy');
+	await expect(page.getByLabel('Target port')).toHaveValue('5432');
+	await expect(unsaved(page)).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Duplicate rule' })).toHaveCount(0);
+	expect(api.writes).toEqual([]);
+
+	await page.goto('/?lang=zh#/');
+	await expect(cards(page).nth(0).getByRole('link', { name: '复制规则' })).toHaveAttribute(
+		'href',
+		'#/new?rule=office'
+	);
+});
+
+test('a taken name, a "/" in it or a taken listen address is refused inline before any request', async ({
+	page,
+	api
+}) => {
+	const name = page.getByLabel('Rule name');
+	const port = page.getByLabel('Port', { exact: true });
+	await page.goto('/#/rules/mirror');
+	await expect(heading(page)).toHaveText('mirror');
+	await name.fill('office');
+	await page.keyboard.press('ControlOrMeta+s');
+	await expect(page.locator('#rule-name-error')).toHaveText(
+		'A rule with this name already exists.'
+	);
+	await expect(name).toHaveAttribute('aria-invalid', 'true');
+	await expect(name).toBeFocused();
+	await expect(unsaved(page)).toBeVisible();
+	expect(api.writes).toEqual([]);
+	await name.fill('office/2');
+	await expect(page.locator('#rule-name-error')).toHaveCount(0);
+	await page.keyboard.press('ControlOrMeta+s');
+	await expect(page.locator('#rule-name-error')).toHaveText('Names must not contain "/".');
+
+	// Its own name is no clash; office's port is, and so is the web UI's.
+	await name.fill('mirror');
+	await port.fill('18097');
+	await page.keyboard.press('ControlOrMeta+s');
+	await expect(page.locator('#listen-port-error')).toHaveText('Already used by rule "office".');
+	await expect(port).toBeFocused();
+	await port.fill('1088');
+	await page.keyboard.press('ControlOrMeta+s');
+	await expect(page.locator('#listen-port-error')).toHaveText('Already used by the web UI.');
+	expect(api.writes).toEqual([]);
+
+	// lab is disabled: its port is free, and the save goes through.
+	await port.fill('18100');
+	await page.keyboard.press('ControlOrMeta+s');
+	await expect(unsaved(page)).toHaveCount(0);
+	expect(writes(api)).toEqual(['PUT /apis/configs/rules/mirror']);
+	expect(api.writes[0].body).toMatchObject({ name: 'mirror', listen: { port: 18100 } });
+
+	await page.goto('/?lang=zh#/rules/mirror');
+	await page.getByLabel('规则名称').fill('office');
+	await page.getByLabel('端口', { exact: true }).fill('18097');
+	await page.keyboard.press('ControlOrMeta+s');
+	await expect(page.locator('#rule-name-error')).toHaveText('已有同名规则。');
+	await expect(page.locator('#listen-port-error')).toHaveText('已被规则“office”使用。');
+	expect(api.writes).toHaveLength(1);
+});
+
+test('a hop URL without a scheme, or an added hop left blank, is marked inline and focused; nothing is sent until fixed', async ({
+	page,
+	api
+}) => {
+	await page.goto('/#/rules/office');
+	await expect(heading(page)).toHaveText('office');
+	const rows = page.locator('input[id^="exit-url-"]');
+	const first = rows.first();
+	await first.fill('127.0.0.1:1080');
+	await exitEditor(page).getByRole('button', { name: 'Add hop' }).click();
+	await expect(rows).toHaveCount(4);
+	await page.keyboard.press('ControlOrMeta+s');
+	const errorOf = async (row: Locator) => page.locator(`#${await row.getAttribute('id')}-error`);
+	await expect(first).toHaveAttribute('aria-invalid', 'true');
+	await expect(await errorOf(first)).toHaveText('Include the scheme (e.g. socks5://host:1080).');
+	await expect(first).toBeFocused();
+	await expect(rows.nth(1)).not.toHaveAttribute('aria-invalid', /./);
+	await expect(rows.nth(3)).toHaveAttribute('aria-invalid', 'true');
+	await expect(await errorOf(rows.nth(3))).toHaveText('Enter a proxy URL.');
+	expect(api.writes).toEqual([]);
+
+	await first.fill('socks5://127.0.0.1:1080');
+	await expect(first).not.toHaveAttribute('aria-invalid', /./);
+	await expect(await errorOf(first)).toHaveCount(0);
+	await exitEditor(page)
+		.locator('li[id^="exit-hop-"]')
+		.nth(2)
+		.getByRole('button', { name: 'Delete hop' })
+		.click();
+	await expect(rows).toHaveCount(3);
+	await page.keyboard.press('ControlOrMeta+s');
+	await expect(unsaved(page)).toHaveCount(0);
+	expect(writes(api)).toEqual(['PUT /apis/configs/rules/office']);
+	expect(api.writes[0].body).toMatchObject({
+		forward: {
+			way: [
+				{ lb: ['socks5://127.0.0.1:1080'] },
+				{ lb: ['ssh://ops@bastion.example:22', 'ssh://ops@bastion-2.example:22'] }
+			]
+		}
+	});
 });
 
 test.describe('screenshots', () => {
