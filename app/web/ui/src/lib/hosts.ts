@@ -1,7 +1,5 @@
-import { displayURL } from './format';
+import { displayURL, text } from './format';
 import { list, type Nullable, type RuleStats, type Stats } from './types';
-
-const text = (value: unknown) => String(value ?? '');
 
 const SUMMED = [
 	'up',

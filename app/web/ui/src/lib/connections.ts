@@ -1,4 +1,4 @@
-import { displayClient, displayURL } from './format';
+import { displayClient, displayURL, text } from './format';
 import { i18n, t } from './i18n.svelte';
 import { DIRECTIONS, TRAFFIC_METRICS, TRAFFIC_METRIC_LABELS } from './traffic';
 import {
@@ -9,8 +9,6 @@ import {
 	type RuleStats,
 	type Stats
 } from './types';
-
-const text = (value: unknown) => String(value ?? '');
 
 export type RuleConnection = Connection & { rule: string };
 

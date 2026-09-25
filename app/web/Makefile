@@ -30,6 +30,10 @@ ui:
 ui-check:
 	$(PNPM) install --frozen-lockfile && $(PNPM) check && $(PNPM) test
 
+.PHONY: ui-verify
+ui-verify:
+	$(PNPM) install --frozen-lockfile && $(PNPM) build:dist && diff -r $(CURDIR)/ui/dist $(CURDIR)/statics
+
 .PHONY: ui-dev
 ui-dev:
 	$(PNPM) install --frozen-lockfile && $(PNPM) dev

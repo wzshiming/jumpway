@@ -31,7 +31,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
 	{ hash: '#/yaml', label: 'page.yaml', kinds: ['yaml'], icon: IconFileCode }
 ];
 
-export const navItemFor = (kind: PageKind): NavItem =>
+const navItemFor = (kind: PageKind): NavItem =>
 	NAV_ITEMS.find((item) => item.kinds.includes(kind))!;
 
 // The editor is titled by its rule and the new-rule page by itself; the rest by their nav entry.

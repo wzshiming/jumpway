@@ -1,3 +1,4 @@
+import { text } from './format';
 import type { MessageKey } from './i18n/en';
 import { isVirtualChannel } from './rule';
 import { list, type Forward, type Listen, type Protocol, type Rule, type WayHop } from './types';
@@ -78,8 +79,6 @@ export const newHop = (urls: readonly string[] = ['']): HopDraft => ({
 	id: ++sequence,
 	urls: urls.map(newUrl)
 });
-
-const text = (value: unknown) => (value === undefined || value === null ? '' : String(value));
 
 const hopsFrom = (way: Rule['listen']['way']): HopDraft[] =>
 	normalizeWay(way).map((hop) => newHop(hop.lb));

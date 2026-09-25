@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test } from 'vitest';
 import { i18n } from './i18n.svelte';
-import { NAV_ITEMS, navItemFor, pageTitle } from './nav';
+import { NAV_ITEMS, pageTitle } from './nav';
 import { routeFor, type PageKind } from './routes';
 
 // Record<PageKind, …> keeps this list exhaustive at compile time.
@@ -38,8 +38,9 @@ test('every page kind belongs to exactly one navigation entry, and each entry is
 	// Rules are managed on the overview, so its entry stays current while one is being edited.
 	expect(NAV_ITEMS).toHaveLength(6);
 	expect(NAV_ITEMS.map((item) => item.hash)).not.toContain('#/rules');
-	expect(navItemFor('rule').hash).toBe('#/');
-	expect(navItemFor('new').hash).toBe('#/');
+	const hashFor = (kind: PageKind) => NAV_ITEMS.find((item) => item.kinds.includes(kind))?.hash;
+	expect(hashFor('rule')).toBe('#/');
+	expect(hashFor('new')).toBe('#/');
 });
 
 test('pageTitle names ordinary pages by their entry, the new-rule page by itself and the editor by its rule', () => {

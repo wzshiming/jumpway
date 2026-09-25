@@ -164,12 +164,6 @@ describe('request', () => {
 describe('typed clients', () => {
 	test('configs routes and encodings', async () => {
 		stubFetch(() => json(null));
-		await configs.get();
-		await configs.update({
-			web_ui: { host: '', port: 1 },
-			rules: null,
-			no_proxy: { list: null, from_env: null, from_file: null }
-		});
 		await configs.getWebUI();
 		await configs.updateWebUI({ host: '127.0.0.1', port: 1088 });
 		await configs.getNoProxy();
@@ -183,8 +177,6 @@ describe('typed clients', () => {
 		await configs.updateRule('a/b', { name: 'c', listen: { host: '', port: 0 }, forward: {} });
 		await configs.deleteRule('new');
 		expect(calls.map((call) => [call.init.method, call.url])).toEqual([
-			['GET', '/apis/configs'],
-			['PUT', '/apis/configs'],
 			['GET', '/apis/configs/web-ui'],
 			['PUT', '/apis/configs/web-ui'],
 			['GET', '/apis/configs/no-proxy'],
@@ -198,7 +190,7 @@ describe('typed clients', () => {
 			['PUT', '/apis/configs/rules/a%2Fb'],
 			['DELETE', '/apis/configs/rules/new']
 		]);
-		expect(calls[3].init.body).toBe('{"host":"127.0.0.1","port":1088}');
+		expect(calls[1].init.body).toBe('{"host":"127.0.0.1","port":1088}');
 	});
 
 	test('stats routes use the numeric connection id', async () => {

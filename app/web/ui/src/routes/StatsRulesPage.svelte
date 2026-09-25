@@ -18,6 +18,7 @@
 	import { statsRoute } from '../lib/routes';
 	import { forwardTarget, isForward, listenAddress } from '../lib/rule';
 	import { stats } from '../lib/stats.svelte';
+	import { buildRows, type StatsRow } from '../lib/statsRows';
 	import { ruleState, status } from '../lib/status.svelte';
 	import {
 		list,
@@ -25,7 +26,6 @@
 		type Nullable,
 		type Rule,
 		type RuleStats,
-		type RuleStatus,
 		type WayHop,
 		type WayNode
 	} from '../lib/types';
@@ -69,44 +69,23 @@
 		};
 	});
 
-	interface Row {
-		name: string;
-		rule: Rule | null;
-		runtime: RuleStatus | null;
-		entry: RuleStats | null;
-	}
-
 	const runtimeRules = $derived(list(status.data?.rules));
 	const snapshotRules = $derived(list(stats.data?.rules));
-	// Configured rules first; a snapshot may still name a rule the config no longer has.
-	const rows = $derived.by((): Row[] => {
-		const names = rules ? rules.map((rule) => rule.name) : [];
-		const seen = new Set(names);
-		for (const entry of snapshotRules) {
-			if (!seen.has(entry.name)) {
-				seen.add(entry.name);
-				names.push(entry.name);
-			}
-		}
-		return names.map((name) => ({
-			name,
-			rule: rules?.find((rule) => rule.name === name) ?? null,
-			runtime: runtimeRules.find((rule) => rule.name === name) ?? null,
-			entry: snapshotRules.find((entry) => entry.name === name) ?? null
-		}));
-	});
+	const rows = $derived(buildRows(rules, runtimeRules, snapshotRules));
 	const ready = $derived(rules !== null || stats.data !== null);
 
-	function chip(row: Row): { state: ChipState; label: string } {
+	function chip(row: StatsRow): { state: ChipState; label: string } {
 		if (row.rule?.disabled) return { state: 'disabled', label: t('disabled') };
 		if (!row.runtime) return { state: 'unknown', label: t('checking') };
 		const state = ruleState(row.runtime);
 		return { state, label: t(state, { attempt: row.runtime.attempt ?? 0 }) };
 	}
 
-	const addressOf = (row: Row) => row.runtime?.address ?? (row.rule ? listenAddress(row.rule) : '');
-	const targetOf = (row: Row) => row.runtime?.target ?? (row.rule ? forwardTarget(row.rule) : '');
-	const remoteOf = (row: Row) =>
+	const addressOf = (row: StatsRow) =>
+		row.runtime?.address ?? (row.rule ? listenAddress(row.rule) : '');
+	const targetOf = (row: StatsRow) =>
+		row.runtime?.target ?? (row.rule ? forwardTarget(row.rule) : '');
+	const remoteOf = (row: StatsRow) =>
 		row.runtime?.remote ?? (row.rule ? normalizeWay(row.rule.listen.way).length > 0 : false);
 
 	// Hops the server has seen carry the statistics; the configured way is the fallback.

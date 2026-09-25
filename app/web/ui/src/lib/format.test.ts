@@ -7,7 +7,6 @@ import {
 	formatCount,
 	formatDateTime,
 	formatDuration,
-	formatElapsed,
 	formatLatency,
 	formatRate,
 	redactCredentials
@@ -95,8 +94,9 @@ describe('durations', () => {
 		[3600, '1 h 0 min', '1 h'],
 		[90061, '25 h 1 min', '25 h']
 	])('%d s → %s / short %s', (seconds, long, short) => {
-		expect(formatElapsed(seconds)).toBe(long);
-		expect(formatElapsed(seconds, true)).toBe(short);
+		const since = new Date(NOW - seconds * 1000).toISOString();
+		expect(formatDuration(since, false, NOW)).toBe(long);
+		expect(formatDuration(since, true, NOW)).toBe(short);
 	});
 
 	test('formatDuration counts from the timestamp, clamps the future and rejects garbage', () => {

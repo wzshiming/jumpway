@@ -1,6 +1,5 @@
+import { text } from './format';
 import { list, type Nullable, type WayHop, type WayNode } from './types';
-
-const text = (value: unknown) => String(value ?? '');
 
 // Fresh arrays: the editor mutates hops in place.
 export function normalizeWay(way: Nullable<WayNode[]>): WayHop[] {

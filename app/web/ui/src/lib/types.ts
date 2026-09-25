@@ -55,12 +55,6 @@ export interface NoProxy {
 	from_file: Nullable<string[]>;
 }
 
-export interface Config {
-	web_ui: Address;
-	rules: Nullable<Rule[]>;
-	no_proxy: NoProxy;
-}
-
 export interface RawConfig {
 	yaml: string;
 }
