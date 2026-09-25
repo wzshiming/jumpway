@@ -3,10 +3,12 @@ import { createPoller } from './polling.svelte';
 import type { RuleStatus, Status } from './types';
 
 export const STATUS_INTERVAL_MS = 10_000;
+export const STATUS_MAX_INTERVAL_MS = 60_000;
 
 export const status = createPoller<Status>({
 	load: (signal) => configsApi.status(signal),
-	intervalMs: STATUS_INTERVAL_MS
+	intervalMs: STATUS_INTERVAL_MS,
+	maxIntervalMs: STATUS_MAX_INTERVAL_MS
 });
 
 export type RuntimeState = 'running' | 'stopped' | 'unknown';
