@@ -283,13 +283,14 @@
 	</section>
 </div>
 
-<section class="pt-5" aria-label={t('rules')} aria-busy={loading}>
+<!-- @container: the grid fills 18rem columns into the width beside the sidebar, not the viewport. -->
+<section class="@container pt-5" aria-label={t('rules')} aria-busy={loading}>
 	{#if error}
 		<Banner kind="error" title={errorMessage(error)} message={null}>
 			<Button variant="secondary" onclick={load}>{t('retry')}</Button>
 		</Banner>
 	{:else if rules}
-		<div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+		<div class="grid grid-cols-[repeat(auto-fill,minmax(18rem,1fr))] gap-3">
 			{#each rules as rule (rule.name)}
 				<RuleCard
 					{rule}

@@ -68,7 +68,7 @@
 			<a
 				id={titleId}
 				href={ruleRoute(rule.name)}
-				class="block truncate text-[15px] font-semibold text-fg hover:text-accent"
+				class="line-clamp-2 text-[15px] font-semibold break-words text-fg hover:text-accent"
 			>
 				{rule.name}
 			</a>
@@ -106,7 +106,7 @@
 			{t('listen')}
 			<HelpTip concept={t('listen')} text={t('help.listen')} />
 		</dt>
-		<dd class="font-mono text-[13px] break-all">
+		<dd class="font-mono text-[13px] [overflow-wrap:anywhere]">
 			{address}
 			{#if rule.listen.virtual}
 				<VirtualPeers side="listen" channel={rule.listen.virtual} {rules} self={rule.name} />
@@ -116,7 +116,7 @@
 			{t('target')}
 			<HelpTip concept={t('target')} text={t('help.target')} />
 		</dt>
-		<dd class="font-mono text-[13px] break-all">
+		<dd class="font-mono text-[13px] [overflow-wrap:anywhere]">
 			{target || DASH}
 			{#if rule.forward.virtual}
 				<VirtualPeers side="forward" channel={rule.forward.virtual} {rules} self={rule.name} />

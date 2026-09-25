@@ -840,3 +840,30 @@ test('when every configured rule runs the second line is just the configured cou
 	expect(ruleStates()).toBe('2 configured');
 	expect(target.querySelector('[data-kpi="rule-states"] [data-rule-state]')).toBeNull();
 });
+
+test('the card grid follows its own width, titles wrap to two lines instead of truncating and addresses break only when they must', async () => {
+	await render();
+	const rulesGrid = grid();
+	expect(rulesGrid.className).toContain('grid-cols-[repeat(auto-fill,minmax(');
+	expect(rulesGrid.className).not.toMatch(/\b(sm|xl):grid-cols-/);
+	let container: HTMLElement | null = rulesGrid;
+	while (container && !container.classList.contains('@container'))
+		container = container.parentElement;
+	expect(container).not.toBeNull();
+	expect(container!.closest('main')).not.toBeNull();
+	for (const name of names()) {
+		const title = card(name!).querySelector<HTMLElement>('header a')!;
+		expect(title.classList.contains('line-clamp-2'), name).toBe(true);
+		expect(title.classList.contains('break-words'), name).toBe(true);
+		expect(title.classList.contains('truncate'), name).toBe(false);
+		const addresses = Array.from(card(name!).querySelectorAll<HTMLElement>('dl dd')).slice(0, 2);
+		expect(addresses.map((address) => address.classList.contains('font-mono'))).toEqual([
+			true,
+			true
+		]);
+		for (const address of addresses) {
+			expect(address.classList.contains('break-all'), name).toBe(false);
+			expect(address.classList.contains('[overflow-wrap:anywhere]'), name).toBe(true);
+		}
+	}
+});
