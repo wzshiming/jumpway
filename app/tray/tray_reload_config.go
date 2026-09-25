@@ -40,7 +40,9 @@ func (a *App) reload() error {
 		a.mu.Lock()
 		a.lastErr = err
 		a.mu.Unlock()
-		a.rebuildMenu()
+		if menuErr := a.rebuildMenu(); menuErr != nil {
+			err = errors.Join(err, menuErr)
+		}
 		a.updateStatus()
 		return err
 	}
@@ -257,7 +259,9 @@ func (a *App) reload() error {
 	if webErr != nil {
 		failures = append(failures, fmt.Errorf("web_ui: %w", webErr))
 	}
-	a.rebuildMenu()
+	if err := a.rebuildMenu(); err != nil {
+		failures = append(failures, err)
+	}
 	a.updateStatus()
 	return errors.Join(failures...)
 }
