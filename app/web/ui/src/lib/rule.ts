@@ -17,6 +17,13 @@ export function hostPort(host: string | undefined, port: number | string | undef
 	return wrapped + ':' + (port === undefined || port === '' ? 0 : port);
 }
 
+// Exactly config.Address.String() (net.JoinHostPort), for comparing addresses the way Validate
+// does: any host with ':' is bracketed, so '[::1]' and '::1' differ. hostPort is for display.
+export function joinHostPort(host: string, port: number | string): string {
+	const name = host || '127.0.0.1';
+	return (name.includes(':') ? '[' + name + ']' : name) + ':' + port;
+}
+
 export const forwardTarget = (rule: Rule): string =>
 	rule.forward.virtual
 		? virtualAddress(rule.forward.virtual)

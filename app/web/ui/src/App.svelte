@@ -172,7 +172,7 @@
 					<Button variant="secondary" onclick={() => void status.refresh()}>{t('retry')}</Button>
 				</Banner>
 			{/if}
-			{#key route.kind + '\u0000' + (route.name ?? '')}
+			{#key route.kind + '\u0000' + (route.name ?? '') + (route.kind === 'new' ? route.rule : '')}
 				<div class="motion-safe:animate-page-enter">
 					{#if route.kind === 'overview'}
 						<OverviewPage />

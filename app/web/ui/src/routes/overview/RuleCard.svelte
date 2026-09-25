@@ -1,5 +1,6 @@
 <script lang="ts">
 	import IconChartColumn from '~icons/lucide/chart-column';
+	import IconCopy from '~icons/lucide/copy';
 	import IconPencil from '~icons/lucide/pencil';
 	import IconTrash from '~icons/lucide/trash-2';
 	import { tooltip } from '../../lib/actions/tooltip.svelte';
@@ -10,7 +11,7 @@
 	import StatusChip, { type ChipState } from '../../lib/components/ui/StatusChip.svelte';
 	import { DASH, formatRate, redactCredentials } from '../../lib/format';
 	import { t } from '../../lib/i18n.svelte';
-	import { ruleRoute, statsRoute } from '../../lib/routes';
+	import { duplicateRoute, ruleRoute, statsRoute } from '../../lib/routes';
 	import { forwardTarget, isForward, listenAddress } from '../../lib/rule';
 	import { ruleState } from '../../lib/status.svelte';
 	import { DIRECTIONS } from '../../lib/traffic';
@@ -155,6 +156,14 @@
 				use:tooltip={t('edit')}
 			>
 				<IconPencil class="size-4" aria-hidden="true" />
+			</a>
+			<a
+				href={duplicateRoute(rule.name)}
+				class="icon-btn"
+				aria-label={t('duplicateRule')}
+				use:tooltip={t('duplicateRule')}
+			>
+				<IconCopy class="size-4" aria-hidden="true" />
 			</a>
 			<a
 				href={statsRoute('stats', rule.name)}
