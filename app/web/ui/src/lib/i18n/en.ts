@@ -105,6 +105,7 @@ export const en = {
 	disconnected: 'Connection closed.',
 	noConnections: 'No current connections',
 	showingConnections: 'Showing {shown} of {total}',
+	showMoreConnections: 'Show {count} more',
 	statsSince: 'Since {time}',
 	resetStats: 'Reset statistics',
 	resetStatsConfirm: 'Reset statistics for all rules?',

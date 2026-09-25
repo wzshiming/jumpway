@@ -106,6 +106,7 @@ export const zh = {
 	disconnected: '已断开连接。',
 	noConnections: '当前没有连接',
 	showingConnections: '显示 {total} 个连接中的 {shown} 个',
+	showMoreConnections: '再显示 {count} 个',
 	statsSince: '统计起始：{time}',
 	resetStats: '重置统计',
 	resetStatsConfirm: '重置所有规则的统计吗？',

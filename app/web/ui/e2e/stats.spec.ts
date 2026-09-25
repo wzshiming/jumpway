@@ -1268,7 +1268,7 @@ test('a focused row control keeps focus and its tooltip when a poll moves its ro
 	).toBe(true);
 });
 
-test('250 connections render as 200 rows with a note; the count still says 251', async ({
+test('250 connections render as 200 rows with a note and a Show more button; the count still says 251 and the click reveals the rest at every width', async ({
 	page,
 	api
 }) => {
@@ -1279,11 +1279,17 @@ test('250 connections render as 200 rows with a note; the count still says 251',
 		client: `10.0.0.${index % 250}:${20_000 + index}`,
 		started: new Date(Date.now() - (250 - index) * 1_000).toISOString()
 	}));
+	const shots = process.env.JW_SHOTS ? '/tmp/jw-polish-s3-shots/' : '';
+	const shoot = async (name: string) => {
+		if (shots) await page.screenshot({ path: shots + name + '.png', animations: 'disabled' });
+	};
+	const more = page.locator('[data-connections-more]');
+	const show = more.getByRole('button', { name: 'Show 51 more' });
 	await page.goto('/#/connections');
 	await expect(connectionRows(page)).toHaveCount(200);
 	await expect(connectionRows(page).first()).toHaveAttribute('data-connection', '1249');
 	await expect(page.locator('[data-connection-count]')).toHaveText('251 connections');
-	await expect(page.getByRole('main')).toContainText('Showing 200 of 251');
+	await expect(more).toHaveText('Showing 200 of 251 Show 51 more');
 	await expectNoDocumentOverflow(page, 'connections-250');
 	await expectConnectionsFit(page, 'connections-250');
 	await expectColumnsAligned(page, 'connections-250');
@@ -1293,6 +1299,29 @@ test('250 connections render as 200 rows with a note; the count still says 251',
 	await expect(connectionRows(page).first()).toHaveAttribute('data-connection', '1249');
 	await expectNoDocumentOverflow(page, 'connections-250-tablet');
 	await expectColumnsAligned(page, 'connections-250-tablet');
+	await page.setViewportSize({ width: 375, height: 812 });
+	await show.scrollIntoViewIfNeeded();
+	await shoot('connections-375-capped');
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await show.scrollIntoViewIfNeeded();
+	await shoot('connections-1280-capped');
+
+	// The last page follows the click; the button is gone, so focus moves to the first new row.
+	await show.focus();
+	await show.click();
+	await expect(connectionRows(page)).toHaveCount(251);
+	await expect(connectionRows(page).nth(200)).toHaveAttribute('data-connection', '1049');
+	await expect(more).toHaveCount(0);
+	await expect(
+		connectionRows(page).nth(200).getByRole('button', { name: 'Expand: example.com:443' })
+	).toBeFocused();
+	await expect(page.locator('[data-connection-count]')).toHaveText('251 connections');
+	await shoot('connections-1280-expanded');
+	for (const width of [1280, 820, 375]) {
+		await page.setViewportSize({ width, height: 800 });
+		await expect(connectionRows(page)).toHaveCount(251);
+		await expectNoDocumentOverflow(page, `connections-251-${width}`);
+	}
 });
 
 test('connections are the same items at every width; an expanded item stays expanded across widths and everything fits', async ({

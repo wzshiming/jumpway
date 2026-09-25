@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from 'vitest';
 import {
+	CONNECTION_PAGE_SIZE,
 	CONNECTION_SORT_KEYS,
 	DEFAULT_CONNECTION_SORT,
-	MAX_CONNECTION_ROWS,
 	clientLabel,
 	connectionSortLabel,
 	currentConnections,
@@ -436,9 +436,9 @@ describe('connections', () => {
 		expect(all.map((connection) => connection.id)).toEqual([3, 1, 2]);
 	});
 
-	test('client label prefers the process name and the row cap is 200', () => {
+	test('client label prefers the process name and rows are revealed 200 at a time', () => {
 		expect(all.map(clientLabel)).toEqual(['curl', '::1', '\u2014']);
-		expect(MAX_CONNECTION_ROWS).toBe(200);
+		expect(CONNECTION_PAGE_SIZE).toBe(200);
 	});
 
 	test('the sort menu lists the four identity keys, then each metric download first, labelled in the active language', () => {

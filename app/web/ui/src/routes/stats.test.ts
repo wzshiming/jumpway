@@ -1543,20 +1543,84 @@ test('disconnect disables only that row, DELETEs its id, toasts and the row goes
 	expect(button('Disconnect', list[2])!.disabled).toBe(false);
 });
 
-test('at most 200 of many connections are rendered, with a note saying so', async () => {
+// `count` connections of the office rule in place of the fixture's three, the newest first.
+function manyConnections(count: number) {
 	const template = snapshot.rules![0].connections![0];
-	snapshot.rules![0].connections = Array.from({ length: 250 }, (_, index) => ({
+	snapshot.rules![0].connections = Array.from({ length: count }, (_, index) => ({
 		...template,
 		id: 1_000 + index,
 		client: `10.0.0.${index % 250}:${20_000 + index}`,
-		started: new Date(NOW - (250 - index) * 1_000).toISOString()
+		started: new Date(NOW - (count - index) * 1_000).toISOString()
 	}));
+}
+const more = () => target.querySelector<HTMLElement>('main [data-connections-more]');
+
+test('250 connections render as 200 rows with a note and a Show more button; the click reveals the rest and moves focus to the first new row, and a new query starts over', async () => {
+	manyConnections(250);
 	await render('#/connections');
 	const list = rows('main [data-connection]');
 	expect(list).toHaveLength(200);
 	expect(list[0].dataset.connection).toBe('1249');
 	expect(compact(target.querySelector('[data-connection-count]'))).toBe('251 connections');
-	expect(target.querySelector('main')?.textContent).toContain('Showing 200 of 251');
+	expect(compact(more())).toBe('Showing 200 of 251 Show 51 more');
+	const show = button('Show 51 more', more()!)!;
+	show.focus();
+	click(show);
+	await settle();
+	const revealed = rows('main [data-connection]');
+	expect(revealed).toHaveLength(251);
+	// The first page kept its elements; the second starts where it ended.
+	expect(revealed.slice(0, 200)).toEqual(list);
+	expect(revealed[200].dataset.connection).toBe('1049');
+	expect(revealed[250].dataset.connection).toBe('201');
+	expect(more()).toBeNull();
+	// The button went with the last page: reading continues from the first row it revealed.
+	expect(document.activeElement).toBe(button('Expand: example.com:443', revealed[200]));
+
+	// A query that fits on one page needs no note; clearing it starts from the first page again.
+	const search = target.querySelector<HTMLInputElement>('main input[type="search"]')!;
+	search.value = 'psql';
+	search.dispatchEvent(new Event('input', { bubbles: true }));
+	flushSync();
+	expect(connectionIds()).toEqual(['201']);
+	expect(more()).toBeNull();
+	search.value = '';
+	search.dispatchEvent(new Event('input', { bubbles: true }));
+	flushSync();
+	expect(rows('main [data-connection]')).toHaveLength(200);
+	expect(compact(more())).toBe('Showing 200 of 251 Show 51 more');
+});
+
+test('Show more reveals 200 rows per click and keeps focus while rows remain; a re-sort keeps the revealed rows, another rule starts over', async () => {
+	manyConnections(450);
+	await render('#/connections');
+	expect(rows('main [data-connection]')).toHaveLength(200);
+	expect(compact(more())).toBe('Showing 200 of 451 Show 200 more');
+	const show = button('Show 200 more', more()!)!;
+	show.focus();
+	click(show);
+	await settle();
+	expect(rows('main [data-connection]')).toHaveLength(400);
+	expect(compact(more())).toBe('Showing 400 of 451 Show 51 more');
+	expect(button('Show 51 more', more()!)).toBe(show);
+	expect(document.activeElement).toBe(show);
+
+	// The same rows in another order: nothing to hide again.
+	const sortBy = target.querySelector<HTMLSelectElement>('main select[aria-label="Sort by"]')!;
+	sortBy.value = 'client';
+	sortBy.dispatchEvent(new Event('change', { bubbles: true }));
+	flushSync();
+	expect(rows('main [data-connection]')).toHaveLength(400);
+	expect(compact(more())).toBe('Showing 400 of 451 Show 51 more');
+
+	// Another rule is another list: it starts from its first page.
+	const select = target.querySelector<HTMLSelectElement>('main select#connections-rule')!;
+	select.value = 'office';
+	select.dispatchEvent(new Event('change', { bubbles: true }));
+	flushSync();
+	await settle();
+	expect(rows('main [data-connection]')).toHaveLength(200);
+	expect(compact(more())).toBe('Showing 200 of 450 Show 200 more');
 });
 
 test('virtual rows label channels as virtual:// and link peers from the loaded rule list; without that list the association stays unknown', async () => {
