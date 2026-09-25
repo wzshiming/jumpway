@@ -422,6 +422,49 @@ test('a denied storage neither blocks collapsing nor breaks the start-up read; t
 	expect(drawer.querySelector('[aria-controls="sidebar"]')).toBeNull();
 });
 
+test('the footer shows the build version; the rail moves it into the GitHub tooltip; without one nothing shows', async () => {
+	render();
+	await settle();
+	const shown = target.querySelector('aside [data-version]')!;
+	expect(shown.textContent?.trim()).toBe('v0.5.0-test');
+	expect(shown.getAttribute('data-version')).toBe('v0.5.0-test');
+	const github = () =>
+		target.querySelector<HTMLAnchorElement>(
+			'aside a[href="https://github.com/wzshiming/jumpway"]'
+		)!;
+	expect(github().hasAttribute('data-version')).toBe(false);
+	click(sidebarToggle());
+	flushSync();
+	expect(Array.from(target.querySelectorAll('[data-version]'))).toEqual([github()]);
+	expect(github().getAttribute('data-version')).toBe('v0.5.0-test');
+	expect(github().getAttribute('aria-label')).toBe('GitHub');
+	github().dispatchEvent(new Event('pointerenter'));
+	flushSync();
+	expect(document.getElementById('tooltip')?.textContent?.trim()).toBe('GitHub · v0.5.0-test');
+	expect(github().getAttribute('aria-describedby')).toBe('tooltip');
+	github().dispatchEvent(new Event('pointerleave'));
+	await settle();
+	teardown();
+
+	// A build without a version: the status omits the field and the footer adds nothing.
+	const unversioned = structuredClone(statusFixture);
+	delete unversioned.version;
+	stubApi({ '/apis/configs/status': () => json(unversioned) });
+	render();
+	await settle();
+	expect(target.textContent).toContain('127.0.0.1:1088');
+	expect(target.querySelector('[data-version]')).toBeNull();
+	github().dispatchEvent(new Event('pointerenter'));
+	flushSync();
+	expect(document.getElementById('tooltip')?.textContent?.trim()).toBe('GitHub');
+	github().dispatchEvent(new Event('pointerleave'));
+	await settle();
+	click(target.querySelector('aside [data-state]')!);
+	flushSync();
+	expect(sidebarToggle().getAttribute('aria-expanded')).toBe('true');
+	expect(target.querySelector('[data-version]')).toBeNull();
+});
+
 test('an unreachable backend shows the recovery banner until a retry succeeds', async () => {
 	let down = true;
 	stubApi({

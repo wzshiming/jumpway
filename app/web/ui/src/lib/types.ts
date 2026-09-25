@@ -74,6 +74,7 @@ export interface Status {
 	running: boolean;
 	error?: string;
 	rules: Nullable<RuleStatus[]>;
+	version?: string;
 }
 
 export interface Stats {

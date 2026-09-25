@@ -1148,6 +1148,10 @@
      },
      "running": {
       "type": "boolean"
+     },
+     "version": {
+      "type": "string",
+      "description": "Version is the running build as reported by jumpway.Version; empty when the build carries no version.\n"
      }
     },
     "description": "Status is what the web UI shows about the running app: the web UI listener and every enabled rule.\n"

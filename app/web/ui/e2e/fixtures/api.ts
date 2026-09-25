@@ -18,6 +18,7 @@ export const SECRET = 'review-secret';
 export const statusFixture: Status = {
 	address: '127.0.0.1:1088',
 	running: true,
+	version: 'v0.5.0-test',
 	error: `rules[3].forward.way[0]: invalid proxy URL "${LEAKY_URL}": parse "${LEAKY_URL}": invalid port ":bad" after host (e.g. socks5://host:1080)`,
 	rules: [
 		{ name: 'office', address: '127.0.0.1:18097', remote: false, running: true },

@@ -9,6 +9,7 @@
 	import IconGithub from '~icons/simple-icons/github';
 	import { tooltip } from '../../actions/tooltip.svelte';
 	import { i18n, LANGUAGES, t, type Language } from '../../i18n.svelte';
+	import { status } from '../../status.svelte';
 	import { theme, type Theme } from '../../theme.svelte';
 	import IconButton from '../ui/IconButton.svelte';
 
@@ -39,6 +40,8 @@
 
 	const MENU_ID = 'preferences-menu';
 	const MARGIN = 8;
+
+	const version = $derived(status.data?.version ?? '');
 
 	let menuButton = $state<HTMLButtonElement | null>(null);
 	let menu = $state<HTMLElement | null>(null);
@@ -127,14 +130,19 @@
 {#snippet resources()}
 	<ul class="flex items-center gap-0.5 {collapsed ? 'flex-col' : ''}" aria-label={t('resources')}>
 		{#each RESOURCES as resource (resource.href)}
+			<!-- The rail has no room for a version line, so the GitHub tooltip carries it there. -->
+			{@const carriesVersion = collapsed && version !== '' && resource.label === 'github'}
 			<li>
 				<a
 					href={resource.href}
 					class="icon-btn"
 					aria-label={t(resource.label)}
+					data-version={carriesVersion ? version : undefined}
 					target={resource.external ? '_blank' : undefined}
 					rel={resource.external ? 'noopener noreferrer' : undefined}
-					use:tooltip={t(resource.label)}
+					use:tooltip={carriesVersion
+						? `${t(resource.label)} \u00b7 ${version}`
+						: t(resource.label)}
 				>
 					{#if resource.label === 'prometheus'}
 						<IconActivity class="size-4" aria-hidden="true" />
@@ -184,6 +192,13 @@
 		<div class="flex items-center justify-between gap-2">
 			{@render preferences()}
 		</div>
-		{@render resources()}
+		<div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+			{@render resources()}
+			{#if version}
+				<span data-version={version} class="ml-auto font-mono text-xs break-all text-fg-muted">
+					{version}
+				</span>
+			{/if}
+		</div>
 	</div>
 {/if}

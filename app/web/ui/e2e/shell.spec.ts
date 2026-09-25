@@ -231,6 +231,75 @@ test('desktop sidebar becomes a persistent icon rail with working preferences', 
 	await expect(nav(page)).toContainText('活动连接');
 });
 
+test('the sidebar footer shows the build version; the icon rail moves it into the GitHub tooltip', async ({
+	page
+}) => {
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await page.goto('/');
+	const aside = page.locator('aside');
+	const tip = page.locator('#tooltip');
+	const github = aside.getByRole('link', { name: 'GitHub' });
+	const shown = aside.locator('[data-version]');
+	await expect(shown).toHaveText('v0.5.0-test');
+	await expect(shown).toHaveAttribute('data-version', 'v0.5.0-test');
+	await expect(shown).toBeInViewport();
+	await expect(github).toHaveAttribute('aria-label', 'GitHub');
+	await expect(github).not.toHaveAttribute('data-version', /./);
+	// Beside the resources, inside the column: the footer neither widens nor clips.
+	const footer = await aside.evaluate((element) => {
+		const version = element.querySelector('[data-version]')!.getBoundingClientRect();
+		const links = element.querySelector('[aria-label="Resources"]')!.getBoundingClientRect();
+		const column = element.getBoundingClientRect();
+		return {
+			inside: version.right <= column.right && version.left >= links.left,
+			scrollWidth: element.scrollWidth,
+			clientWidth: element.clientWidth
+		};
+	});
+	expect(footer.inside).toBe(true);
+	expect(footer.scrollWidth).toBeLessThanOrEqual(footer.clientWidth);
+	await github.hover();
+	await expect(tip).toHaveText('GitHub');
+	await page.mouse.move(640, 400);
+
+	await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click();
+	await expect.poll(async () => (await aside.boundingBox())?.width).toBe(64);
+	await expect(aside.locator('[data-version]')).toHaveCount(1);
+	await expect(github).toHaveAttribute('data-version', 'v0.5.0-test');
+	await expect(github).toHaveAttribute('aria-label', 'GitHub');
+	await github.hover();
+	await expect(tip).toHaveText('GitHub · v0.5.0-test');
+	await expect(github).toHaveAttribute('aria-describedby', 'tooltip');
+	const rail = await aside.evaluate((element) => ({
+		scrollWidth: element.scrollWidth,
+		clientWidth: element.clientWidth
+	}));
+	expect(rail.scrollWidth).toBeLessThanOrEqual(rail.clientWidth);
+	await page.screenshot({
+		path: test.info().outputPath('collapsed-sidebar-version-tooltip.png'),
+		animations: 'disabled'
+	});
+});
+
+test('a status without a version leaves the footer and the rail tooltip without one', async ({
+	page,
+	api
+}) => {
+	delete api.status.version;
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await page.goto('/');
+	const aside = page.locator('aside');
+	const github = aside.getByRole('link', { name: 'GitHub' });
+	await expect(aside.locator('[data-state]')).toHaveText('Running');
+	await expect(github).toBeVisible();
+	await expect(page.locator('[data-version]')).toHaveCount(0);
+	await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click();
+	await expect.poll(async () => (await aside.boundingBox())?.width).toBe(64);
+	await github.hover();
+	await expect(page.locator('#tooltip')).toHaveText('GitHub');
+	await expect(page.locator('[data-version]')).toHaveCount(0);
+});
+
 test('?lang=zh renders Chinese; the switch persists across reloads and ?lang= still wins', async ({
 	page
 }) => {

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/wzshiming/jumpway"
 	"github.com/wzshiming/jumpway/config"
 	"gopkg.in/yaml.v3"
 )
@@ -17,6 +18,8 @@ type Status struct {
 	Running bool         `json:"running"`
 	Error   string       `json:"error,omitempty"`
 	Rules   []RuleStatus `json:"rules"`
+	// Version is the running build as reported by jumpway.Version; empty when the build carries no version.
+	Version string `json:"version,omitempty"`
 }
 
 // RuleStatus is one rule's listener state; Attempt counts consecutive failed listen attempts.
@@ -275,5 +278,6 @@ func (s *ConfigsService) UpdateRaw(raw *RawConfig) (err error) {
 // #route:"GET /status"#
 func (s *ConfigsService) Status() (status *Status, err error) {
 	st := s.runtime.Status()
+	st.Version = jumpway.Version()
 	return &st, nil
 }

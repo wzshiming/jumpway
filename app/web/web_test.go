@@ -15,6 +15,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/wzshiming/jumpway"
 	"github.com/wzshiming/jumpway/app/web/services/configs"
 	"github.com/wzshiming/jumpway/app/web/services/stats"
 	"github.com/wzshiming/jumpway/config"
@@ -1154,6 +1155,15 @@ func TestConfigStatus(t *testing.T) {
 			} else if attempt != float64(test.attempt) {
 				t.Fatalf("attempt = %#v, want %d", attempt, test.attempt)
 			}
+			// The service stamps the build version on top of the runtime's status; omitted when unknown.
+			version, present := status["version"]
+			if want := jumpway.Version(); want == "" {
+				if present {
+					t.Fatalf("status contains empty version: %#v", status)
+				}
+			} else if !present || version != want {
+				t.Fatalf("version = %#v, want %q", version, want)
+			}
 		})
 	}
 }
@@ -1188,6 +1198,7 @@ func TestConfigAPIIsolation(t *testing.T) {
 		if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
 			t.Fatal(err)
 		}
+		want.Version = jumpway.Version()
 		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("status = %#v, want %#v", got, want)
 		}
