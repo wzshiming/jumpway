@@ -1677,7 +1677,7 @@ test('#/stats holds three row skeletons behind a busy section until the snapshot
 	await expectNoDocumentOverflow(page, 'stats-loaded-1280');
 });
 
-test('#/stats draws a rate line under every collapsed rule that fills in with the polls; the expanded chain, hosts and connections carry none', async ({
+test('#/stats draws a rate line beside every collapsed rule\'s "now" values that fills in with the polls and hides where the band is narrow; the expanded chain, hosts and connections carry none', async ({
 	page,
 	api
 }) => {
@@ -1719,21 +1719,113 @@ test('#/stats draws a rate line under every collapsed rule that fills in with th
 		'0'
 	);
 	expect(await points(ruleRows(page).nth(3).locator('svg[data-sparkline]'))).toEqual([]);
-	// 20px tall, no wider than its column's cap.
-	const box = (await officeLine.boundingBox())!;
-	expect(Math.round(box.height)).toBe(20);
-	expect(box.width).toBeGreaterThanOrEqual(100);
-	expect(box.width).toBeLessThanOrEqual(160);
+	// The office row's band: the line, the two "now" values, the four columns and the meta cell
+	// below the first of them.
+	const geometry = () =>
+		ruleRows(page)
+			.nth(0)
+			.evaluate((row) => {
+				const rect = (element: Element | null) => {
+					const box = element!.getBoundingClientRect();
+					return { x: box.x, y: box.y, right: box.right, bottom: box.bottom, width: box.width };
+				};
+				const band = row.querySelector('[data-traffic]')!;
+				return {
+					chart: rect(band.querySelector('svg[data-sparkline]')),
+					up: rect(band.querySelector('[data-metric="rate_up"]')),
+					down: rect(band.querySelector('[data-metric="rate_down"]')),
+					columns: Array.from(band.querySelectorAll('[data-column]')).map(rect),
+					connections: rect(row.querySelector('[data-stats] > dl > [data-connections]'))
+				};
+			});
+	const overlaps = (a: { y: number; bottom: number }, b: { y: number; bottom: number }) =>
+		a.y < b.bottom && a.bottom > b.y;
+	// 64×36 to the right of both values (whose slot is as wide as the longest rate), level with
+	// the two rows rather than under them, in a "now" column wider than the other three; the meta
+	// row's connections cell keeps the now column's edges.
+	let shape = await geometry();
+	expect([Math.round(shape.chart.width), Math.round(shape.chart.bottom - shape.chart.y)]).toEqual([
+		64, 36
+	]);
+	expect(shape.chart.x).toBeGreaterThanOrEqual(Math.max(shape.up.right, shape.down.right));
+	expect(overlaps(shape.chart, shape.up)).toBe(true);
+	expect(overlaps(shape.chart, shape.down)).toBe(true);
+	expect(shape.chart.right).toBeLessThanOrEqual(shape.columns[0].right);
+	expect(shape.columns[0].width).toBeGreaterThan(shape.columns[1].width + 40);
+	for (const column of shape.columns.slice(2))
+		expect(Math.abs(column.width - shape.columns[1].width)).toBeLessThan(0.5);
+	expect(Math.abs(shape.connections.x - shape.columns[0].x)).toBeLessThan(0.5);
+	expect(Math.abs(shape.connections.width - shape.columns[0].width)).toBeLessThan(0.5);
+	// Rates of 8, 9 and 11 characters: the line does not move (beyond Chrome's 1/64px layout unit).
+	const upValue = ruleRows(page).nth(0).locator('[data-metric="rate_up"]');
+	for (const [value, text] of [
+		[1_048_576, '1.0 MB/s'],
+		[12_288, '12.0 KB/s'],
+		[1_048_473, '1023.9 KB/s']
+	] as const) {
+		office.rate_up = value;
+		office.rate_down = value;
+		await page.waitForResponse((response) => response.url().endsWith('/apis/stats'));
+		await expect(upValue).toHaveText(text);
+		const next = await geometry();
+		expect(Math.abs(next.chart.x - shape.chart.x), text).toBeLessThan(0.1);
+		expect(Math.abs(next.chart.y - shape.chart.y), text).toBeLessThan(0.1);
+		expect(
+			next.columns.map((column) => column.x),
+			text
+		).toEqual(shape.columns.map((column) => column.x));
+		shape = next;
+	}
 	await expectMetricsFit(page, 'stats-trend-1280');
+	await expectColumnsAligned(page, 'stats-trend-1280');
 	await expectNoDocumentOverflow(page, 'stats-trend-1280');
 	// The "now" help names the line here.
 	await hover(page, ruleRows(page).nth(0).getByRole('button', { name: 'About now' }));
-	await expect(tooltip(page)).toContainText('The line traces the last minute of samples');
+	await expect(tooltip(page)).toContainText('a line traces the last minute of samples');
 	if (process.env.JW_SHOTS)
 		await page.screenshot({
 			path: '/tmp/jw-polish-s4b-shots/stats-1280-trend.png',
 			animations: 'disabled'
 		});
+
+	// Beside the expanded sidebar at 1024 the band is still wide enough; at 768 it is not, with
+	// the sidebar expanded (two columns of two) or collapsed (four across): the line hides and the
+	// four columns share the width equally.
+	await page.setViewportSize({ width: 1024, height: 800 });
+	await expect(officeLine).toBeVisible();
+	shape = await geometry();
+	expect(shape.columns[0].width).toBeGreaterThan(shape.columns[1].width + 40);
+	await expectMetricsFit(page, 'stats-trend-1024');
+	await page.setViewportSize({ width: 768, height: 900 });
+	await expect(officeLine).toBeHidden();
+	await expect(officeLine).toHaveCount(1);
+	const equalColumns = async (name: string) => {
+		const widths = (await geometry()).columns.map((column) => Math.round(column.width * 2) / 2);
+		expect(new Set(widths).size, `${name} ${widths}`).toBe(1);
+	};
+	await equalColumns('768 expanded');
+	await expectMetricsFit(page, 'stats-trend-768');
+	await expectNoDocumentOverflow(page, 'stats-trend-768');
+	if (process.env.JW_SHOTS)
+		await page.screenshot({
+			path: '/tmp/jw-polish-s4b-shots/stats-768-hidden.png',
+			animations: 'disabled'
+		});
+	await page.locator('aside button[aria-controls="sidebar"]').click();
+	await expect
+		.poll(async () => (await page.locator('aside').boundingBox())!.width)
+		.toBeLessThan(100);
+	const bandRows = () =>
+		geometry().then((shape) => new Set(shape.columns.map((column) => Math.round(column.y))).size);
+	await expect
+		.poll(bandRows, { message: 'four columns across once the sidebar is a rail' })
+		.toBe(1);
+	await expect(officeLine).toBeHidden();
+	await equalColumns('768 collapsed');
+	await expectMetricsFit(page, 'stats-trend-768-collapsed');
+	await page.locator('aside button[aria-controls="sidebar"]').click();
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await expect(officeLine).toBeVisible();
 
 	await ruleRows(page).nth(0).locator('button[aria-controls]').click();
 	const details = await detailsOf(page, ruleRows(page).nth(0).locator('button[aria-controls]'));

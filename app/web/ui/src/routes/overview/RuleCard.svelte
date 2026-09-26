@@ -138,17 +138,18 @@
 	<footer
 		class="mt-auto flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-line pt-3 text-sm"
 	>
-		<span
-			class="inline-flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-[13px] text-fg-muted tabular-nums"
-		>
-			{#each DIRECTIONS as direction (direction.key)}
-				<span class="inline-flex items-center gap-1 whitespace-nowrap">
-					<DirectionArrow {direction} />
-					<span class="sr-only">{t(direction.label)}</span>
-					{stats ? formatRate(stats[direction.rate]) : DASH}
-				</span>
-			{/each}
-			<Sparkline series={trend.of(rule.name)} class="h-4 w-16 self-center" />
+		<!-- Upload above download in slots as wide as the longest rate, the line beside them: nothing shifts as the numbers change. -->
+		<span class="flex items-center gap-2 font-mono text-[13px] text-fg-muted tabular-nums">
+			<span class="flex flex-col gap-y-0.5">
+				{#each DIRECTIONS as direction (direction.key)}
+					<span class="inline-flex items-center gap-1 whitespace-nowrap">
+						<DirectionArrow {direction} />
+						<span class="sr-only">{t(direction.label)}</span>
+						<span class="min-w-[11ch]">{stats ? formatRate(stats[direction.rate]) : DASH}</span>
+					</span>
+				{/each}
+			</span>
+			<Sparkline series={trend.of(rule.name)} class="h-9 w-16 shrink-0" />
 		</span>
 		<!-- Icon actions one row tall, sitting on the card's own edge. -->
 		<span class="-my-1.5 ml-auto flex items-center gap-0.5">

@@ -938,6 +938,10 @@ test('the Current rate tile keeps an empty line box after the first snapshot and
 	expect(compact(target.querySelector('[data-kpi="rate"]'))).toBe(
 		`Upload ${snapshotTotals.rateUp} Download ${snapshotTotals.rateDown}`
 	);
+	// Each value keeps a slot as wide as the longest rate, so the line beside them never moves.
+	const values = Array.from(target.querySelectorAll('[data-kpi="rate"] dd'));
+	expect(values).toHaveLength(2);
+	expect(values.every((value) => value.classList.contains('min-w-[11ch]'))).toBe(true);
 	// The total tile has no line.
 	expect(target.querySelector('[data-kpi="total"] ~ [data-sparkline]')).toBeNull();
 
@@ -988,10 +992,18 @@ test('every card footer carries one hidden rate line after its rates; a rule wit
 		const lines = footer.querySelectorAll('svg[data-sparkline]');
 		expect(lines, name).toHaveLength(1);
 		expect(lines[0].getAttribute('aria-hidden'), name).toBe('true');
-		// The last item of the rates group: after both rates, apart from the icon actions.
+		// The last item of the rates group, after the stack of both rates, apart from the icon
+		// actions; each rate keeps a slot as wide as the longest one.
 		const group = lines[0].parentElement!;
-		expect(group.querySelectorAll(':scope > span'), name).toHaveLength(2);
-		expect(lines[0].previousElementSibling?.tagName, name).toBe('SPAN');
+		expect(group.querySelectorAll(':scope > span'), name).toHaveLength(1);
+		const stack = group.firstElementChild!;
+		const rates = Array.from(stack.querySelectorAll(':scope > span'));
+		expect(rates, name).toHaveLength(2);
+		expect(
+			rates.map((rate) => rate.lastElementChild?.classList.contains('min-w-[11ch]')),
+			name
+		).toEqual([true, true]);
+		expect(lines[0].previousElementSibling, name).toBe(stack);
 		expect(lines[0].nextElementSibling, name).toBeNull();
 		expect(group.querySelector('.icon-btn'), name).toBeNull();
 		expect(footer.querySelectorAll('.icon-btn'), name).toHaveLength(4);

@@ -216,7 +216,8 @@
 					<DirectionArrow {direction} />
 					<span class="sr-only">{t(direction.label)}</span>
 				</dt>
-				<dd>{value(direction)}</dd>
+				<!-- As wide as the longest rate ("1023.9 KB/s"), so whatever follows the values holds still. -->
+				<dd class="min-w-[11ch]">{value(direction)}</dd>
 			</div>
 		{/each}
 	</dl>
@@ -273,10 +274,16 @@
 		</div>
 		<div>
 			{@render kpiLabel(t('currentRate'), t('help.kpi.rate'))}
-			{@render directional('rate', (direction) =>
-				totals ? formatRate(totals[direction.rate]) : DASH
-			)}
-			<Sparkline series={trend.total} class="mt-1.5 h-6 w-full" />
+			<!-- The line needs a tile about 200px wide: from 27rem in two columns, from 55rem in four; hidden in between and on phones. -->
+			<div class="flex items-center gap-3">
+				{@render directional('rate', (direction) =>
+					totals ? formatRate(totals[direction.rate]) : DASH
+				)}
+				<Sparkline
+					series={trend.total}
+					class="hidden h-10 w-16 shrink-0 @[27rem]:block @2xl:hidden @[55rem]:block"
+				/>
+			</div>
 		</div>
 		<div>
 			{@render kpiLabel(t('totalTraffic'), t('help.kpi.total'))}
@@ -341,11 +348,21 @@
 								<Skeleton class="my-0.5 h-4 w-3/4" />
 							{/each}
 						</div>
-						<!-- Sized like the rates and the icon actions so the footer wraps where a card's does. -->
+						<!-- Sized like the stacked rates with their line and the icon actions so the footer wraps where a card's does. -->
 						<div
 							class="mt-auto flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-line pt-3"
 						>
-							<Skeleton class="h-[1lh] w-[17rem] text-[13px]" />
+							<div class="flex items-center gap-2 text-[13px]">
+								<div class="flex flex-col gap-y-0.5">
+									{#each { length: 2 } as _, line (line)}
+										<span class="inline-flex items-center gap-1">
+											<Skeleton class="size-3 rounded-sm" />
+											<Skeleton class="h-[1lh] w-[11ch] font-mono" />
+										</span>
+									{/each}
+								</div>
+								<Skeleton class="h-9 w-16" />
+							</div>
 							<span class="-my-1.5 ml-auto flex h-8 items-center">
 								<Skeleton class="h-4 w-[8.5rem]" />
 							</span>

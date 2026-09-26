@@ -276,7 +276,7 @@ test('while the rule list is pending the overview grid holds three card skeleton
 	}
 });
 
-test('the rate KPI and every card trace the recent rates: the lines fill in with the polls, sized by their tiles, in the arrow colours of both themes', async ({
+test('the rate KPI and every card trace the recent rates: the lines fill in with the polls in the arrow colours of both themes, hold a fixed slot beside the stacked numbers and hide where the tile is too narrow', async ({
 	page,
 	api
 }) => {
@@ -287,6 +287,10 @@ test('the rate KPI and every card trace the recent rates: the lines fill in with
 	const kpiLine = page.locator('[data-kpi="rate"] ~ svg[data-sparkline]');
 	const cards = page.getByRole('article');
 	const cardLine = cards.nth(0).locator('footer svg[data-sparkline]');
+	// A card footer: the rates group (two stacked values, then the line) and the icon actions.
+	const cardRates = cards.nth(0).locator('footer > span').first();
+	const cardValues = cardRates.locator('> span').first();
+	const cardActions = cards.nth(0).locator('footer > span').last();
 	const office = api.snapshot.rules![0].stats;
 	// Rates that move each second, so the lines have a shape worth looking at.
 	const wobble = async (steps: number) => {
@@ -296,6 +300,24 @@ test('the rate KPI and every card trace the recent rates: the lines fill in with
 			await page.waitForResponse((response) => response.url().endsWith('/apis/stats'));
 		}
 	};
+	// Rates whose strings are 8, 9 and 11 characters long: the text slot must not resize.
+	const WIDTHS = [
+		[1_048_576, '1.0 MB/s'],
+		[12_288, '12.0 KB/s'],
+		[1_048_473, '1023.9 KB/s']
+	] as const;
+	const rate = async (value: number, text: string) => {
+		office.rate_up = value;
+		office.rate_down = value;
+		await page.waitForResponse((response) => response.url().endsWith('/apis/stats'));
+		await expect.poll(() => compact(cardRates)).toBe(`Upload ${text} Download ${text}`);
+	};
+	const at = async (locator: Locator) => {
+		const box = (await locator.boundingBox())!;
+		return [box.x, box.y];
+	};
+	const overlaps = (a: { y: number; height: number }, b: { y: number; height: number }) =>
+		a.y < b.y + b.height && a.y + a.height > b.y;
 	const points = (locator: Locator) =>
 		locator.locator('polyline').evaluateAll((lines) =>
 			lines.map((line) =>
@@ -347,17 +369,47 @@ test('the rate KPI and every card trace the recent rates: the lines fill in with
 		}
 		await expect(locator).toHaveAttribute('aria-hidden', 'true');
 	}
-	// The tile's width and 24px tall; 64×16 inside a card footer, after both rates.
+	// 64×40 beside the KPI's two values, 64×36 beside a card's: to the right of the numbers and
+	// level with them, never on a line of their own; a card's line stays clear of its actions.
 	const kpiBox = (await kpiLine.boundingBox())!;
-	expect(kpiBox.width).toBeGreaterThanOrEqual(100);
-	expect(Math.round(kpiBox.height)).toBe(24);
+	const kpiValues = (await kpi(page, 'rate').boundingBox())!;
+	expect([Math.round(kpiBox.width), Math.round(kpiBox.height)]).toEqual([64, 40]);
+	expect(kpiBox.x).toBeGreaterThanOrEqual(kpiValues.x + kpiValues.width);
+	expect(overlaps(kpiBox, kpiValues)).toBe(true);
 	const cardBox = (await cardLine.boundingBox())!;
-	expect([Math.round(cardBox.width), Math.round(cardBox.height)]).toEqual([64, 16]);
-	const rates = (await cards.nth(0).locator('footer > span').first().boundingBox())!;
-	expect(cardBox.x).toBeGreaterThan(rates.x);
-	expect(cardBox.x + cardBox.width).toBeLessThanOrEqual(rates.x + rates.width + 1);
+	const valuesBox = (await cardValues.boundingBox())!;
+	const actionsBox = (await cardActions.boundingBox())!;
+	// The 32px actions overhang the row they sit on by their negative margins.
+	const actionsRow = await cardActions.evaluate(
+		(element) =>
+			element.getBoundingClientRect().top - parseFloat(getComputedStyle(element).marginTop)
+	);
+	const card = (await cards.nth(0).boundingBox())!;
+	expect([Math.round(cardBox.width), Math.round(cardBox.height)]).toEqual([64, 36]);
+	expect(cardBox.x).toBeGreaterThanOrEqual(valuesBox.x + valuesBox.width);
+	expect(overlaps(cardBox, valuesBox)).toBe(true);
+	expect(cardBox.x + cardBox.width).toBeLessThanOrEqual(card.x + card.width);
+	expect(
+		cardBox.x + cardBox.width <= actionsBox.x || cardBox.y + cardBox.height <= actionsRow
+	).toBe(true);
 	// The numbers read as before; the line adds no text.
 	expect(await compact(kpi(page, 'rate'))).toMatch(/^Upload \S+ \S+ Download \S+ \S+$/);
+	expect(await overflow()).toBeLessThanOrEqual(0);
+	// Whatever the numbers' length, nothing after them moves: the lines and the actions keep their
+	// places through 8-, 9- and 11-character rates, to within Chrome's 1/64px layout unit.
+	const places = async () => ({
+		kpi: await at(kpiLine),
+		card: await at(cardLine),
+		actions: await at(cardActions)
+	});
+	const held = await places();
+	for (const [value, text] of WIDTHS) {
+		await rate(value, text);
+		const now = await places();
+		for (const key of ['kpi', 'card', 'actions'] as const)
+			for (const axis of [0, 1])
+				expect(Math.abs(now[key][axis] - held[key][axis]), `${text} ${key}`).toBeLessThan(0.1);
+	}
 	expect(await overflow()).toBeLessThanOrEqual(0);
 	const light = await colours(kpiLine);
 	expect(new Set([...light.strokes, light.background]).size).toBe(3);
@@ -378,13 +430,16 @@ test('the rate KPI and every card trace the recent rates: the lines fill in with
 	expect(await overflow()).toBeLessThanOrEqual(0);
 	await shoot('overview-1280-trend-dark');
 
-	// A phone: the footer wraps its actions under the rates; nothing leaves the card.
+	// A phone: the footer wraps its actions under the rates; nothing leaves the card. The KPI tile
+	// is too narrow for a line beside its values and shows none.
 	await page.addInitScript(() => localStorage.removeItem('jumpway.theme'));
 	await page.setViewportSize({ width: 375, height: 812 });
 	await page.goto('/');
 	await expect(cards).toHaveCount(4);
 	await wobble(3);
 	await expect.poll(async () => (await points(cardLine)).length).toBe(2);
+	await expect(kpiLine).toBeHidden();
+	await expect(cardLine).toBeVisible();
 	expect(await overflow()).toBeLessThanOrEqual(0);
 	const inside = await cards.evaluateAll((articles) =>
 		articles.every((article) => {
@@ -399,6 +454,21 @@ test('the rate KPI and every card trace the recent rates: the lines fill in with
 	);
 	expect(inside).toBe(true);
 	await shoot('overview-375-trend');
+
+	// 1024 beside the expanded sidebar: four KPI tiles of about 170px, too narrow for the line,
+	// which hides rather than wrapping under the values; the cards keep theirs.
+	await page.setViewportSize({ width: 1024, height: 800 });
+	await page.goto('/');
+	await expect(cards).toHaveCount(4);
+	expect((await page.locator('aside').boundingBox())!.width).toBeGreaterThan(200);
+	const tile = async (name: string) => (await kpi(page, name).boundingBox())!;
+	expect(Math.abs((await tile('total')).y - (await tile('rules')).y)).toBeLessThanOrEqual(2);
+	await expect(kpiLine).toBeHidden();
+	await expect(kpiLine).toHaveCount(1);
+	for (let index = 0; index < 4; index++)
+		await expect(cards.nth(index).locator('footer svg[data-sparkline]')).toBeVisible();
+	expect(await overflow()).toBeLessThanOrEqual(0);
+	await shoot('overview-1024-expanded');
 });
 
 test('sidebar links use current routes and unknown addresses return home', async ({ page }) => {

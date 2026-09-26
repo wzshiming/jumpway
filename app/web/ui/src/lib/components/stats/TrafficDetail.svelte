@@ -17,7 +17,7 @@
 		compact?: boolean;
 		// Replaces the plain latency definition where the stats aggregate several endpoints.
 		latencyHelp?: string | null;
-		// Recent rate samples drawn under the "now" values.
+		// Recent rate samples drawn beside the "now" values where the band is wide enough.
 		trend?: readonly RateSample[] | null;
 	}
 
@@ -31,13 +31,15 @@
 	}: Props = $props();
 </script>
 
-<!-- @container: the meta row flips to four tracks together with the traffic band above it. -->
+<!-- @container: the meta row flips to four tracks together with the traffic band above it, and to its wider "now" column. -->
 <div class="@container grid {compact ? 'gap-y-2' : 'gap-y-3'}" data-stats>
 	<TrafficMetrics {stats} {peakHint} {compact} {trend} />
 	<dl
 		class="grid grid-cols-2 {compact
 			? 'gap-x-3 gap-y-1.5'
-			: 'gap-x-4 gap-y-2'} font-mono text-[13px] tabular-nums @[29rem]:grid-cols-4"
+			: 'gap-x-4 gap-y-2'} font-mono text-[13px] tabular-nums @[29rem]:grid-cols-4 {trend
+			? '@[40rem]:grid-cols-[minmax(0,1.7fr)_repeat(3,minmax(0,1fr))]'
+			: ''}"
 	>
 		<div class="min-w-0" data-connections>
 			<dt class="mb-0.5 flex flex-wrap items-center gap-x-1 font-sans text-[11px] text-fg-subtle">

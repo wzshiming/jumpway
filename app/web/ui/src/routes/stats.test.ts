@@ -2047,6 +2047,13 @@ test('#/stats draws one rate line per rule under its "now" column once two snaps
 		expect(own[0].parentElement?.tagName, name).toBe('DD');
 		expect(own[0].parentElement?.previousElementSibling?.tagName, name).toBe('DD');
 		expect(own[0].getAttribute('aria-hidden'), name).toBe('true');
+		// Both "now" values keep a slot as wide as the longest rate, so the line beside them holds still.
+		expect(
+			Array.from(column.querySelectorAll('[data-metric]')).map((value) =>
+				value.classList.contains('min-w-[11ch]')
+			),
+			name
+		).toEqual([true, true]);
 		expect(bandOf(row).contains(own[0]), name).toBe(true);
 		expect(own[0].closest('button'), name).toBeNull();
 		if (name === 'lab') {
@@ -2067,6 +2074,8 @@ test('#/stats draws one rate line per rule under its "now" column once two snaps
 	const details = detailsOf(toggle);
 	expect(details.querySelectorAll('[data-traffic]').length).toBeGreaterThan(3);
 	expect(sparklines(details)).toEqual([]);
+	// The hop and target bands keep their plain values: no slot, no line.
+	expect(details.querySelectorAll('[data-metric].min-w-\\[11ch\\]')).toHaveLength(0);
 	expect(sparklines(office)).toHaveLength(1);
 
 	click(target.querySelector('nav a[href="#/hosts"]')!);
