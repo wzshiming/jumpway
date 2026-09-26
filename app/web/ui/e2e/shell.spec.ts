@@ -177,6 +177,300 @@ test('the KPI strip folds to two columns beside the expanded sidebar and never s
 	expect(await overflow()).toBeLessThanOrEqual(0);
 });
 
+test('while the rule list is pending the overview grid holds three card skeletons, and the cards replace them in place', async ({
+	page,
+	api
+}) => {
+	await page.setViewportSize({ width: 1280, height: 800 });
+	const hold = () => {
+		let release!: () => void;
+		api.delay.set(
+			'GET /apis/configs/rules',
+			new Promise<void>((resolve) => {
+				release = resolve;
+			})
+		);
+		return release;
+	};
+	const release = hold();
+	await page.goto('/');
+	const section = page.locator('section[aria-label="Rules"]');
+	const grid = section.locator('> div').first();
+	const skeletonCards = grid.locator('[data-skeleton-card]');
+	await expect(section).toHaveAttribute('aria-busy', 'true');
+	await expect(skeletonCards).toHaveCount(3);
+	await expect(skeletonCards.locator('[data-skeleton]').first()).toBeVisible();
+	await expect(section.locator('.sr-only', { hasText: 'Loading...' })).toHaveCount(1);
+	await expect(page.getByRole('article')).toHaveCount(0);
+	// Tops are relative to the grid: the KPI line above it gains its state dots when the rules land.
+	const boxes = (locator: Locator) =>
+		locator.evaluateAll((elements) =>
+			elements.map((element) => {
+				const box = element.getBoundingClientRect();
+				const grid = element.parentElement!.getBoundingClientRect();
+				return { top: Math.round(box.top - grid.top), height: Math.round(box.height) };
+			})
+		);
+	const overflow = () =>
+		page.evaluate(() => {
+			const main = document.getElementById('main')!;
+			return main.scrollWidth - main.clientWidth;
+		});
+	// Three columns at 1280: the placeholders share one row and stand about as tall as a card.
+	const placeholders = await boxes(skeletonCards);
+	expect(new Set(placeholders.map((box) => box.top)).size).toBe(1);
+	for (const box of placeholders) expect(box.height).toBeGreaterThan(160);
+	expect(await overflow()).toBeLessThanOrEqual(0);
+	const gridBefore = (await grid.boundingBox())!;
+	if (process.env.JW_SHOTS)
+		await page.screenshot({
+			path: '/tmp/jw-polish-s5-shots/overview-skeleton-1280.png',
+			animations: 'disabled'
+		});
+	release();
+	await expect(page.getByRole('article')).toHaveCount(4);
+	await expect(skeletonCards).toHaveCount(0);
+	await expect(page.locator('[data-skeleton]')).toHaveCount(0);
+	await expect(section).not.toHaveAttribute('aria-busy', 'true');
+	await expect(section.locator('.sr-only', { hasText: 'Loading...' })).toHaveCount(0);
+	// The same grid, as wide and in the same column; the first row of cards starts where the
+	// placeholders did.
+	const gridAfter = (await grid.boundingBox())!;
+	expect([gridAfter.x, gridAfter.width]).toEqual([gridBefore.x, gridBefore.width]);
+	expect(Math.abs(gridAfter.y - gridBefore.y)).toBeLessThan(2);
+	const cards = await boxes(page.getByRole('article'));
+	expect(cards.slice(0, 3).map((box) => box.top)).toEqual(placeholders.map((box) => box.top));
+	expect(await overflow()).toBeLessThanOrEqual(0);
+	// One column on a phone, where the card footer wraps its icons under the rates: the
+	// placeholders must wrap the same way, or every card below the first lands lower than its
+	// placeholder stood.
+	await page.setViewportSize({ width: 375, height: 900 });
+	const releasePhone = hold();
+	await page.goto('/');
+	await expect(skeletonCards).toHaveCount(3);
+	const phonePlaceholders = await boxes(skeletonCards);
+	expect(new Set(phonePlaceholders.map((box) => box.top)).size).toBe(3);
+	expect(await overflow()).toBeLessThanOrEqual(0);
+	releasePhone();
+	await expect(page.getByRole('article')).toHaveCount(4);
+	// The first two fixture rules carry no runtime error, so their cards are exactly a placeholder tall.
+	const phoneCards = await boxes(page.getByRole('article'));
+	expect(phoneCards.slice(0, 3).map((box) => box.top)).toEqual(
+		phonePlaceholders.map((box) => box.top)
+	);
+	expect(phoneCards.slice(0, 2).map((box) => box.height)).toEqual(
+		phonePlaceholders.slice(0, 2).map((box) => box.height)
+	);
+	expect(await overflow()).toBeLessThanOrEqual(0);
+	if (process.env.JW_SHOTS) {
+		await page.addInitScript(() => localStorage.setItem('jumpway.theme', 'dark'));
+		const releaseDark = hold();
+		await page.goto('/');
+		await expect(skeletonCards).toHaveCount(3);
+		await page.screenshot({
+			path: '/tmp/jw-polish-s5-shots/overview-skeleton-1280-dark.png',
+			animations: 'disabled'
+		});
+		releaseDark();
+		await expect(page.getByRole('article')).toHaveCount(4);
+	}
+});
+
+test('the rate KPI and every card trace the recent rates: the lines fill in with the polls in the arrow colours of both themes, hold a fixed slot beside the stacked numbers and hide where the tile is too narrow', async ({
+	page,
+	api
+}) => {
+	const shots = process.env.JW_SHOTS ? '/tmp/jw-polish-s4b-shots/' : '';
+	const shoot = async (name: string, target: Page | Locator = page) => {
+		if (shots) await target.screenshot({ path: shots + name + '.png', animations: 'disabled' });
+	};
+	const kpiLine = page.locator('[data-kpi="rate"] ~ svg[data-sparkline]');
+	const cards = page.getByRole('article');
+	const cardLine = cards.nth(0).locator('footer svg[data-sparkline]');
+	// A card footer: the rates group (two stacked values, then the line) and the icon actions.
+	const cardRates = cards.nth(0).locator('footer > span').first();
+	const cardValues = cardRates.locator('> span').first();
+	const cardActions = cards.nth(0).locator('footer > span').last();
+	const office = api.snapshot.rules![0].stats;
+	// Rates that move each second, so the lines have a shape worth looking at.
+	const wobble = async (steps: number) => {
+		for (let step = 1; step <= steps; step++) {
+			office.rate_up = 12_288 * (1 + (step % 3));
+			office.rate_down = 1_048_576 / (1 + (step % 4));
+			await page.waitForResponse((response) => response.url().endsWith('/apis/stats'));
+		}
+	};
+	// Rates whose strings are 8, 9 and 11 characters long: the text slot must not resize.
+	const WIDTHS = [
+		[1_048_576, '1.0 MB/s'],
+		[12_288, '12.0 KB/s'],
+		[1_048_473, '1023.9 KB/s']
+	] as const;
+	const rate = async (value: number, text: string) => {
+		office.rate_up = value;
+		office.rate_down = value;
+		await page.waitForResponse((response) => response.url().endsWith('/apis/stats'));
+		await expect.poll(() => compact(cardRates)).toBe(`Upload ${text} Download ${text}`);
+	};
+	const at = async (locator: Locator) => {
+		const box = (await locator.boundingBox())!;
+		return [box.x, box.y];
+	};
+	const overlaps = (a: { y: number; height: number }, b: { y: number; height: number }) =>
+		a.y < b.y + b.height && a.y + a.height > b.y;
+	const points = (locator: Locator) =>
+		locator.locator('polyline').evaluateAll((lines) =>
+			lines.map((line) =>
+				line
+					.getAttribute('points')!
+					.split(' ')
+					.map((p) => p.split(',').map(Number))
+			)
+		);
+	const overflow = () =>
+		page.evaluate(() => {
+			const main = document.getElementById('main')!;
+			return main.scrollWidth - main.clientWidth;
+		});
+	// The lines' resolved stroke colours and the opaque background behind the first one.
+	const colours = (locator: Locator) =>
+		locator.locator('polyline').evaluateAll((lines) => {
+			const opaque = (element: Element | null): string => {
+				for (let node = element; node; node = node.parentElement) {
+					const background = getComputedStyle(node).backgroundColor;
+					if (background && background !== 'rgba(0, 0, 0, 0)' && background !== 'transparent')
+						return background;
+				}
+				return getComputedStyle(document.body).backgroundColor;
+			};
+			return {
+				strokes: lines.map((line) => {
+					const style = getComputedStyle(line);
+					return style.stroke === 'currentcolor' ? style.color : style.stroke;
+				}),
+				background: opaque(lines[0]?.closest('svg') ?? null)
+			};
+		});
+
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await page.goto('/');
+	await expect(cards).toHaveCount(4);
+	await expect(kpiLine).toHaveCount(1);
+	await expect(cards.locator('footer svg[data-sparkline]')).toHaveCount(4);
+	await expect(page.locator('[data-kpi="total"] ~ svg[data-sparkline]')).toHaveCount(0);
+	await wobble(4);
+	await expect.poll(async () => (await points(kpiLine)).length).toBe(2);
+	await expect.poll(async () => (await points(cardLine)).length).toBe(2);
+	for (const locator of [kpiLine, cardLine]) {
+		const lines = await points(locator);
+		for (const line of lines) {
+			expect(line.length).toBeGreaterThanOrEqual(3);
+			expect(line.at(-1)![0]).toBe(119);
+		}
+		await expect(locator).toHaveAttribute('aria-hidden', 'true');
+	}
+	// 64×40 beside the KPI's two values, 64×36 beside a card's: to the right of the numbers and
+	// level with them, never on a line of their own; a card's line stays clear of its actions.
+	const kpiBox = (await kpiLine.boundingBox())!;
+	const kpiValues = (await kpi(page, 'rate').boundingBox())!;
+	expect([Math.round(kpiBox.width), Math.round(kpiBox.height)]).toEqual([64, 40]);
+	expect(kpiBox.x).toBeGreaterThanOrEqual(kpiValues.x + kpiValues.width);
+	expect(overlaps(kpiBox, kpiValues)).toBe(true);
+	const cardBox = (await cardLine.boundingBox())!;
+	const valuesBox = (await cardValues.boundingBox())!;
+	const actionsBox = (await cardActions.boundingBox())!;
+	// The 32px actions overhang the row they sit on by their negative margins.
+	const actionsRow = await cardActions.evaluate(
+		(element) =>
+			element.getBoundingClientRect().top - parseFloat(getComputedStyle(element).marginTop)
+	);
+	const card = (await cards.nth(0).boundingBox())!;
+	expect([Math.round(cardBox.width), Math.round(cardBox.height)]).toEqual([64, 36]);
+	expect(cardBox.x).toBeGreaterThanOrEqual(valuesBox.x + valuesBox.width);
+	expect(overlaps(cardBox, valuesBox)).toBe(true);
+	expect(cardBox.x + cardBox.width).toBeLessThanOrEqual(card.x + card.width);
+	expect(
+		cardBox.x + cardBox.width <= actionsBox.x || cardBox.y + cardBox.height <= actionsRow
+	).toBe(true);
+	// The numbers read as before; the line adds no text.
+	expect(await compact(kpi(page, 'rate'))).toMatch(/^Upload \S+ \S+ Download \S+ \S+$/);
+	expect(await overflow()).toBeLessThanOrEqual(0);
+	// Whatever the numbers' length, nothing after them moves: the lines and the actions keep their
+	// places through 8-, 9- and 11-character rates, to within Chrome's 1/64px layout unit.
+	const places = async () => ({
+		kpi: await at(kpiLine),
+		card: await at(cardLine),
+		actions: await at(cardActions)
+	});
+	const held = await places();
+	for (const [value, text] of WIDTHS) {
+		await rate(value, text);
+		const now = await places();
+		for (const key of ['kpi', 'card', 'actions'] as const)
+			for (const axis of [0, 1])
+				expect(Math.abs(now[key][axis] - held[key][axis]), `${text} ${key}`).toBeLessThan(0.1);
+	}
+	expect(await overflow()).toBeLessThanOrEqual(0);
+	const light = await colours(kpiLine);
+	expect(new Set([...light.strokes, light.background]).size).toBe(3);
+	await shoot('overview-1280-trend');
+	await shoot('kpi-rate', kpi(page, 'rate').locator('..'));
+	await shoot('card-footer', cards.nth(0).locator('footer'));
+
+	// Dark theme: still two distinct colours, neither the background's.
+	await page.addInitScript(() => localStorage.setItem('jumpway.theme', 'dark'));
+	await page.goto('/');
+	await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+	await expect(cards).toHaveCount(4);
+	await wobble(3);
+	await expect.poll(async () => (await points(kpiLine)).length).toBe(2);
+	const dark = await colours(kpiLine);
+	expect(new Set([...dark.strokes, dark.background]).size).toBe(3);
+	expect(dark.background).not.toBe(light.background);
+	expect(await overflow()).toBeLessThanOrEqual(0);
+	await shoot('overview-1280-trend-dark');
+
+	// A phone: the footer wraps its actions under the rates; nothing leaves the card. The KPI tile
+	// is too narrow for a line beside its values and shows none.
+	await page.addInitScript(() => localStorage.removeItem('jumpway.theme'));
+	await page.setViewportSize({ width: 375, height: 812 });
+	await page.goto('/');
+	await expect(cards).toHaveCount(4);
+	await wobble(3);
+	await expect.poll(async () => (await points(cardLine)).length).toBe(2);
+	await expect(kpiLine).toBeHidden();
+	await expect(cardLine).toBeVisible();
+	expect(await overflow()).toBeLessThanOrEqual(0);
+	const inside = await cards.evaluateAll((articles) =>
+		articles.every((article) => {
+			const box = article.getBoundingClientRect();
+			return Array.from(
+				article.querySelectorAll('svg[data-sparkline], footer a, footer button')
+			).every((element) => {
+				const rect = element.getBoundingClientRect();
+				return rect.left >= box.left - 1 && rect.right <= box.right + 1;
+			});
+		})
+	);
+	expect(inside).toBe(true);
+	await shoot('overview-375-trend');
+
+	// 1024 beside the expanded sidebar: four KPI tiles of about 170px, too narrow for the line,
+	// which hides rather than wrapping under the values; the cards keep theirs.
+	await page.setViewportSize({ width: 1024, height: 800 });
+	await page.goto('/');
+	await expect(cards).toHaveCount(4);
+	expect((await page.locator('aside').boundingBox())!.width).toBeGreaterThan(200);
+	const tile = async (name: string) => (await kpi(page, name).boundingBox())!;
+	expect(Math.abs((await tile('total')).y - (await tile('rules')).y)).toBeLessThanOrEqual(2);
+	await expect(kpiLine).toBeHidden();
+	await expect(kpiLine).toHaveCount(1);
+	for (let index = 0; index < 4; index++)
+		await expect(cards.nth(index).locator('footer svg[data-sparkline]')).toBeVisible();
+	expect(await overflow()).toBeLessThanOrEqual(0);
+	await shoot('overview-1024-expanded');
+});
+
 test('sidebar links use current routes and unknown addresses return home', async ({ page }) => {
 	await page.goto('/');
 	await expectNavLabelsFit(page, EN_LABELS);
@@ -293,6 +587,95 @@ test('desktop sidebar becomes a persistent icon rail with working preferences', 
 	await page.getByRole('button', { name: '展开侧边栏', exact: true }).click();
 	await expect.poll(async () => (await aside.boundingBox())?.width).toBe(224);
 	await expect(nav(page)).toContainText('活动连接');
+});
+
+// JW_SHOTS=1 saves review screenshots of the sidebar states under /tmp.
+const shot = (page: Page, name: string) =>
+	process.env.JW_SHOTS
+		? page.screenshot({ path: `/tmp/jw-polish-s2-shots/${name}.png`, animations: 'disabled' })
+		: undefined;
+
+test('the sidebar clamps the runtime error to three lines until it is clicked open', async ({
+	page
+}) => {
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await page.goto('/');
+	const aside = page.locator('aside');
+	const error = aside.locator('button[aria-expanded]', { hasText: 'invalid proxy URL' });
+	const fits = () => aside.evaluate((element) => element.scrollWidth <= element.clientWidth);
+	await expect(error).toHaveAttribute('aria-expanded', 'false');
+	// text-xs lines are 16px tall: three of them and nothing more.
+	const clamped = (await error.boundingBox())!.height;
+	expect(clamped).toBeLessThan(3 * 16 + 6);
+	expect(await fits()).toBe(true);
+
+	await error.click();
+	await expect(error).toHaveAttribute('aria-expanded', 'true');
+	await expect(error).toBeFocused();
+	await expect.poll(async () => (await error.boundingBox())!.height).toBeGreaterThan(clamped);
+	await expect(error).toHaveText(
+		'rules[3].forward.way[0]: invalid proxy URL "socks5://xxxxx@host:bad": parse "socks5://xxxxx@host:bad": invalid port ":bad" after host (e.g. socks5://host:1080)'
+	);
+	expect(await error.evaluate((element) => element.scrollHeight <= element.clientHeight + 1)).toBe(
+		true
+	);
+	expect(await fits()).toBe(true);
+	await shot(page, 'sidebar-error-expanded');
+
+	await error.click();
+	await expect(error).toHaveAttribute('aria-expanded', 'false');
+	await expect.poll(async () => (await error.boundingBox())!.height).toBe(clamped);
+});
+
+test('the sidebar toggle ends the sidebar: beside the resource links, centred in the rail, absent from the drawer', async ({
+	page
+}) => {
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await page.goto('/');
+	const aside = page.locator('aside');
+	const toggle = aside.locator('button[aria-controls="sidebar"]');
+	await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+	await expect(aside.locator(':scope > :first-child button')).toHaveCount(0);
+	const rail = (await aside.boundingBox())!;
+	const box = (await toggle.boundingBox())!;
+	const github = (await aside.getByRole('link', { name: 'GitHub', exact: true }).boundingBox())!;
+	expect(rail.y + rail.height - (box.y + box.height)).toBeLessThan(80);
+	expect(box.x).toBeGreaterThanOrEqual(github.x + github.width);
+	await shot(page, 'sidebar-1280-expanded');
+
+	await toggle.click();
+	await expect(toggle).toBeFocused();
+	await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+	await expect.poll(async () => (await aside.boundingBox())?.width).toBe(64);
+	await expect
+		.poll(() =>
+			aside.evaluate((element) => {
+				const button = element.querySelector('button[aria-controls="sidebar"]')!;
+				const box = button.getBoundingClientRect();
+				const rail = element.getBoundingClientRect();
+				const others = Array.from(element.querySelectorAll('a, button')).filter(
+					(other) => other !== button
+				);
+				return {
+					lowest: others.every((other) => other.getBoundingClientRect().y < box.y),
+					centred: Math.abs(box.x + box.width / 2 - rail.x - 32) < 2
+				};
+			})
+		)
+		.toEqual({ lowest: true, centred: true });
+	await expect(aside.locator(':scope > :first-child button')).toHaveCount(0);
+	await shot(page, 'sidebar-1280-collapsed');
+
+	// The drawer ignores the rail choice and never offers the toggle.
+	await page.setViewportSize({ width: 375, height: 800 });
+	await expect(aside).toHaveCount(0);
+	await page.getByRole('button', { name: 'Open navigation', exact: true }).click();
+	const drawer = page.locator('dialog#navigation-drawer');
+	await expect(drawer).toHaveAttribute('open', '');
+	await expectNavLabelsFit(page, EN_LABELS);
+	await expect(drawer.getByRole('link', { name: 'GitHub', exact: true })).toBeVisible();
+	await expect(drawer.locator('[aria-controls="sidebar"]')).toHaveCount(0);
+	await shot(page, 'sidebar-375-drawer');
 });
 
 test('?lang=zh renders Chinese; the switch persists across reloads and ?lang= still wins', async ({

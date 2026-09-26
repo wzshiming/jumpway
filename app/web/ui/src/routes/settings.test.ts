@@ -754,3 +754,60 @@ test('a YAML save that moves web_ui links to the address the status reports and 
 		`http://${location.hostname}:1099/#/yaml`
 	);
 });
+
+const loadingAnnounced = (root: ParentNode) =>
+	Array.from(root.querySelectorAll('.sr-only')).some(
+		(element) => element.textContent?.trim() === 'Loading...'
+	);
+const skeletons = () => target.querySelectorAll('main [data-skeleton]');
+const busyWrapper = () => target.querySelector<HTMLElement>('main [aria-busy="true"]');
+
+test('the settings show field skeletons behind a busy wrapper until both reads answer', async () => {
+	let release!: () => void;
+	delay.set(
+		'GET /apis/configs/no-proxy',
+		new Promise<void>((resolve) => {
+			release = resolve;
+		})
+	);
+	await render('#/settings');
+	expect(target.querySelector('main form')).toBeNull();
+	const wrapper = busyWrapper();
+	expect(wrapper).not.toBeNull();
+	expect(loadingAnnounced(wrapper!)).toBe(true);
+	const bars = Array.from(wrapper!.querySelectorAll('[data-skeleton]'));
+	expect(bars.length).toBeGreaterThanOrEqual(4);
+	expect(bars.every((bar) => bar.getAttribute('aria-hidden') === 'true')).toBe(true);
+	expect(wrapper!.querySelectorAll('.band')).toHaveLength(2);
+	release();
+	await settle();
+	expect(skeletons()).toHaveLength(0);
+	expect(busyWrapper()).toBeNull();
+	expect(loadingAnnounced(target)).toBe(false);
+	expect(field('web-ui-host').value).toBe(webUIFixture.host);
+	expect(target.querySelectorAll('main form')).toHaveLength(2);
+});
+
+test('the YAML page shows a label, a tall block and a button-sized block until the file answers', async () => {
+	let release!: () => void;
+	delay.set(
+		'GET /apis/configs/raw',
+		new Promise<void>((resolve) => {
+			release = resolve;
+		})
+	);
+	await render('#/yaml');
+	expect(target.querySelector('main form')).toBeNull();
+	const wrapper = busyWrapper();
+	expect(wrapper).not.toBeNull();
+	expect(loadingAnnounced(wrapper!)).toBe(true);
+	const bars = Array.from(wrapper!.querySelectorAll<HTMLElement>('[data-skeleton]'));
+	expect(bars).toHaveLength(3);
+	expect(bars.map((bar) => bar.classList.contains('w-full'))).toEqual([false, true, false]);
+	expect(bars[1].className).toContain('min-h-[60vh]');
+	release();
+	await settle();
+	expect(skeletons()).toHaveLength(0);
+	expect(busyWrapper()).toBeNull();
+	expect(field('yaml-source').value).toBe(rawFixture.yaml);
+});

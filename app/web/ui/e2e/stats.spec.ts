@@ -1268,7 +1268,7 @@ test('a focused row control keeps focus and its tooltip when a poll moves its ro
 	).toBe(true);
 });
 
-test('250 connections render as 200 rows with a note; the count still says 251', async ({
+test('250 connections render as 200 rows with a note and a Show more button; the count still says 251 and the click reveals the rest at every width', async ({
 	page,
 	api
 }) => {
@@ -1279,11 +1279,17 @@ test('250 connections render as 200 rows with a note; the count still says 251',
 		client: `10.0.0.${index % 250}:${20_000 + index}`,
 		started: new Date(Date.now() - (250 - index) * 1_000).toISOString()
 	}));
+	const shots = process.env.JW_SHOTS ? '/tmp/jw-polish-s3-shots/' : '';
+	const shoot = async (name: string) => {
+		if (shots) await page.screenshot({ path: shots + name + '.png', animations: 'disabled' });
+	};
+	const more = page.locator('[data-connections-more]');
+	const show = more.getByRole('button', { name: 'Show 51 more' });
 	await page.goto('/#/connections');
 	await expect(connectionRows(page)).toHaveCount(200);
 	await expect(connectionRows(page).first()).toHaveAttribute('data-connection', '1249');
 	await expect(page.locator('[data-connection-count]')).toHaveText('251 connections');
-	await expect(page.getByRole('main')).toContainText('Showing 200 of 251');
+	await expect(more).toHaveText('Showing 200 of 251 Show 51 more');
 	await expectNoDocumentOverflow(page, 'connections-250');
 	await expectConnectionsFit(page, 'connections-250');
 	await expectColumnsAligned(page, 'connections-250');
@@ -1293,6 +1299,29 @@ test('250 connections render as 200 rows with a note; the count still says 251',
 	await expect(connectionRows(page).first()).toHaveAttribute('data-connection', '1249');
 	await expectNoDocumentOverflow(page, 'connections-250-tablet');
 	await expectColumnsAligned(page, 'connections-250-tablet');
+	await page.setViewportSize({ width: 375, height: 812 });
+	await show.scrollIntoViewIfNeeded();
+	await shoot('connections-375-capped');
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await show.scrollIntoViewIfNeeded();
+	await shoot('connections-1280-capped');
+
+	// The last page follows the click; the button is gone, so focus moves to the first new row.
+	await show.focus();
+	await show.click();
+	await expect(connectionRows(page)).toHaveCount(251);
+	await expect(connectionRows(page).nth(200)).toHaveAttribute('data-connection', '1049');
+	await expect(more).toHaveCount(0);
+	await expect(
+		connectionRows(page).nth(200).getByRole('button', { name: 'Expand: example.com:443' })
+	).toBeFocused();
+	await expect(page.locator('[data-connection-count]')).toHaveText('251 connections');
+	await shoot('connections-1280-expanded');
+	for (const width of [1280, 820, 375]) {
+		await page.setViewportSize({ width, height: 800 });
+		await expect(connectionRows(page)).toHaveCount(251);
+		await expectNoDocumentOverflow(page, `connections-251-${width}`);
+	}
 });
 
 test('connections are the same items at every width; an expanded item stays expanded across widths and everything fits', async ({
@@ -1597,6 +1626,228 @@ test('long targets, IPv6 clients, process names and rule names wrap across mobil
 		await select.evaluate((element) => element.getBoundingClientRect().width)
 	).toBeLessThanOrEqual(14 * 16 + 1);
 	await expectNoDocumentOverflow(page, 'connections-long-selected');
+});
+
+test('#/stats holds three row skeletons behind a busy section until the snapshot answers, fitting a phone and a desktop', async ({
+	page,
+	api
+}) => {
+	await page.setViewportSize({ width: 375, height: 800 });
+	let release!: () => void;
+	const held = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	api.delay.set('GET /apis/stats', held);
+	api.delay.set('GET /apis/configs/rules', held);
+	await page.goto('/#/stats');
+	const section = page.locator('section[aria-label="Statistics"]');
+	const skeletonRows = section.locator('[data-skeleton-row]');
+	await expect(section).toHaveAttribute('aria-busy', 'true');
+	await expect(skeletonRows).toHaveCount(3);
+	await expect(skeletonRows.first().locator('[data-skeleton]').first()).toBeVisible();
+	await expect(section.locator('.sr-only', { hasText: 'Loading...' })).toHaveCount(1);
+	await expect(ruleRows(page)).toHaveCount(0);
+	await expectNoDocumentOverflow(page, 'stats-skeleton-375');
+	const shots = process.env.JW_SHOTS ? '/tmp/jw-polish-s5-shots/' : '';
+	const shoot = async (name: string) => {
+		if (shots) await page.screenshot({ path: shots + name + '.png', animations: 'disabled' });
+	};
+	await shoot('stats-skeleton-375');
+	// Two metric columns on a phone, four on a desktop, like the band that follows: the four
+	// placeholders take two rows, then one.
+	const bandRowsOf = (row: Locator) =>
+		row
+			.locator('> div')
+			.last()
+			.locator('> div')
+			.evaluateAll(
+				(cells) => new Set(cells.map((cell) => Math.round(cell.getBoundingClientRect().top))).size
+			);
+	expect(await bandRowsOf(skeletonRows.first())).toBe(2);
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await expect(skeletonRows).toHaveCount(3);
+	await expect.poll(() => bandRowsOf(skeletonRows.first())).toBe(1);
+	await expectNoDocumentOverflow(page, 'stats-skeleton-1280');
+	await shoot('stats-skeleton-1280');
+	release();
+	await expect(ruleRows(page)).toHaveCount(4);
+	await expect(page.locator('[data-skeleton], [data-skeleton-row]')).toHaveCount(0);
+	await expect(section).not.toHaveAttribute('aria-busy', 'true');
+	await expect(section.locator('.sr-only', { hasText: 'Loading...' })).toHaveCount(0);
+	await expectNoDocumentOverflow(page, 'stats-loaded-1280');
+});
+
+test('#/stats draws a rate line beside every collapsed rule\'s "now" values that fills in with the polls and hides where the band is narrow; the expanded chain, hosts and connections carry none', async ({
+	page,
+	api
+}) => {
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await page.goto('/#/stats');
+	await expect(ruleRows(page)).toHaveCount(4);
+	const lines = page.locator('svg[data-sparkline]');
+	await expect(lines).toHaveCount(4);
+	// Every line sits in the "now" column of its row's own band, in a definition of its own.
+	const placement = await ruleRows(page).evaluateAll((rows) =>
+		rows.map((row) => {
+			const svg = row.querySelector('svg[data-sparkline]')!;
+			return [
+				row.querySelectorAll('svg[data-sparkline]').length,
+				svg.closest('[data-column]')?.getAttribute('data-column'),
+				svg.parentElement?.tagName,
+				svg.closest('[data-traffic]') === row.querySelector('[data-traffic]'),
+				svg.getAttribute('aria-hidden')
+			];
+		})
+	);
+	expect(placement).toEqual(Array(4).fill([1, 'rate', 'DD', true, 'true']));
+	const office = api.snapshot.rules![0].stats;
+	for (let step = 1; step <= 4; step++) {
+		office.rate_up = 12_288 * (1 + (step % 3));
+		office.rate_down = 1_048_576 / (1 + (step % 4));
+		await page.waitForResponse((response) => response.url().endsWith('/apis/stats'));
+	}
+	const points = (locator: Locator) =>
+		locator
+			.locator('polyline')
+			.evaluateAll((lines) => lines.map((line) => line.getAttribute('points')!.split(' ').length));
+	const officeLine = ruleRows(page).nth(0).locator('svg[data-sparkline]');
+	await expect.poll(() => points(officeLine)).toHaveLength(2);
+	for (const count of await points(officeLine)) expect(count).toBeGreaterThanOrEqual(3);
+	// The disabled rule has no statistics: its box stays empty.
+	await expect(ruleRows(page).nth(3).locator('svg[data-sparkline]')).toHaveAttribute(
+		'data-samples',
+		'0'
+	);
+	expect(await points(ruleRows(page).nth(3).locator('svg[data-sparkline]'))).toEqual([]);
+	// The office row's band: the line, the two "now" values, the four columns and the meta cell
+	// below the first of them.
+	const geometry = () =>
+		ruleRows(page)
+			.nth(0)
+			.evaluate((row) => {
+				const rect = (element: Element | null) => {
+					const box = element!.getBoundingClientRect();
+					return { x: box.x, y: box.y, right: box.right, bottom: box.bottom, width: box.width };
+				};
+				const band = row.querySelector('[data-traffic]')!;
+				return {
+					chart: rect(band.querySelector('svg[data-sparkline]')),
+					up: rect(band.querySelector('[data-metric="rate_up"]')),
+					down: rect(band.querySelector('[data-metric="rate_down"]')),
+					columns: Array.from(band.querySelectorAll('[data-column]')).map(rect),
+					connections: rect(row.querySelector('[data-stats] > dl > [data-connections]'))
+				};
+			});
+	const overlaps = (a: { y: number; bottom: number }, b: { y: number; bottom: number }) =>
+		a.y < b.bottom && a.bottom > b.y;
+	// 64×36 to the right of both values (whose slot is as wide as the longest rate), level with
+	// the two rows rather than under them, in a "now" column wider than the other three; the meta
+	// row's connections cell keeps the now column's edges.
+	let shape = await geometry();
+	expect([Math.round(shape.chart.width), Math.round(shape.chart.bottom - shape.chart.y)]).toEqual([
+		64, 36
+	]);
+	expect(shape.chart.x).toBeGreaterThanOrEqual(Math.max(shape.up.right, shape.down.right));
+	expect(overlaps(shape.chart, shape.up)).toBe(true);
+	expect(overlaps(shape.chart, shape.down)).toBe(true);
+	expect(shape.chart.right).toBeLessThanOrEqual(shape.columns[0].right);
+	expect(shape.columns[0].width).toBeGreaterThan(shape.columns[1].width + 40);
+	for (const column of shape.columns.slice(2))
+		expect(Math.abs(column.width - shape.columns[1].width)).toBeLessThan(0.5);
+	expect(Math.abs(shape.connections.x - shape.columns[0].x)).toBeLessThan(0.5);
+	expect(Math.abs(shape.connections.width - shape.columns[0].width)).toBeLessThan(0.5);
+	// Rates of 8, 9 and 11 characters: the line does not move (beyond Chrome's 1/64px layout unit).
+	const upValue = ruleRows(page).nth(0).locator('[data-metric="rate_up"]');
+	for (const [value, text] of [
+		[1_048_576, '1.0 MB/s'],
+		[12_288, '12.0 KB/s'],
+		[1_048_473, '1023.9 KB/s']
+	] as const) {
+		office.rate_up = value;
+		office.rate_down = value;
+		await page.waitForResponse((response) => response.url().endsWith('/apis/stats'));
+		await expect(upValue).toHaveText(text);
+		const next = await geometry();
+		expect(Math.abs(next.chart.x - shape.chart.x), text).toBeLessThan(0.1);
+		expect(Math.abs(next.chart.y - shape.chart.y), text).toBeLessThan(0.1);
+		expect(
+			next.columns.map((column) => column.x),
+			text
+		).toEqual(shape.columns.map((column) => column.x));
+		shape = next;
+	}
+	await expectMetricsFit(page, 'stats-trend-1280');
+	await expectColumnsAligned(page, 'stats-trend-1280');
+	await expectNoDocumentOverflow(page, 'stats-trend-1280');
+	// The "now" help names the line here.
+	await hover(page, ruleRows(page).nth(0).getByRole('button', { name: 'About now' }));
+	await expect(tooltip(page)).toContainText('a line traces the last minute of samples');
+	if (process.env.JW_SHOTS)
+		await page.screenshot({
+			path: '/tmp/jw-polish-s4b-shots/stats-1280-trend.png',
+			animations: 'disabled'
+		});
+
+	// Beside the expanded sidebar at 1024 the band is still wide enough; at 768 it is not, with
+	// the sidebar expanded (two columns of two) or collapsed (four across): the line hides and the
+	// four columns share the width equally.
+	await page.setViewportSize({ width: 1024, height: 800 });
+	await expect(officeLine).toBeVisible();
+	shape = await geometry();
+	expect(shape.columns[0].width).toBeGreaterThan(shape.columns[1].width + 40);
+	await expectMetricsFit(page, 'stats-trend-1024');
+	await page.setViewportSize({ width: 768, height: 900 });
+	await expect(officeLine).toBeHidden();
+	await expect(officeLine).toHaveCount(1);
+	const equalColumns = async (name: string) => {
+		const widths = (await geometry()).columns.map((column) => Math.round(column.width * 2) / 2);
+		expect(new Set(widths).size, `${name} ${widths}`).toBe(1);
+	};
+	await equalColumns('768 expanded');
+	await expectMetricsFit(page, 'stats-trend-768');
+	await expectNoDocumentOverflow(page, 'stats-trend-768');
+	if (process.env.JW_SHOTS)
+		await page.screenshot({
+			path: '/tmp/jw-polish-s4b-shots/stats-768-hidden.png',
+			animations: 'disabled'
+		});
+	await page.locator('aside button[aria-controls="sidebar"]').click();
+	await expect
+		.poll(async () => (await page.locator('aside').boundingBox())!.width)
+		.toBeLessThan(100);
+	const bandRows = () =>
+		geometry().then((shape) => new Set(shape.columns.map((column) => Math.round(column.y))).size);
+	await expect
+		.poll(bandRows, { message: 'four columns across once the sidebar is a rail' })
+		.toBe(1);
+	await expect(officeLine).toBeHidden();
+	await equalColumns('768 collapsed');
+	await expectMetricsFit(page, 'stats-trend-768-collapsed');
+	await page.locator('aside button[aria-controls="sidebar"]').click();
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await expect(officeLine).toBeVisible();
+
+	await ruleRows(page).nth(0).locator('button[aria-controls]').click();
+	const details = await detailsOf(page, ruleRows(page).nth(0).locator('button[aria-controls]'));
+	await expect(details.locator('[data-url]')).toHaveCount(3);
+	expect(await details.locator('[data-traffic]').count()).toBeGreaterThanOrEqual(8);
+	await expect(details.locator('svg[data-sparkline]')).toHaveCount(0);
+	await expect(lines).toHaveCount(4);
+
+	await page
+		.getByRole('navigation', { name: 'Navigation' })
+		.getByRole('link', { name: 'Proxy Hosts' })
+		.click();
+	await expect(hostRows(page)).toHaveCount(4);
+	await expect(lines).toHaveCount(0);
+	await hover(page, hostRows(page).nth(0).getByRole('button', { name: 'About now' }));
+	await expect(tooltip(page)).not.toContainText('The line');
+	await page
+		.getByRole('navigation', { name: 'Navigation' })
+		.getByRole('link', { name: 'Live Connections' })
+		.click();
+	await expect(connectionRows(page)).toHaveCount(4);
+	await expect(lines).toHaveCount(0);
 });
 
 test.describe('screenshots', () => {

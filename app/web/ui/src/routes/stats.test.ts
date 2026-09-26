@@ -13,6 +13,7 @@ import { formatDateTime } from '../lib/format';
 import { stats } from '../lib/stats.svelte';
 import { toasts } from '../lib/toast.svelte';
 import { DIRECTIONS, TRAFFIC_METRICS } from '../lib/traffic';
+import { trend } from '../lib/trend.svelte';
 import type { Rule, Snapshot } from '../lib/types';
 
 // Statistics, Hosts and Connections mounted in jsdom against an in-memory /apis stub whose
@@ -167,12 +168,82 @@ afterEach(() => {
 	app = null;
 	target?.remove();
 	toasts.clear();
+	trend.reset();
 	vi.useRealTimers();
 	vi.unstubAllGlobals();
 	vi.restoreAllMocks();
 	localStorage.clear();
 	document.body.innerHTML = '';
 	history.replaceState(null, '', '/');
+});
+
+const loadingAnnounced = (root: ParentNode) =>
+	Array.from(root.querySelectorAll('.sr-only')).some(
+		(element) => element.textContent?.trim() === 'Loading...'
+	);
+const LIST_PAGES = [
+	['#/stats', 'Statistics', 'article[data-rule]'],
+	['#/hosts', 'Hosts', 'article[data-host]'],
+	['#/connections', 'Connections', 'article[data-connection]']
+] as const;
+
+// First in this file: the snapshot poller keeps its last answer, so only a fresh module has none.
+test('until the first snapshot answers, every list page holds three row skeletons behind a busy section; the rows then take their place', async () => {
+	const hold = () => {
+		let release!: () => void;
+		const held = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		delay.set('GET /apis/stats', held);
+		delay.set('GET /apis/configs/rules', held);
+		return release;
+	};
+	const section = (label: string) =>
+		target.querySelector<HTMLElement>(`main section[aria-label="${label}"]`)!;
+	for (const [hash, label, selector] of LIST_PAGES) {
+		const release = hold();
+		await render(hash);
+		const busy = section(label);
+		expect(busy.getAttribute('aria-busy'), hash).toBe('true');
+		expect(loadingAnnounced(busy), hash).toBe(true);
+		expect(busy.querySelectorAll('[data-skeleton-row]'), hash).toHaveLength(3);
+		const bars = Array.from(busy.querySelectorAll('[data-skeleton]'));
+		expect(bars.length, hash).toBeGreaterThan(3);
+		expect(
+			bars.every((bar) => bar.getAttribute('aria-hidden') === 'true'),
+			hash
+		).toBe(true);
+		expect(
+			bars.every((bar) => bar.textContent === ''),
+			hash
+		).toBe(true);
+		expect(busy.querySelector('[data-skeleton-row]')?.closest('.space-y-3'), hash).not.toBeNull();
+		expect(rows(selector), hash).toHaveLength(0);
+		if (hash !== '#/connections') {
+			// An answer to a page that was left is dropped, so the next page starts without one too.
+			unmount(app!);
+			app = null;
+			target.remove();
+			release();
+			await settle();
+			continue;
+		}
+		release();
+		await settle();
+		expect(busy.getAttribute('aria-busy')).not.toBe('true');
+		expect(loadingAnnounced(busy)).toBe(false);
+		expect(busy.querySelectorAll('[data-skeleton], [data-skeleton-row]')).toHaveLength(0);
+		expect(rows(selector)).toHaveLength(4);
+	}
+	for (const [hash, label, selector] of LIST_PAGES.slice(0, 2)) {
+		unmount(app!);
+		target.remove();
+		await render(hash);
+		expect(section(label).getAttribute('aria-busy'), hash).not.toBe('true');
+		expect(section(label).querySelectorAll('[data-skeleton]'), hash).toHaveLength(0);
+		expect(loadingAnnounced(section(label)), hash).toBe(false);
+		expect(rows(selector), hash).toHaveLength(4);
+	}
 });
 
 const OFFICE_METRICS = {
@@ -1543,21 +1614,94 @@ test('disconnect disables only that row, DELETEs its id, toasts and the row goes
 	expect(button('Disconnect', list[2])!.disabled).toBe(false);
 });
 
-test('at most 200 of many connections are rendered, with a note saying so', async () => {
+// `count` connections of the office rule in place of the fixture's three, the newest first.
+function manyConnections(count: number) {
 	const template = snapshot.rules![0].connections![0];
-	snapshot.rules![0].connections = Array.from({ length: 250 }, (_, index) => ({
+	snapshot.rules![0].connections = Array.from({ length: count }, (_, index) => ({
 		...template,
 		id: 1_000 + index,
 		client: `10.0.0.${index % 250}:${20_000 + index}`,
-		started: new Date(NOW - (250 - index) * 1_000).toISOString()
+		started: new Date(NOW - (count - index) * 1_000).toISOString()
 	}));
-	await render('#/connections');
-	const list = rows('main [data-connection]');
-	expect(list).toHaveLength(200);
-	expect(list[0].dataset.connection).toBe('1249');
-	expect(compact(target.querySelector('[data-connection-count]'))).toBe('251 connections');
-	expect(target.querySelector('main')?.textContent).toContain('Showing 200 of 251');
-});
+}
+const more = () => target.querySelector<HTMLElement>('main [data-connections-more]');
+
+// Hundreds of connection items take jsdom seconds to lay out; CI runners need about three times this machine.
+test(
+	'250 connections render as 200 rows with a note and a Show more button; the click reveals the rest and moves focus to the first new row, and a new query starts over',
+	{ timeout: 20_000 },
+	async () => {
+		manyConnections(250);
+		await render('#/connections');
+		const list = rows('main [data-connection]');
+		expect(list).toHaveLength(200);
+		expect(list[0].dataset.connection).toBe('1249');
+		expect(compact(target.querySelector('[data-connection-count]'))).toBe('251 connections');
+		expect(compact(more())).toBe('Showing 200 of 251 Show 51 more');
+		const show = button('Show 51 more', more()!)!;
+		show.focus();
+		click(show);
+		await settle();
+		const revealed = rows('main [data-connection]');
+		expect(revealed).toHaveLength(251);
+		// The first page kept its elements; the second starts where it ended.
+		expect(revealed.slice(0, 200)).toEqual(list);
+		expect(revealed[200].dataset.connection).toBe('1049');
+		expect(revealed[250].dataset.connection).toBe('201');
+		expect(more()).toBeNull();
+		// The button went with the last page: reading continues from the first row it revealed.
+		expect(document.activeElement).toBe(button('Expand: example.com:443', revealed[200]));
+
+		// A query that fits on one page needs no note; clearing it starts from the first page again.
+		const search = target.querySelector<HTMLInputElement>('main input[type="search"]')!;
+		search.value = 'psql';
+		search.dispatchEvent(new Event('input', { bubbles: true }));
+		flushSync();
+		expect(connectionIds()).toEqual(['201']);
+		expect(more()).toBeNull();
+		search.value = '';
+		search.dispatchEvent(new Event('input', { bubbles: true }));
+		flushSync();
+		expect(rows('main [data-connection]')).toHaveLength(200);
+		expect(compact(more())).toBe('Showing 200 of 251 Show 51 more');
+	}
+);
+
+test(
+	'Show more reveals 200 rows per click and keeps focus while rows remain; a re-sort keeps the revealed rows, another rule starts over',
+	{ timeout: 30_000 },
+	async () => {
+		manyConnections(450);
+		await render('#/connections');
+		expect(rows('main [data-connection]')).toHaveLength(200);
+		expect(compact(more())).toBe('Showing 200 of 451 Show 200 more');
+		const show = button('Show 200 more', more()!)!;
+		show.focus();
+		click(show);
+		await settle();
+		expect(rows('main [data-connection]')).toHaveLength(400);
+		expect(compact(more())).toBe('Showing 400 of 451 Show 51 more');
+		expect(button('Show 51 more', more()!)).toBe(show);
+		expect(document.activeElement).toBe(show);
+
+		// The same rows in another order: nothing to hide again.
+		const sortBy = target.querySelector<HTMLSelectElement>('main select[aria-label="Sort by"]')!;
+		sortBy.value = 'client';
+		sortBy.dispatchEvent(new Event('change', { bubbles: true }));
+		flushSync();
+		expect(rows('main [data-connection]')).toHaveLength(400);
+		expect(compact(more())).toBe('Showing 400 of 451 Show 51 more');
+
+		// Another rule is another list: it starts from its first page.
+		const select = target.querySelector<HTMLSelectElement>('main select#connections-rule')!;
+		select.value = 'office';
+		select.dispatchEvent(new Event('change', { bubbles: true }));
+		flushSync();
+		await settle();
+		expect(rows('main [data-connection]')).toHaveLength(200);
+		expect(compact(more())).toBe('Showing 200 of 450 Show 200 more');
+	}
+);
 
 test('virtual rows label channels as virtual:// and link peers from the loaded rule list; without that list the association stays unknown', async () => {
 	rules.push(...structuredClone(virtualRulesFixture));
@@ -1871,4 +2015,100 @@ test('#/hosts has the same controls: the search matches host names and endpoint 
 	expect(hostNames()).toEqual(hostsTotals.order);
 	click(direction);
 	expect(hostNames()).toEqual([...hostsTotals.order].reverse());
+});
+
+const sparklines = (root: ParentNode = target) =>
+	Array.from(root.querySelectorAll<SVGSVGElement>('svg[data-sparkline]'));
+const pointsOf = (svg: Element) =>
+	Array.from(svg.querySelectorAll('polyline')).map(
+		(line) => line.getAttribute('points')!.split(' ').length
+	);
+
+test('#/stats draws one rate line per rule under its "now" column once two snapshots are in; the expanded chain, its targets and the hosts page carry none', async () => {
+	await render('#/stats');
+	expect(rows()).toHaveLength(4);
+	const first = sparklines();
+	expect(first).toHaveLength(4);
+	expect(first.map((svg) => svg.getAttribute('data-samples'))).toEqual(['1', '1', '1', '0']);
+	expect(first.every((svg) => svg.querySelectorAll('polyline').length === 0)).toBe(true);
+	snapshot.rules![0].stats.rate_up = 24_576;
+	await poll();
+	snapshot.rules![0].stats.rate_up = 49_152;
+	await poll();
+	const lines = sparklines();
+	expect(lines).toEqual(first);
+	for (const row of rows()) {
+		const name = row.dataset.rule!;
+		const own = sparklines(row);
+		expect(own, name).toHaveLength(1);
+		// Under the two "now" values, inside a definition of its own, hidden from assistive technology.
+		const column = own[0].closest('[data-column]') as HTMLElement;
+		expect(column.dataset.column, name).toBe('rate');
+		expect(own[0].parentElement?.tagName, name).toBe('DD');
+		expect(own[0].parentElement?.previousElementSibling?.tagName, name).toBe('DD');
+		expect(own[0].getAttribute('aria-hidden'), name).toBe('true');
+		// Both "now" values keep a slot as wide as the longest rate, so the line beside them holds still.
+		expect(
+			Array.from(column.querySelectorAll('[data-metric]')).map((value) =>
+				value.classList.contains('min-w-[11ch]')
+			),
+			name
+		).toEqual([true, true]);
+		expect(bandOf(row).contains(own[0]), name).toBe(true);
+		expect(own[0].closest('button'), name).toBeNull();
+		if (name === 'lab') {
+			expect(own[0].getAttribute('data-samples'), name).toBe('0');
+			expect(pointsOf(own[0]), name).toEqual([]);
+		} else {
+			expect(own[0].getAttribute('data-samples'), name).toBe('3');
+			expect(pointsOf(own[0]), name).toEqual([3, 3]);
+		}
+	}
+	// The band still reads as before: labels, columns and the arrows' spans.
+	const office = rows()[0];
+	expect(labels(bandOf(office))).toEqual(FOUR_LABELS);
+	expect(columnsOf(bandOf(office))).toEqual(METRIC_COLUMNS);
+	expect(compact(office.querySelector('[data-metric="rate_up"]'))).toBe('48.0 KB/s');
+	const toggle = button('Expand: office', office)!;
+	click(toggle);
+	const details = detailsOf(toggle);
+	expect(details.querySelectorAll('[data-traffic]').length).toBeGreaterThan(3);
+	expect(sparklines(details)).toEqual([]);
+	// The hop and target bands keep their plain values: no slot, no line.
+	expect(details.querySelectorAll('[data-metric].min-w-\\[11ch\\]')).toHaveLength(0);
+	expect(sparklines(office)).toHaveLength(1);
+
+	click(target.querySelector('nav a[href="#/hosts"]')!);
+	await settle();
+	expect(rows('main article[data-host]')).toHaveLength(4);
+	expect(sparklines()).toEqual([]);
+	click(target.querySelector('nav a[href="#/connections"]')!);
+	await settle();
+	expect(rows('main [data-connection]')).toHaveLength(4);
+	expect(sparklines()).toEqual([]);
+});
+
+test('a reset starts the rate lines over: the re-read snapshot with its new `since` is their only sample', async () => {
+	await render('#/stats');
+	await poll();
+	await poll();
+	const office = rows()[0];
+	const line = sparklines(office)[0];
+	expect(line.getAttribute('data-samples')).toBe('3');
+	expect(pointsOf(line)).toEqual([3, 3]);
+	click(button('Reset statistics'));
+	await settle();
+	snapshot.since = '2026-09-19T09:00:02Z';
+	click(button('Confirm', confirmDialog()!));
+	await settle();
+	expect(requested('DELETE /apis/stats')).toBe(1);
+	expect(requested('GET /apis/stats')).toBe(4);
+	const after = sparklines(office)[0];
+	expect(after).toBe(line);
+	expect(after.getAttribute('data-samples')).toBe('1');
+	expect(pointsOf(after)).toEqual([]);
+	expect(sparklines().map((svg) => svg.getAttribute('data-samples'))).toEqual(['1', '1', '1', '0']);
+	await poll();
+	expect(after.getAttribute('data-samples')).toBe('2');
+	expect(pointsOf(after)).toEqual([2, 2]);
 });

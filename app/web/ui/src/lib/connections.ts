@@ -20,7 +20,8 @@ export type ConnectionSort = ListSort<ConnectionSortKey>;
 
 export const DEFAULT_CONNECTION_SORT: ConnectionSort = { key: 'started', direction: 'descending' };
 
-export const MAX_CONNECTION_ROWS = 200;
+// Rows revealed per step of the connections list (a rendering batch, not a cap on the data).
+export const CONNECTION_PAGE_SIZE = 200;
 
 export function currentConnections(rules: Nullable<RuleStats[]>): RuleConnection[] {
 	return list(rules).flatMap((rule) =>

@@ -71,7 +71,9 @@ that choice; language and theme remain available from Preferences.
 - `Overview`: how many rules are running (with the others counted as retrying,
   stopped or disabled), the active connections and the total opened since the
   statistics started, current rates and total traffic, and one card per rule
-  with its state, address, target, exit chain and rates. The card's `Enabled`
+  with its state, address, target, exit chain and rates. The current rates carry
+  a small line tracing the last minute of samples while the page is open; it
+  starts over after a reset or a pause. The card's `Enabled`
   switch stops or restarts that rule alone (it writes `disabled` to the file and
   applies it). Pencil and chart icons open the rule editor and its traffic
   statistics; the trash icon deletes the rule after confirmation. `New rule` and
@@ -171,7 +173,8 @@ Web UI.
 Three pages show the live numbers (bandwidth over the last second and its peak,
 total bytes and when the last byte went up or down, current and cumulative
 connections, dial latency and failures); the overview shows the per-rule rates
-as well. All three use the same list layout with aligned metric columns. Each
+as well, and the current rate of each rule is traced over the last minute. All
+three use the same list layout with aligned metric columns. Each
 entry shows its full statistics without expansion; circled question marks
 explain the concepts on hover, keyboard focus or click. `Rule Traffic` lists
 one entry per rule with its state and address. Expansion adds the whole chain
@@ -186,7 +189,8 @@ multiple endpoints retain their individual breakdowns.
 `Live Connections` lists every current connection with its client IP, rule (the hops
 it actually went through are shown on hover), target, current and peak rates,
 total bytes, last-transfer times and duration, sortable and filterable. The
-full client address and port are visible. Expansion adds only the start time
+full client address and port are visible. The list shows 200 connections at a
+time; `Show more` reveals the next 200. Expansion adds only the start time
 and path, without repeating the statistics; the `Disconnect` icon closes the
 connection. For loopback clients of rules that listen locally, the client
 also shows the local process that opened the connection (name and PID),
