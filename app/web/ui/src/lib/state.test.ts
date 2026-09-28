@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { rulesFixture, statusFixture } from '../../e2e/fixtures/api';
+import { rulesFixture, statsOf, statusFixture } from '../../e2e/fixtures/api';
 import { ApiError } from './api';
 import { busy } from './busy.svelte';
 import { confirm, confirmService } from './confirm';
@@ -7,7 +7,8 @@ import { createPoller, type Poller } from './polling.svelte';
 import { disconnectConnection, resetStats, stats } from './stats.svelte';
 import { cardState, countRuleStates, ruleState, runtimeState, status } from './status.svelte';
 import { THEME_STORAGE_KEY, theme } from './theme.svelte';
-import type { RuleStatus } from './types';
+import { trend } from './trend.svelte';
+import type { RuleStats, RuleStatus, Snapshot, Stats } from './types';
 import { SUCCESS_TOAST_MS, toasts } from './toast.svelte';
 
 function setVisibility(state: 'visible' | 'hidden') {
@@ -45,6 +46,7 @@ afterEach(() => {
 	vi.unstubAllGlobals();
 	vi.restoreAllMocks();
 	toasts.clear();
+	trend.reset();
 	localStorage.clear();
 });
 
@@ -287,6 +289,55 @@ describe('createPoller', () => {
 		pending[4].resolve(5);
 		await expect(refreshed).resolves.toBe(5);
 		expect(poller.answered).toBe(5);
+		unsubscribe();
+	});
+
+	test('onData sees every accepted answer once, in order, from polls and refreshes but not from failures', async () => {
+		const { load, pending } = fakeLoader<number>();
+		const onData = vi.fn();
+		const poller = createPoller({ load, intervalMs: 1000, onData });
+		const unsubscribe = poller.subscribe();
+		expect(onData).not.toHaveBeenCalled();
+		pending[0].resolve(1);
+		await tick();
+		expect(onData.mock.calls).toEqual([[1]]);
+		expect(poller.data).toBe(1);
+		await vi.advanceTimersByTimeAsync(1000);
+		pending[1].reject(new ApiError('network', 'Failed to fetch', null));
+		await tick();
+		expect(onData).toHaveBeenCalledTimes(1);
+		await vi.advanceTimersByTimeAsync(1000);
+		pending[2].resolve(3);
+		await tick();
+		expect(onData.mock.calls).toEqual([[1], [3]]);
+		const refreshed = poller.refresh();
+		pending[3].resolve(4);
+		await expect(refreshed).resolves.toBe(4);
+		expect(onData.mock.calls).toEqual([[1], [3], [4]]);
+		expect(poller.data).toBe(4);
+		unsubscribe();
+	});
+
+	test('onData is not called for answers dropped after unsubscribe or while hidden', async () => {
+		const { load, pending } = fakeLoader<string>();
+		const onData = vi.fn();
+		const poller = createPoller({ load, intervalMs: 1000, onData });
+		poller.subscribe()();
+		expect(pending[0].signal.aborted).toBe(true);
+		pending[0].resolve('late');
+		await tick();
+		expect(onData).not.toHaveBeenCalled();
+		const unsubscribe = poller.subscribe();
+		setVisibility('hidden');
+		expect(pending[1].signal.aborted).toBe(true);
+		pending[1].resolve('hidden');
+		await tick();
+		expect(onData).not.toHaveBeenCalled();
+		expect(poller.data).toBeNull();
+		setVisibility('visible');
+		pending[2].resolve('shown');
+		await tick();
+		expect(onData.mock.calls).toEqual([['shown']]);
 		unsubscribe();
 	});
 
@@ -580,6 +631,64 @@ describe('status and stats stores', () => {
 		expect(calls).toEqual([
 			['DELETE', '/apis/stats/connections/42'],
 			['GET', '/apis/stats']
+		]);
+		unsubscribe();
+	});
+
+	test('every accepted stats snapshot adds one rate sample per rule and in total to the trend', async () => {
+		const rule = (name: string, partial: Partial<Stats>): RuleStats => ({
+			name,
+			stats: statsOf(partial),
+			listen: null,
+			forward: null,
+			targets: null,
+			connections: null,
+			targets_evicted: 0
+		});
+		const snapshots: Snapshot[] = [
+			{
+				since: 'since-1',
+				rules: [
+					rule('office', { rate_up: 10, rate_down: 100 }),
+					rule('lab', { rate_up: 1, rate_down: 2 })
+				]
+			},
+			{
+				since: 'since-1',
+				rules: [
+					rule('office', { rate_up: 20, rate_down: 200 }),
+					rule('lab', { rate_up: 3, rate_down: 4 })
+				]
+			}
+		];
+		let served = 0;
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(() =>
+				Promise.resolve(
+					new Response(JSON.stringify(snapshots[Math.min(served++, snapshots.length - 1)]), {
+						status: 200
+					})
+				)
+			)
+		);
+		const unsubscribe = stats.subscribe();
+		await tick();
+		expect(stats.data).toEqual(snapshots[0]);
+		expect(trend.total).toEqual([{ up: 11, down: 102 }]);
+		await vi.advanceTimersByTimeAsync(1000);
+		expect(stats.data).toEqual(snapshots[1]);
+		expect(trend.of('office')).toEqual([
+			{ up: 10, down: 100 },
+			{ up: 20, down: 200 }
+		]);
+		expect(trend.of('lab')).toEqual([
+			{ up: 1, down: 2 },
+			{ up: 3, down: 4 }
+		]);
+		expect(trend.total).toEqual([
+			{ up: 11, down: 102 },
+			{ up: 23, down: 204 }
 		]);
 		unsubscribe();
 	});

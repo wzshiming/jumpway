@@ -13,6 +13,7 @@
 	import Button from '../lib/components/ui/Button.svelte';
 	import HelpTip from '../lib/components/ui/HelpTip.svelte';
 	import PageHeader from '../lib/components/ui/PageHeader.svelte';
+	import SkeletonRows from '../lib/components/ui/SkeletonRows.svelte';
 	import StatusChip, { type ChipState } from '../lib/components/ui/StatusChip.svelte';
 	import { retainFocus } from '../lib/focus.svelte';
 	import { DASH, displayURL, redactURL } from '../lib/format';
@@ -33,6 +34,7 @@
 		type StatsRow
 	} from '../lib/statsRows';
 	import { ruleState, status } from '../lib/status.svelte';
+	import { trend } from '../lib/trend.svelte';
 	import {
 		list,
 		type Hop,
@@ -182,8 +184,8 @@
 		{/snippet}
 	</ListControls>
 	{#if !ready}
-		{#if !error}
-			<p class="text-sm text-fg-muted">{t('loading')}</p>
+		{#if !error && !stats.error}
+			<SkeletonRows />
 		{/if}
 	{:else if rows.length === 0}
 		<p class="text-sm text-fg-muted">{t('noRules')}</p>
@@ -346,6 +348,7 @@
 						<TrafficDetail
 							stats={entry?.stats}
 							connectionsHref={statsRoute('connections', row.name)}
+							trend={trend.of(row.name)}
 						/>
 					{/snippet}
 					<ChainFlow

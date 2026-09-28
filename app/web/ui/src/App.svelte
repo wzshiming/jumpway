@@ -1,8 +1,6 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
 	import IconMenu from '~icons/lucide/menu';
-	import IconPanelLeftClose from '~icons/lucide/panel-left-close';
-	import IconPanelLeftOpen from '~icons/lucide/panel-left-open';
 	import { hashLinks } from './lib/actions/links';
 	import { ApiError } from './lib/api';
 	import Brand from './lib/components/shell/Brand.svelte';
@@ -20,7 +18,7 @@
 	import { moved } from './lib/moved.svelte';
 	import { pageTitle } from './lib/nav';
 	import { router } from './lib/router.svelte';
-	import { sidebar } from './lib/sidebar.svelte';
+	import { SIDEBAR_ID, sidebar } from './lib/sidebar.svelte';
 	import { runtimeState, status } from './lib/status.svelte';
 	import { theme } from './lib/theme.svelte';
 	import ConnectionsPage from './routes/ConnectionsPage.svelte';
@@ -32,7 +30,6 @@
 	import YamlPage from './routes/YamlPage.svelte';
 
 	const DRAWER_ID = 'navigation-drawer';
-	const SIDEBAR_ID = 'sidebar';
 
 	// Language, route and sidebar width are resolved before the first render so nothing flashes.
 	i18n.init();
@@ -95,26 +92,10 @@
 			id={SIDEBAR_ID}
 			class="flex min-h-0 flex-col overflow-y-auto border-r border-line bg-surface"
 		>
-			<div
-				class="flex items-center {collapsed
-					? 'flex-col gap-2 px-2 py-3'
-					: 'justify-between py-4 pr-2 pl-4'}"
-			>
+			<div class={collapsed ? 'flex justify-center px-2 py-3' : 'flex items-center px-4 py-4'}>
 				<Brand compact={collapsed} />
-				<IconButton
-					label={t(collapsed ? 'expandSidebar' : 'collapseSidebar')}
-					expanded={!collapsed}
-					controls={SIDEBAR_ID}
-					onclick={() => sidebar.toggle()}
-				>
-					{#if collapsed}
-						<IconPanelLeftOpen class="size-4" aria-hidden="true" />
-					{:else}
-						<IconPanelLeftClose class="size-4" aria-hidden="true" />
-					{/if}
-				</IconButton>
 			</div>
-			<Sidebar {collapsed} />
+			<Sidebar {collapsed} ontoggle={() => sidebar.toggle()} />
 		</aside>
 	{:else}
 		<header class="flex h-12 shrink-0 items-center gap-2 border-b border-line bg-surface px-2">

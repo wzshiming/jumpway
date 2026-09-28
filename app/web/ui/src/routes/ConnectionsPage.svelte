@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, untrack } from 'svelte';
+	import { onMount, tick, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { errorMessage } from '../lib/api';
 	import ListControls from '../lib/components/stats/ListControls.svelte';
@@ -7,10 +7,11 @@
 	import Banner from '../lib/components/ui/Banner.svelte';
 	import Button from '../lib/components/ui/Button.svelte';
 	import PageHeader from '../lib/components/ui/PageHeader.svelte';
+	import SkeletonRows from '../lib/components/ui/SkeletonRows.svelte';
 	import {
+		CONNECTION_PAGE_SIZE,
 		CONNECTION_SORT_KEYS,
 		DEFAULT_CONNECTION_SORT,
-		MAX_CONNECTION_ROWS,
 		connectionSortLabel,
 		currentConnections,
 		filterConnections,
@@ -32,6 +33,8 @@
 	let rule = $state('');
 	let query = $state('');
 	let sort = $state<ConnectionSort>(DEFAULT_CONNECTION_SORT);
+	let limit = $state(CONNECTION_PAGE_SIZE);
+	let listElement = $state<HTMLElement | null>(null);
 	// Connection ids whose DELETE is in flight; only their own button is disabled.
 	const pending = new SvelteSet<number>();
 	// Expanded connection ids; kept across polls.
@@ -50,10 +53,19 @@
 		void router.navigate(statsRoute('connections', value), { replace: true });
 	}
 
+	// Another rule or query is another list and starts at its first page; a re-sort keeps the rows.
+	$effect.pre(() => {
+		void rule;
+		void query;
+		untrack(() => {
+			limit = CONNECTION_PAGE_SIZE;
+		});
+	});
+
 	const all = $derived(currentConnections(stats.data?.rules));
 	const filtered = $derived(filterConnections(all, rule, query));
 	const sorted = $derived(sortConnections(filtered, sort));
-	const shown = $derived(sorted.slice(0, MAX_CONNECTION_ROWS));
+	const shown = $derived(sorted.slice(0, limit));
 	const filtering = $derived(rule !== '' || query.trim() !== '');
 
 	retainFocus('[data-connection]', () => shown);
@@ -67,6 +79,17 @@
 	function toggleRow(id: number) {
 		if (expanded.has(id)) expanded.delete(id);
 		else expanded.add(id);
+	}
+
+	async function showMore() {
+		const first = sorted[shown.length].id;
+		limit += CONNECTION_PAGE_SIZE;
+		await tick();
+		// The button leaves with the last page: reading continues from the first row it revealed.
+		if (sorted.length <= shown.length)
+			listElement
+				?.querySelector<HTMLElement>(`[data-connection="${first}"] [data-header-toggle]`)
+				?.focus();
 	}
 
 	async function disconnect(id: number) {
@@ -87,7 +110,7 @@
 	<StatsToolbar />
 </PageHeader>
 
-<section aria-label={t('connections')}>
+<section aria-label={t('connections')} aria-busy={!stats.data && !stats.error}>
 	{#if stats.error}
 		<Banner kind="error" title={errorMessage(stats.error)} message={null}>
 			<Button variant="secondary" onclick={() => void stats.refresh()}>{t('retry')}</Button>
@@ -118,12 +141,12 @@
 	</ListControls>
 	{#if !stats.data}
 		{#if !stats.error}
-			<p class="text-sm text-fg-muted">{t('loading')}</p>
+			<SkeletonRows />
 		{/if}
 	{:else if shown.length === 0}
 		<p class="text-sm text-fg-muted">{t('noConnections')}</p>
 	{:else}
-		<div class="space-y-3">
+		<div class="space-y-3" bind:this={listElement}>
 			{#each shown as connection (connection.id)}
 				<ConnectionItem
 					{connection}
@@ -136,8 +159,15 @@
 		</div>
 	{/if}
 	{#if sorted.length > shown.length}
-		<p class="mt-3 text-sm text-fg-muted">
-			{t('showingConnections', { shown: shown.length, total: sorted.length })}
-		</p>
+		<div class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2" data-connections-more>
+			<p class="text-sm text-fg-muted">
+				{t('showingConnections', { shown: shown.length, total: sorted.length })}
+			</p>
+			<Button variant="secondary" onclick={() => void showMore()}>
+				{t('showMoreConnections', {
+					count: Math.min(CONNECTION_PAGE_SIZE, sorted.length - shown.length)
+				})}
+			</Button>
+		</div>
 	{/if}
 </section>

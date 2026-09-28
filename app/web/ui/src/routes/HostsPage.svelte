@@ -11,6 +11,7 @@
 	import Button from '../lib/components/ui/Button.svelte';
 	import HelpTip from '../lib/components/ui/HelpTip.svelte';
 	import PageHeader from '../lib/components/ui/PageHeader.svelte';
+	import SkeletonRows from '../lib/components/ui/SkeletonRows.svelte';
 	import { retainFocus } from '../lib/focus.svelte';
 	import { formatCount, redactURL } from '../lib/format';
 	import {
@@ -58,7 +59,7 @@
 	<StatsToolbar />
 </PageHeader>
 
-<section aria-label={t('hosts')}>
+<section aria-label={t('hosts')} aria-busy={!stats.data && !stats.error}>
 	{#if stats.error}
 		<Banner kind="error" title={errorMessage(stats.error)} message={null}>
 			<Button variant="secondary" onclick={() => void stats.refresh()}>{t('retry')}</Button>
@@ -75,7 +76,7 @@
 	</ListControls>
 	{#if !stats.data}
 		{#if !stats.error}
-			<p class="text-sm text-fg-muted">{t('loading')}</p>
+			<SkeletonRows />
 		{/if}
 	{:else if hosts.length === 0}
 		<p class="text-sm text-fg-muted">{t('noHosts')}</p>

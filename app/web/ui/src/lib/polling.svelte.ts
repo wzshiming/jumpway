@@ -7,6 +7,8 @@ export interface PollerOptions<T> {
 	// Cap for the delay after consecutive failures, which doubles from `intervalMs`; defaults to
 	// `intervalMs`, i.e. no backoff.
 	maxIntervalMs?: number;
+	// Called for every load whose answer is accepted, never for stale, aborted or failed loads.
+	onData?: (value: T) => void;
 }
 
 export interface Poller<T> {
@@ -29,7 +31,8 @@ export interface Poller<T> {
 export function createPoller<T>({
 	load,
 	intervalMs,
-	maxIntervalMs = intervalMs
+	maxIntervalMs = intervalMs,
+	onData
 }: PollerOptions<T>): Poller<T> {
 	let data = $state.raw<T | null>(null);
 	let error = $state.raw<unknown>(null);
@@ -80,6 +83,7 @@ export function createPoller<T>({
 					answered = number;
 					error = null;
 					failures = 0;
+					onData?.(value);
 					return value;
 				},
 				(reason: unknown) => {

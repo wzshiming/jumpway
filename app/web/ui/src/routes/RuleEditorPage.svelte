@@ -14,6 +14,7 @@
 	import Field from '../lib/components/ui/Field.svelte';
 	import FormActions from '../lib/components/ui/FormActions.svelte';
 	import PageHeader from '../lib/components/ui/PageHeader.svelte';
+	import Skeleton from '../lib/components/ui/Skeleton.svelte';
 	import { confirm } from '../lib/confirm';
 	import { t } from '../lib/i18n.svelte';
 	import { router } from '../lib/router.svelte';
@@ -628,5 +629,36 @@
 	</form>
 	<UrlBuilderDialog bind:this={builder} />
 {:else}
-	<p class="text-sm text-fg-muted" aria-busy="true">{t('loading')}</p>
+	{#snippet fieldSkeleton(width = 'w-full')}
+		<div class="min-w-0">
+			<Skeleton class="mb-1.5 h-3 w-20" />
+			<Skeleton class="h-8 rounded-md {width}" />
+		</div>
+	{/snippet}
+	<div aria-busy="true">
+		<span class="sr-only">{t('loading')}</span>
+		<div class="band pt-0">
+			<Skeleton class="mb-3 h-5 w-24" />
+			<div class="grid items-end gap-4 sm:grid-cols-[minmax(0,1fr)_auto_auto_auto]">
+				{@render fieldSkeleton()}
+				<Skeleton class="my-1.5 h-5 w-20 rounded-full" />
+				{@render fieldSkeleton('w-40')}
+				{@render fieldSkeleton('w-40')}
+			</div>
+		</div>
+		<div class="band mt-5">
+			<Skeleton class="mb-3 h-5 w-24" />
+			<div class="grid gap-4 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+				{@render fieldSkeleton()}
+				{@render fieldSkeleton()}
+			</div>
+		</div>
+		<div class="band mt-5">
+			<Skeleton class="mb-3 h-5 w-24" />
+			<div class="grid gap-4 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+				{@render fieldSkeleton()}
+				{@render fieldSkeleton()}
+			</div>
+		</div>
+	</div>
 {/if}

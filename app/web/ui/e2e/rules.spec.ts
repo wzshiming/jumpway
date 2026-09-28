@@ -812,7 +812,10 @@ test('the card footer keeps its four 32px actions and long rates inside the card
 		rule.stats.rate_up = 1047000;
 		rule.stats.rate_down = 1047000;
 	}
+	// The grid fills 18rem columns into the content beside the expanded sidebar: 820px leaves about
+	// 532px, one column; 1280px leaves about 992px, three.
 	for (const width of [375, 820, 1280]) {
+		const columns = width === 1280 ? 3 : 1;
 		await page.setViewportSize({ width, height: 900 });
 		await page.goto(`/?w=${width}#/`);
 		await expect(cards(page)).toHaveCount(4);
@@ -825,6 +828,9 @@ test('the card footer keeps its four 32px actions and long rates inside the card
 			const previousBox = trailing.previousElementSibling!.getBoundingClientRect();
 			return {
 				overflow: main.scrollWidth - main.clientWidth,
+				columns: new Set(
+					articles.map((article) => Math.round(article.getBoundingClientRect().left))
+				).size,
 				trailing: {
 					border: getComputedStyle(trailing).borderTopStyle,
 					sharesRow: Math.abs(trailingBox.top - previousBox.top) < 1,
@@ -849,10 +855,13 @@ test('the card footer keeps its four 32px actions and long rates inside the card
 			};
 		});
 		expect(geometry.overflow, `${width}px`).toBeLessThanOrEqual(0);
+		expect(geometry.columns, `${width}px`).toBe(columns);
+		// Four cards: the New rule tile shares a row only in the three-column layout; alone on its
+		// row it keeps its own minimum height.
 		expect(geometry.trailing, `${width}px`).toEqual({
 			border: 'dashed',
-			sharesRow: width === 1280,
-			height: width === 1280 ? geometry.trailing.previousHeight : 160,
+			sharesRow: columns === 3,
+			height: columns === 3 ? geometry.trailing.previousHeight : 160,
 			previousHeight: geometry.trailing.previousHeight
 		});
 		for (const card of geometry.cards) {
@@ -874,6 +883,99 @@ test('the card footer keeps its four 32px actions and long rates inside the card
 	await dialog.getByRole('button', { name: 'Cancel' }).click();
 	await expect(dialog).toHaveCount(0);
 	expect(api.writes).toEqual([]);
+});
+
+test('the cards follow the content width: one column beside the expanded sidebar at 768, two once it is collapsed, three on a desktop; titles and addresses stay whole', async ({
+	page,
+	api
+}) => {
+	// A slow status: meanwhile every enabled rule's chip reads "Status unknown", the widest label.
+	const hold = () => {
+		let release!: () => void;
+		api.delay.set(
+			'GET /apis/configs/status',
+			new Promise<void>((resolve) => {
+				release = resolve;
+			})
+		);
+		return release;
+	};
+	const layout = () =>
+		page.evaluate(() => {
+			const main = document.getElementById('main')!;
+			const articles = Array.from(document.querySelectorAll<HTMLElement>('main article'));
+			const boxes = articles.map((article) => article.getBoundingClientRect());
+			const top = Math.min(...boxes.map((box) => Math.round(box.top)));
+			return {
+				names: articles.map((article) => article.querySelector('header a')!.textContent!.trim()),
+				overflow: Math.max(0, main.scrollWidth - main.clientWidth),
+				columns: new Set(boxes.map((box) => Math.round(box.left))).size,
+				firstRow: boxes.filter((box) => Math.round(box.top) === top).length,
+				problems: articles.flatMap((article) => {
+					const title = article.querySelector<HTMLElement>('header a')!;
+					const name = title.textContent!.trim();
+					const style = getComputedStyle(title);
+					const out: string[] = [];
+					// Chrome computes the clamp's -webkit-box as flow-root; a display utility after it undoes the clamp.
+					if (
+						style.getPropertyValue('-webkit-line-clamp') !== '2' ||
+						!['-webkit-box', 'flow-root'].includes(style.display)
+					)
+						out.push(`${name}: title unclamped (${style.display})`);
+					if (
+						title.scrollHeight > title.clientHeight + 1 ||
+						title.scrollWidth > title.clientWidth + 1
+					)
+						out.push(`${name}: title clipped`);
+					// Listen and target: 13px mono on one line is about 20px tall; two lines are 37px.
+					for (const address of Array.from(article.querySelectorAll<HTMLElement>('dl dd')).slice(
+						0,
+						2
+					))
+						if (address.getBoundingClientRect().height >= 24)
+							out.push(`${name}: address wraps: ${address.textContent!.trim()}`);
+					return out;
+				})
+			};
+		});
+	const expectLayout = async (width: number, sidebar: string, columns: number) => {
+		await page.setViewportSize({ width, height: 900 });
+		await expect(cards(page)).toHaveCount(4);
+		await expect(cards(page).locator('[data-state="unknown"]')).toHaveCount(3);
+		await expect.poll(layout, `${width}px ${sidebar}`).toEqual({
+			names: rulesFixture.map((rule) => rule.name),
+			overflow: 0,
+			columns,
+			firstRow: columns,
+			problems: []
+		});
+		if (process.env.JW_SHOTS) {
+			const grown = await page.evaluate(() => document.getElementById('main')!.scrollHeight + 64);
+			await page.setViewportSize({ width, height: grown });
+			const path = `/tmp/jw-polish-s1-shots/overview-${width}-${sidebar}.png`;
+			await page.screenshot({ path, animations: 'disabled' });
+		}
+	};
+
+	// Beside the expanded 224px sidebar the content is about 480, 736 and 992px wide: 18rem columns.
+	let release = hold();
+	await page.goto('/');
+	await expectLayout(768, 'expanded', 1);
+	await expectLayout(1024, 'expanded', 2);
+	await expectLayout(1280, 'expanded', 3);
+	await expectLayout(375, 'mobile', 1);
+	release();
+	await expect(cards(page).locator('[data-state="unknown"]')).toHaveCount(0);
+
+	// Arriving with the sidebar collapsed to its 64px rail: about 640px at 768, two columns.
+	await page.addInitScript(() => localStorage.setItem('jumpway.sidebarCollapsed', 'true'));
+	release = hold();
+	await page.setViewportSize({ width: 768, height: 900 });
+	await page.goto('/?collapsed#/');
+	await expect.poll(async () => (await page.locator('aside').boundingBox())?.width).toBe(64);
+	await expectLayout(768, 'collapsed', 2);
+	release();
+	await expect(cards(page).locator('[data-state="unknown"]')).toHaveCount(0);
 });
 
 test('virtual endpoints: a channel pairs an exit listener with an entry; cards and stats link the peers and warn once the exit is disabled or gone', async ({

@@ -7,11 +7,13 @@
 	import SidebarFooter from './SidebarFooter.svelte';
 
 	// collapsed: the icon rail; every link keeps its name through aria-label and a tooltip.
+	// ontoggle: renders the collapse control in the footer; the drawer passes none.
 	interface Props {
 		collapsed?: boolean;
+		ontoggle?: () => void;
 	}
 
-	let { collapsed = false }: Props = $props();
+	let { collapsed = false, ontoggle }: Props = $props();
 
 	const current = (item: NavItem) => item.kinds.includes(router.route.kind);
 </script>
@@ -39,4 +41,4 @@
 		{/each}
 	</ul>
 </nav>
-<SidebarFooter {collapsed} />
+<SidebarFooter {collapsed} {ontoggle} />

@@ -8,6 +8,7 @@
 	import Field from '../lib/components/ui/Field.svelte';
 	import FormActions from '../lib/components/ui/FormActions.svelte';
 	import PageHeader from '../lib/components/ui/PageHeader.svelte';
+	import Skeleton from '../lib/components/ui/Skeleton.svelte';
 	import { t } from '../lib/i18n.svelte';
 	import { moved } from '../lib/moved.svelte';
 	import { router } from '../lib/router.svelte';
@@ -301,6 +302,29 @@
 			</fieldset>
 		</form>
 	{:else}
-		<p class="text-sm text-fg-muted" aria-busy="true">{t('loading')}</p>
+		{#snippet fieldSkeleton(height: string)}
+			<div class="min-w-0">
+				<Skeleton class="mb-1.5 h-3 w-20" />
+				<Skeleton class="w-full rounded-md {height}" />
+			</div>
+		{/snippet}
+		<div aria-busy="true">
+			<span class="sr-only">{t('loading')}</span>
+			<div class="band pt-0">
+				<Skeleton class="mb-3 h-5 w-20" />
+				<div class="grid gap-4 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+					{@render fieldSkeleton('h-8')}
+					{@render fieldSkeleton('h-8')}
+				</div>
+			</div>
+			<div class="band">
+				<Skeleton class="mb-3 h-5 w-20" />
+				<div class="grid gap-4 md:grid-cols-3">
+					{@render fieldSkeleton('h-44')}
+					{@render fieldSkeleton('h-44')}
+					{@render fieldSkeleton('h-44')}
+				</div>
+			</div>
+		</div>
 	{/if}
 </div>

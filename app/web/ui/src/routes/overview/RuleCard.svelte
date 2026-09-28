@@ -5,6 +5,7 @@
 	import IconTrash from '~icons/lucide/trash-2';
 	import { tooltip } from '../../lib/actions/tooltip.svelte';
 	import DirectionArrow from '../../lib/components/stats/DirectionArrow.svelte';
+	import Sparkline from '../../lib/components/stats/Sparkline.svelte';
 	import VirtualPeers from '../../lib/components/rules/VirtualPeers.svelte';
 	import HelpTip from '../../lib/components/ui/HelpTip.svelte';
 	import IconButton from '../../lib/components/ui/IconButton.svelte';
@@ -15,6 +16,7 @@
 	import { forwardTarget, isForward, listenAddress } from '../../lib/rule';
 	import { cardState } from '../../lib/status.svelte';
 	import { DIRECTIONS } from '../../lib/traffic';
+	import { trend } from '../../lib/trend.svelte';
 	import type { Rule, RuleStatus, Stats } from '../../lib/types';
 	import { normalizeWay } from '../../lib/way';
 
@@ -68,7 +70,7 @@
 			<a
 				id={titleId}
 				href={ruleRoute(rule.name)}
-				class="block truncate text-[15px] font-semibold text-fg hover:text-accent"
+				class="line-clamp-2 text-[15px] font-semibold break-words text-fg hover:text-accent"
 			>
 				{rule.name}
 			</a>
@@ -106,7 +108,7 @@
 			{t('listen')}
 			<HelpTip concept={t('listen')} text={t('help.listen')} />
 		</dt>
-		<dd class="font-mono text-[13px] break-all">
+		<dd class="font-mono text-[13px] [overflow-wrap:anywhere]">
 			{address}
 			{#if rule.listen.virtual}
 				<VirtualPeers side="listen" channel={rule.listen.virtual} {rules} self={rule.name} />
@@ -116,7 +118,7 @@
 			{t('target')}
 			<HelpTip concept={t('target')} text={t('help.target')} />
 		</dt>
-		<dd class="font-mono text-[13px] break-all">
+		<dd class="font-mono text-[13px] [overflow-wrap:anywhere]">
 			{target || DASH}
 			{#if rule.forward.virtual}
 				<VirtualPeers side="forward" channel={rule.forward.virtual} {rules} self={rule.name} />
@@ -136,16 +138,18 @@
 	<footer
 		class="mt-auto flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-line pt-3 text-sm"
 	>
-		<span
-			class="inline-flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-[13px] text-fg-muted tabular-nums"
-		>
-			{#each DIRECTIONS as direction (direction.key)}
-				<span class="inline-flex items-center gap-1 whitespace-nowrap">
-					<DirectionArrow {direction} />
-					<span class="sr-only">{t(direction.label)}</span>
-					{stats ? formatRate(stats[direction.rate]) : DASH}
-				</span>
-			{/each}
+		<!-- Upload above download in slots as wide as the longest rate, the line beside them: nothing shifts as the numbers change. -->
+		<span class="flex items-center gap-2 font-mono text-[13px] text-fg-muted tabular-nums">
+			<span class="flex flex-col gap-y-0.5">
+				{#each DIRECTIONS as direction (direction.key)}
+					<span class="inline-flex items-center gap-1 whitespace-nowrap">
+						<DirectionArrow {direction} />
+						<span class="sr-only">{t(direction.label)}</span>
+						<span class="min-w-[11ch]">{stats ? formatRate(stats[direction.rate]) : DASH}</span>
+					</span>
+				{/each}
+			</span>
+			<Sparkline series={trend.of(rule.name)} class="h-9 w-16 shrink-0" />
 		</span>
 		<!-- Icon actions one row tall, sitting on the card's own edge. -->
 		<span class="-my-1.5 ml-auto flex items-center gap-0.5">

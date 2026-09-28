@@ -201,6 +201,45 @@ test('runtime and rule errors show proxy URLs with their credentials masked, now
 	}
 });
 
+test('the sidebar clamps a long runtime error to three lines until it is clicked open; a new error starts clamped', async () => {
+	let reported = statusFixture.error;
+	stubApi({ '/apis/configs/status': () => json({ ...statusFixture, error: reported }) });
+	render();
+	await settle();
+	const runtime = target.querySelector('aside [data-state]')!.parentElement!;
+	const error = runtime.querySelector<HTMLButtonElement>('button[aria-expanded]')!;
+	expect(error.tagName).toBe('BUTTON');
+	expect(error.getAttribute('aria-expanded')).toBe('false');
+	expect(error.classList.contains('line-clamp-3')).toBe(true);
+	// The whole redacted text stays in the DOM; the clamp is visual only.
+	expect(error.textContent).toContain(
+		'invalid proxy URL "socks5://xxxxx@host:bad": parse "socks5://xxxxx@host:bad": invalid port ":bad" after host (e.g. socks5://host:1080)'
+	);
+	expect(error.textContent).not.toContain(SECRET);
+	error.focus();
+	click(error);
+	flushSync();
+	expect(error.getAttribute('aria-expanded')).toBe('true');
+	expect(error.classList.contains('line-clamp-3')).toBe(false);
+	expect(document.activeElement).toBe(error);
+	click(error);
+	flushSync();
+	expect(error.getAttribute('aria-expanded')).toBe('false');
+	expect(error.classList.contains('line-clamp-3')).toBe(true);
+
+	click(error);
+	flushSync();
+	expect(error.getAttribute('aria-expanded')).toBe('true');
+	reported = 'reload failed: boom';
+	void status.refresh();
+	await settle();
+	flushSync();
+	expect(error.isConnected).toBe(true);
+	expect(error.textContent?.trim()).toBe('reload failed: boom');
+	expect(error.getAttribute('aria-expanded')).toBe('false');
+	expect(error.classList.contains('line-clamp-3')).toBe(true);
+});
+
 test('a rule card masks the credentials in its runtime error', async () => {
 	render();
 	await settle();
@@ -396,6 +435,30 @@ test('the desktop sidebar collapses to an icon rail that keeps every control rea
 	expect(target.querySelector('aside [data-state]')?.tagName).toBe('P');
 	expect(target.querySelector('aside button[aria-label="Preferences"]')).toBeNull();
 	expect(localStorage.getItem('jumpway.sidebarCollapsed')).toBe('false');
+});
+
+test('the sidebar toggle is the last control, after the resource links at the foot of the sidebar, in both widths', async () => {
+	render();
+	await settle();
+	const placement = () => {
+		const aside = target.querySelector('aside')!;
+		const toggle = sidebarToggle();
+		const resources = aside.querySelector('ul[aria-label="Resources"]')!;
+		return {
+			afterResources: Boolean(
+				resources.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING
+			),
+			sameRow: toggle.parentElement === resources.parentElement,
+			headerButtons: aside.firstElementChild!.querySelectorAll('button').length,
+			last: Array.from(aside.querySelectorAll('a, button')).at(-1) === toggle
+		};
+	};
+	const expected = { afterResources: true, sameRow: true, headerButtons: 0, last: true };
+	expect(placement()).toEqual(expected);
+	click(sidebarToggle());
+	flushSync();
+	expect(sidebarToggle().getAttribute('aria-expanded')).toBe('false');
+	expect(placement()).toEqual(expected);
 });
 
 test('a denied storage neither blocks collapsing nor breaks the start-up read; the drawer ignores the rail choice', async () => {

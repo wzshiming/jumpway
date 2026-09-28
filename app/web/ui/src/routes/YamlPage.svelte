@@ -7,6 +7,7 @@
 	import Button from '../lib/components/ui/Button.svelte';
 	import FormActions from '../lib/components/ui/FormActions.svelte';
 	import PageHeader from '../lib/components/ui/PageHeader.svelte';
+	import Skeleton from '../lib/components/ui/Skeleton.svelte';
 	import { confirm } from '../lib/confirm';
 	import { t } from '../lib/i18n.svelte';
 	import { moved } from '../lib/moved.svelte';
@@ -170,5 +171,10 @@
 		</FormActions>
 	</form>
 {:else}
-	<p class="text-sm text-fg-muted" aria-busy="true">{t('loading')}</p>
+	<div aria-busy="true">
+		<span class="sr-only">{t('loading')}</span>
+		<Skeleton class="mb-1.5 h-3 w-32" />
+		<Skeleton class="min-h-[60vh] w-full rounded-md" />
+		<Skeleton class="mt-4 h-8 w-28 rounded-md" />
+	</div>
 {/if}

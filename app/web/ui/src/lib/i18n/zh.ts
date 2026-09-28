@@ -106,6 +106,7 @@ export const zh = {
 	disconnected: '已断开连接。',
 	noConnections: '当前没有连接',
 	showingConnections: '显示 {total} 个连接中的 {shown} 个',
+	showMoreConnections: '再显示 {count} 个',
 	statsSince: '统计起始：{time}',
 	resetStats: '重置统计',
 	resetStatsConfirm: '重置所有规则的统计吗？',
@@ -218,6 +219,8 @@ export const zh = {
 
 	// Concept definitions behind the circled question marks
 	'help.now': '当前：最近一个完整的 1 秒窗口内的每秒字节数。',
+	'help.nowTrend':
+		'当前：最近一个完整的 1 秒窗口内的每秒字节数。数值旁有空间时，折线为页面打开期间最近约一分钟的采样，重置统计或暂停后重新开始。',
 	'help.peak': '峰值：自上次重置统计以来观察到的最高 1 秒速率。',
 	'help.peakSum': '峰值（合计）：各端点峰值相加所得，只是一个上界，因为它们未必同时出现。',
 	'help.total': '累计：自上次重置统计以来传输的字节数。',
@@ -244,7 +247,7 @@ export const zh = {
 	'help.kpi.active':
 		'所有规则中自上次重置以来新建且仍然打开的连接数，以及自那以来累计打开的连接数。',
 	'help.kpi.rate':
-		'所有规则在最近一个完整秒内的每秒字节数：↑ 上传为客户端发往目标方向，↓ 下载为返回方向。',
+		'所有规则在最近一个完整秒内的每秒字节数：↑ 上传为客户端发往目标方向，↓ 下载为返回方向。数值旁有空间时，折线为页面打开期间最近约一分钟的采样，重置统计或暂停后重新开始。',
 	'help.kpi.total': '自上次重置统计以来所有规则传输的字节数：↑ 上传，↓ 下载。',
 	'help.state':
 		'状态：规则的监听是否正在运行。重试中：监听尚未启动成功，括号内为连续失败次数，仍在继续尝试。',
