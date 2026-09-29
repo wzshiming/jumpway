@@ -173,9 +173,10 @@ Web UI.
 Three pages show the live numbers (bandwidth over the last second and its peak,
 total bytes and when the last byte went up or down, current and cumulative
 connections, dial latency and failures); the overview shows the per-rule rates
-as well, and the current rate of each rule is traced over the last minute. All
-three use the same list layout with aligned metric columns. Each
-entry shows its full statistics without expansion; circled question marks
+as well, and the current rate of each rule, each proxy host and its endpoints,
+and each live connection is traced over the last minute. All three use the
+same list layout with aligned metric columns. Each entry shows its full
+statistics without expansion; circled question marks
 explain the concepts on hover, keyboard focus or click. `Rule Traffic` lists
 one entry per rule with its state and address. Expansion adds the whole chain
 in traffic order: clients, the entry (or the hops that bind a
