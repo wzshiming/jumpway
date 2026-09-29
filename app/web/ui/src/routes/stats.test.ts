@@ -2116,6 +2116,10 @@ test('every rule, host, endpoint and connection draws one rate line under its "n
 		expect(line.getAttribute('data-samples'), name).toBe('3');
 		expect(pointsOf(line), name).toEqual([3, 3]);
 	}
+	// :2222 downloads twice its upload: its upload line runs mid-height, the host's sum would not.
+	expect(endpoints[1].querySelector('polyline')?.getAttribute('points')).toBe(
+		'115,12 117,12 119,12'
+	);
 	expect(sparklines(bastion)).toHaveLength(3);
 	expect(sparklines(bandOf(bastion))).toHaveLength(1);
 	const hopA = hosts[0];
@@ -2136,6 +2140,10 @@ test('every rule, host, endpoint and connection draws one rate line under its "n
 		expect(line.getAttribute('data-samples'), name).toBe('3');
 		expect(pointsOf(line), name).toEqual([3, 3]);
 	}
+	// 103 moves nothing, so its lines lie on the baseline; its rule's series would not.
+	expect(connections[0].querySelector('polyline')?.getAttribute('points')).toBe(
+		'115,23 117,23 119,23'
+	);
 	const curl = connections[2];
 	const curlToggle = button('Expand: example.com:443', curl)!;
 	click(curlToggle);
