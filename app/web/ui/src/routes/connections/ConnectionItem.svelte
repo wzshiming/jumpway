@@ -9,6 +9,7 @@
 	import { DASH, formatDuration } from '../../lib/format';
 	import { t } from '../../lib/i18n.svelte';
 	import { statsRoute } from '../../lib/routes';
+	import { trend } from '../../lib/trend.svelte';
 	import ConnectionDetails from './ConnectionDetails.svelte';
 
 	// One connection as the same kind of item as a rule or a host: everything the snapshot knows
@@ -88,7 +89,7 @@
 		</div>
 	{/snippet}
 	{#snippet stats()}
-		<TrafficMetrics stats={connection.stats} />
+		<TrafficMetrics stats={connection.stats} trend={trend.ofConnection(connection.id)} />
 	{/snippet}
 	<ConnectionDetails {connection} />
 </Disclosure>
