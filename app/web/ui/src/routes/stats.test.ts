@@ -2023,8 +2023,34 @@ const pointsOf = (svg: Element) =>
 	Array.from(svg.querySelectorAll('polyline')).map(
 		(line) => line.getAttribute('points')!.split(' ').length
 	);
+// An item's one line: under the two "now" values of its own band, inside a definition of its
+// own, hidden from assistive technology; both values keep a slot as wide as the longest rate, so
+// the line beside them holds still.
+const lineOf = (item: Element, name: string) => {
+	const own = sparklines(item);
+	expect(own, name).toHaveLength(1);
+	const column = own[0].closest('[data-column]') as HTMLElement;
+	expect(column.dataset.column, name).toBe('rate');
+	expect(own[0].parentElement?.tagName, name).toBe('DD');
+	expect(own[0].parentElement?.previousElementSibling?.tagName, name).toBe('DD');
+	expect(own[0].getAttribute('aria-hidden'), name).toBe('true');
+	expect(
+		Array.from(column.querySelectorAll('[data-metric]')).map((value) =>
+			value.classList.contains('min-w-[11ch]')
+		),
+		name
+	).toEqual([true, true]);
+	expect(bandOf(item).contains(own[0]), name).toBe(true);
+	expect(own[0].closest('button'), name).toBeNull();
+	return own[0];
+};
 
-test('#/stats draws one rate line per rule under its "now" column once two snapshots are in; the expanded chain, its targets and the hosts page carry none', async () => {
+test('every rule, host, endpoint and connection draws one rate line under its "now" column once two snapshots are in; the expanded rule chain and its targets carry none', async () => {
+	// No fixture host has two endpoints (bastion.example's uses share one URL), so give it a second.
+	snapshot.rules![0].forward![1].urls!.push({
+		url: 'ssh://ops@bastion.example:2222',
+		stats: statsOf({ rate_up: 1_024, rate_down: 2_048 })
+	});
 	await render('#/stats');
 	expect(rows()).toHaveLength(4);
 	const first = sparklines();
@@ -2039,29 +2065,13 @@ test('#/stats draws one rate line per rule under its "now" column once two snaps
 	expect(lines).toEqual(first);
 	for (const row of rows()) {
 		const name = row.dataset.rule!;
-		const own = sparklines(row);
-		expect(own, name).toHaveLength(1);
-		// Under the two "now" values, inside a definition of its own, hidden from assistive technology.
-		const column = own[0].closest('[data-column]') as HTMLElement;
-		expect(column.dataset.column, name).toBe('rate');
-		expect(own[0].parentElement?.tagName, name).toBe('DD');
-		expect(own[0].parentElement?.previousElementSibling?.tagName, name).toBe('DD');
-		expect(own[0].getAttribute('aria-hidden'), name).toBe('true');
-		// Both "now" values keep a slot as wide as the longest rate, so the line beside them holds still.
-		expect(
-			Array.from(column.querySelectorAll('[data-metric]')).map((value) =>
-				value.classList.contains('min-w-[11ch]')
-			),
-			name
-		).toEqual([true, true]);
-		expect(bandOf(row).contains(own[0]), name).toBe(true);
-		expect(own[0].closest('button'), name).toBeNull();
+		const line = lineOf(row, name);
 		if (name === 'lab') {
-			expect(own[0].getAttribute('data-samples'), name).toBe('0');
-			expect(pointsOf(own[0]), name).toEqual([]);
+			expect(line.getAttribute('data-samples'), name).toBe('0');
+			expect(pointsOf(line), name).toEqual([]);
 		} else {
-			expect(own[0].getAttribute('data-samples'), name).toBe('3');
-			expect(pointsOf(own[0]), name).toEqual([3, 3]);
+			expect(line.getAttribute('data-samples'), name).toBe('3');
+			expect(pointsOf(line), name).toEqual([3, 3]);
 		}
 	}
 	// The band still reads as before: labels, columns and the arrows' spans.
@@ -2078,14 +2088,68 @@ test('#/stats draws one rate line per rule under its "now" column once two snaps
 	expect(details.querySelectorAll('[data-metric].min-w-\\[11ch\\]')).toHaveLength(0);
 	expect(sparklines(office)).toHaveLength(1);
 
+	// Every fixture host has stats (edge.example's rates are zero), so each series holds the three
+	// accepted snapshots; the refresh on arriving here is within the minimum step and adds none.
 	click(target.querySelector('nav a[href="#/hosts"]')!);
 	await settle();
-	expect(rows('main article[data-host]')).toHaveLength(4);
-	expect(sparklines()).toEqual([]);
+	const hosts = rows('main article[data-host]');
+	expect(hosts.map((row) => row.dataset.host)).toEqual(hostsTotals.order);
+	for (const row of hosts) {
+		const name = row.dataset.host!;
+		const line = lineOf(row, name);
+		expect(line.getAttribute('data-samples'), name).toBe('3');
+		expect(pointsOf(line), name).toEqual([3, 3]);
+	}
+	// Two endpoints draw a line each in their compact bands while the host keeps its own; a single
+	// endpoint has no band and so no line.
+	const bastion = hosts[1];
+	const bastionToggle = button('Expand: bastion.example', bastion)!;
+	click(bastionToggle);
+	const endpoints = Array.from(detailsOf(bastionToggle).querySelectorAll('[data-endpoint-row]'));
+	expect(endpoints.map((row) => compact(row.querySelector('[data-endpoint]')))).toEqual([
+		'ssh://bastion.example:22',
+		'ssh://bastion.example:2222'
+	]);
+	for (const row of endpoints) {
+		const name = compact(row.querySelector('[data-endpoint]'))!;
+		const line = lineOf(row, name);
+		expect(line.getAttribute('data-samples'), name).toBe('3');
+		expect(pointsOf(line), name).toEqual([3, 3]);
+	}
+	// :2222 downloads twice its upload: its upload line runs mid-height, the host's sum would not.
+	expect(endpoints[1].querySelector('polyline')?.getAttribute('points')).toBe(
+		'115,12 117,12 119,12'
+	);
+	expect(sparklines(bastion)).toHaveLength(3);
+	expect(sparklines(bandOf(bastion))).toHaveLength(1);
+	const hopA = hosts[0];
+	const hopAToggle = button('Expand: hop-a.example', hopA)!;
+	click(hopAToggle);
+	expect(detailsOf(hopAToggle).querySelectorAll('[data-endpoint-row]')).toHaveLength(1);
+	expect(sparklines(detailsOf(hopAToggle))).toEqual([]);
+	expect(sparklines(hopA)).toHaveLength(1);
+
+	// Connection 103 has stats with zero rates, so it is recorded like the others.
 	click(target.querySelector('nav a[href="#/connections"]')!);
 	await settle();
-	expect(rows('main [data-connection]')).toHaveLength(4);
-	expect(sparklines()).toEqual([]);
+	const connections = rows('main [data-connection]');
+	expect(connections.map((row) => row.dataset.connection)).toEqual(['103', '102', '101', '201']);
+	for (const row of connections) {
+		const name = row.dataset.connection!;
+		const line = lineOf(row, name);
+		expect(line.getAttribute('data-samples'), name).toBe('3');
+		expect(pointsOf(line), name).toEqual([3, 3]);
+	}
+	// 103 moves nothing, so its lines lie on the baseline; its rule's series would not.
+	expect(connections[0].querySelector('polyline')?.getAttribute('points')).toBe(
+		'115,23 117,23 119,23'
+	);
+	const curl = connections[2];
+	const curlToggle = button('Expand: example.com:443', curl)!;
+	click(curlToggle);
+	expect(sparklines(detailsOf(curlToggle))).toEqual([]);
+	expect(detailsOf(curlToggle).querySelector('[data-connection-facts]')).not.toBeNull();
+	expect(sparklines(curl)).toHaveLength(1);
 });
 
 test('a reset starts the rate lines over: the re-read snapshot with its new `since` is their only sample', async () => {
@@ -2111,4 +2175,11 @@ test('a reset starts the rate lines over: the re-read snapshot with its new `sin
 	await poll();
 	expect(after.getAttribute('data-samples')).toBe('2');
 	expect(pointsOf(after)).toEqual([2, 2]);
+	// The host and connection lines started over with it.
+	click(target.querySelector('nav a[href="#/hosts"]')!);
+	await settle();
+	expect(sparklines(rows('main article[data-host]')[0])[0]?.getAttribute('data-samples')).toBe('2');
+	click(target.querySelector('nav a[href="#/connections"]')!);
+	await settle();
+	expect(sparklines(rows('main [data-connection]')[0])[0]?.getAttribute('data-samples')).toBe('2');
 });

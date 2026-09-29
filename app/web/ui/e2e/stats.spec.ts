@@ -1,5 +1,5 @@
 import type { Locator, Page } from '@playwright/test';
-import { hostsTotals, snapshotFixture } from './fixtures/api.ts';
+import { hostsTotals, snapshotFixture, statsOf } from './fixtures/api.ts';
 import { expect, test } from './fixtures/test.ts';
 import { count, type MockApi } from './mockApi.ts';
 
@@ -1677,7 +1677,7 @@ test('#/stats holds three row skeletons behind a busy section until the snapshot
 	await expectNoDocumentOverflow(page, 'stats-loaded-1280');
 });
 
-test('#/stats draws a rate line beside every collapsed rule\'s "now" values that fills in with the polls and hides where the band is narrow; the expanded chain, hosts and connections carry none', async ({
+test('#/stats draws a rate line beside every collapsed rule\'s "now" values that fills in with the polls and hides where the band is narrow; the expanded chain carries none while hosts, their endpoints and connections draw their own', async ({
 	page,
 	api
 }) => {
@@ -1687,19 +1687,21 @@ test('#/stats draws a rate line beside every collapsed rule\'s "now" values that
 	const lines = page.locator('svg[data-sparkline]');
 	await expect(lines).toHaveCount(4);
 	// Every line sits in the "now" column of its row's own band, in a definition of its own.
-	const placement = await ruleRows(page).evaluateAll((rows) =>
-		rows.map((row) => {
-			const svg = row.querySelector('svg[data-sparkline]')!;
-			return [
-				row.querySelectorAll('svg[data-sparkline]').length,
-				svg.closest('[data-column]')?.getAttribute('data-column'),
-				svg.parentElement?.tagName,
-				svg.closest('[data-traffic]') === row.querySelector('[data-traffic]'),
-				svg.getAttribute('aria-hidden')
-			];
-		})
-	);
-	expect(placement).toEqual(Array(4).fill([1, 'rate', 'DD', true, 'true']));
+	const placementOf = (rows: Locator) =>
+		rows.evaluateAll((rows) =>
+			rows.map((row) => {
+				const svg = row.querySelector('svg[data-sparkline]')!;
+				return [
+					row.querySelectorAll('svg[data-sparkline]').length,
+					svg.closest('[data-column]')?.getAttribute('data-column'),
+					svg.parentElement?.tagName,
+					svg.closest('[data-traffic]') === row.querySelector('[data-traffic]'),
+					svg.getAttribute('aria-hidden')
+				];
+			})
+		);
+	const inNowColumn = Array(4).fill([1, 'rate', 'DD', true, 'true']);
+	expect(await placementOf(ruleRows(page))).toEqual(inNowColumn);
 	const office = api.snapshot.rules![0].stats;
 	for (let step = 1; step <= 4; step++) {
 		office.rate_up = 12_288 * (1 + (step % 3));
@@ -1834,20 +1836,45 @@ test('#/stats draws a rate line beside every collapsed rule\'s "now" values that
 	await expect(details.locator('svg[data-sparkline]')).toHaveCount(0);
 	await expect(lines).toHaveCount(4);
 
+	// Hosts and connections draw the same line in the same place with the same help.
 	await page
 		.getByRole('navigation', { name: 'Navigation' })
 		.getByRole('link', { name: 'Proxy Hosts' })
 		.click();
 	await expect(hostRows(page)).toHaveCount(4);
-	await expect(lines).toHaveCount(0);
+	await expect(lines).toHaveCount(4);
+	expect(await placementOf(hostRows(page))).toEqual(inNowColumn);
+	await expect(hostRows(page).nth(0).locator('svg[data-sparkline]')).toBeVisible();
 	await hover(page, hostRows(page).nth(0).getByRole('button', { name: 'About now' }));
-	await expect(tooltip(page)).not.toContainText('The line');
+	await expect(tooltip(page)).toContainText('a line traces the last minute of samples');
+	// A host with several endpoints draws one more line per endpoint once expanded; the new
+	// endpoint moves no bytes, so the hosts keep their order.
+	const bastion = hostRows(page).nth(1);
+	await bastion.getByRole('button', { name: 'Expand: bastion.example' }).click();
+	const endpoints = (await detailsOf(page, bastion.locator('button[aria-controls]'))).locator(
+		'[data-endpoint-row]'
+	);
+	await expect(endpoints).toHaveCount(1);
+	await expect(endpoints.locator('svg[data-sparkline]')).toHaveCount(0);
+	api.snapshot.rules![0].forward![1].urls!.push({
+		url: 'ssh://ops@bastion.example:2222',
+		stats: statsOf({ rate_up: 1_024, rate_down: 2_048 })
+	});
+	await expect(endpoints).toHaveCount(2);
+	expect(
+		await endpoints.evaluateAll((rows) =>
+			rows.map((row) => row.querySelectorAll('svg[data-sparkline]').length)
+		)
+	).toEqual([1, 1]);
+	await expect(lines).toHaveCount(6);
 	await page
 		.getByRole('navigation', { name: 'Navigation' })
 		.getByRole('link', { name: 'Live Connections' })
 		.click();
 	await expect(connectionRows(page)).toHaveCount(4);
-	await expect(lines).toHaveCount(0);
+	await expect(lines).toHaveCount(4);
+	expect(await placementOf(connectionRows(page))).toEqual(inNowColumn);
+	await expect(connectionRows(page).nth(0).locator('svg[data-sparkline]')).toBeVisible();
 });
 
 test.describe('screenshots', () => {

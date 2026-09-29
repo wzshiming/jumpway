@@ -12,6 +12,15 @@ export const trend = {
 	of(name: string): readonly RateSample[] {
 		return state.series.get(name) ?? EMPTY_SAMPLES;
 	},
+	ofHost(host: string): readonly RateSample[] {
+		return state.hosts.get(host)?.samples ?? EMPTY_SAMPLES;
+	},
+	ofEndpoint(host: string, endpoint: string): readonly RateSample[] {
+		return state.hosts.get(host)?.endpoints.get(endpoint) ?? EMPTY_SAMPLES;
+	},
+	ofConnection(id: number): readonly RateSample[] {
+		return state.connections.get(id) ?? EMPTY_SAMPLES;
+	},
 	get total(): readonly RateSample[] {
 		return state.series.get(TREND_TOTAL) ?? EMPTY_SAMPLES;
 	},

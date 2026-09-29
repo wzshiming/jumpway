@@ -27,6 +27,7 @@
 	import { i18n, t } from '../lib/i18n.svelte';
 	import { statsRoute } from '../lib/routes';
 	import { stats } from '../lib/stats.svelte';
+	import { trend } from '../lib/trend.svelte';
 
 	onMount(() => stats.subscribe());
 
@@ -123,7 +124,12 @@
 						</dl>
 					{/snippet}
 					{#snippet stats()}
-						<TrafficDetail stats={host.stats} {peakHint} latencyHelp={t('help.latencyAggregate')} />
+						<TrafficDetail
+							stats={host.stats}
+							{peakHint}
+							latencyHelp={t('help.latencyAggregate')}
+							trend={trend.ofHost(host.host)}
+						/>
 					{/snippet}
 					<ul class="divide-y divide-line border-l-2 border-line pl-3">
 						{#each host.endpoints as endpoint (endpoint.endpoint)}
@@ -146,7 +152,12 @@
 									{/each}
 								</div>
 								{#if host.endpoints.length > 1}
-									<TrafficDetail stats={endpoint.stats} {peakHint} compact />
+									<TrafficDetail
+										stats={endpoint.stats}
+										{peakHint}
+										compact
+										trend={trend.ofEndpoint(host.host, endpoint.endpoint)}
+									/>
 								{/if}
 							</li>
 						{/each}
