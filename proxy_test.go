@@ -16,7 +16,6 @@ import (
 
 	"github.com/wzshiming/bridge"
 	"github.com/wzshiming/bridge/protocols/local"
-	"github.com/wzshiming/jumpway/utils"
 	"github.com/wzshiming/shadowsocks"
 	"github.com/wzshiming/socks4"
 	"github.com/wzshiming/socks5"
@@ -55,7 +54,7 @@ func TestRunProxyClientAddr(test *testing.T) {
 				listener.Close()
 				select {
 				case err := <-done:
-					if err == nil || !utils.IsClosedConnError(err) {
+					if err == nil || !IsClosedConnError(err) {
 						test.Errorf("RunProxy() = %v, want closed connection error", err)
 					}
 				case <-time.After(time.Second):
@@ -184,7 +183,7 @@ func TestRunProxyAuth(t *testing.T) {
 			listener.Close()
 			select {
 			case err := <-done:
-				if err == nil || !utils.IsClosedConnError(err) {
+				if err == nil || !IsClosedConnError(err) {
 					t.Errorf("RunProxy() = %v, want closed connection error", err)
 				}
 			case <-time.After(time.Second):
@@ -352,7 +351,7 @@ func TestRunProxyVirtualListener(t *testing.T) {
 		listener.Close()
 		select {
 		case err := <-done:
-			if err == nil || !utils.IsClosedConnError(err) {
+			if err == nil || !IsClosedConnError(err) {
 				t.Errorf("RunProxy() = %v, want closed connection error", err)
 			}
 		case <-time.After(time.Second):
@@ -417,7 +416,7 @@ func startProxy(t *testing.T, schemes []Scheme) (address string, target *httptes
 		listener.Close()
 		select {
 		case err := <-done:
-			if err == nil || !utils.IsClosedConnError(err) {
+			if err == nil || !IsClosedConnError(err) {
 				t.Errorf("RunProxy() = %v, want closed connection error", err)
 			}
 		case <-time.After(time.Second):

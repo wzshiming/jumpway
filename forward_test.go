@@ -11,7 +11,6 @@ import (
 
 	"github.com/wzshiming/bridge"
 	"github.com/wzshiming/bridge/protocols/local"
-	"github.com/wzshiming/jumpway/utils"
 )
 
 func TestClientAddr(t *testing.T) {
@@ -48,7 +47,7 @@ func TestRunForwardPassesClientAddr(t *testing.T) {
 		listener.Close()
 		select {
 		case err := <-done:
-			if !utils.IsClosedConnError(err) {
+			if !IsClosedConnError(err) {
 				t.Errorf("RunForward() = %v, want closed connection error", err)
 			}
 		case <-time.After(time.Second):
@@ -321,7 +320,7 @@ func startForward(t *testing.T, ctx context.Context, target string) net.Listener
 		listener.Close()
 		select {
 		case err := <-done:
-			if err == nil || !utils.IsClosedConnError(err) {
+			if err == nil || !IsClosedConnError(err) {
 				t.Errorf("RunForward() = %v, want closed connection error", err)
 			}
 		case <-time.After(time.Second):

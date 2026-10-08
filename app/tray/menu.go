@@ -113,7 +113,7 @@ func (a *App) buildMenu() *systray.Menu {
 		}
 	}
 	menu.AddSeparator()
-	a.ItemDaemon(menu)
+	a.itemDaemon(menu)
 	menu.AddSeparator()
 
 	proxies, exports := systray.NewMenu(), systray.NewMenu()
@@ -138,14 +138,14 @@ func (a *App) buildMenu() *systray.Menu {
 	menu.AddSeparator()
 
 	configuration := systray.NewMenu()
-	a.ItemEditConfig(configuration)
-	a.ItemReloadConfig(configuration)
-	a.ItemView(configuration)
+	a.itemEditConfig(configuration)
+	a.itemReloadConfig(configuration)
+	a.itemView(configuration)
 	menu.AddSubmenu(i18n.Config(), configuration)
 	menu.AddSeparator()
-	a.ItemLog(menu)
-	a.ItemAbout(menu)
-	a.ItemQuit(menu)
+	a.itemLog(menu)
+	a.itemAbout(menu)
+	a.itemQuit(menu)
 	a.mu.Lock()
 	a.menuItems = items
 	a.mu.Unlock()
@@ -173,4 +173,39 @@ func (a *App) rebuildMenu() error {
 	a.lastErr = errors.Join(a.lastErr, err)
 	a.mu.Unlock()
 	return err
+}
+
+func (a *App) updateStatus() {
+	snapshot := a.menuSnapshot()
+	items := snapshot.items
+	if items == nil {
+		return
+	}
+	if items.web != nil {
+		items.web.SetLabel(snapshot.web)
+	}
+	selected := ""
+	for _, rule := range snapshot.rules {
+		if item := items.rules[rule.name]; item != nil {
+			item.SetLabel(rule.status)
+		}
+		if !rule.localProxy {
+			continue
+		}
+		if item := items.proxies[rule.name]; item != nil {
+			item.SetLabel(rule.label)
+			if snapshot.selected == rule.name {
+				selected = rule.name
+			}
+		}
+		if item := items.exports[rule.name]; item != nil {
+			item.SetLabel(rule.label)
+		}
+	}
+	for name, item := range items.proxies {
+		item.SetChecked(selected == name)
+	}
+	if items.manual != nil {
+		items.manual.SetChecked(selected == "")
+	}
 }
