@@ -112,11 +112,6 @@
             "translation": "导出到剪切板"
         },
         {
-            "id": "Run Proxy",
-            "message": "Run Proxy",
-            "translation": "启动代理服务器"
-        },
-        {
             "id": "Args",
             "message": "Args",
             "translation": "参数"

@@ -114,11 +114,6 @@
             "translation": "Write Clipboard"
         },
         {
-            "id": "Run Proxy",
-            "message": "Run Proxy",
-            "translation": "Run Proxy"
-        },
-        {
             "id": "Args",
             "message": "Args",
             "translation": "Args"
