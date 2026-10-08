@@ -82,6 +82,18 @@ func (r ruleState) localProxy() bool {
 	return !r.remote && !r.virtual && r.target == "" && r.http
 }
 
+// displayAddress is the bound address, or the configured one before the first bind, made dialable for local rules.
+func (r ruleState) displayAddress() string {
+	address := r.address
+	if address == "" {
+		address = r.listenAddress
+	}
+	if !r.remote {
+		address = formatAddress(address)
+	}
+	return address
+}
+
 var _ configs.Runtime = (*App)(nil)
 
 func NewApp(store *config.Store) *App {

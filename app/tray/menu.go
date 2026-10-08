@@ -36,13 +36,7 @@ type ruleMenuEntry struct {
 func menuModel(rules []ruleState) []ruleMenuEntry {
 	entries := make([]ruleMenuEntry, 0, len(rules))
 	for _, rule := range rules {
-		address := rule.address
-		if address == "" {
-			address = rule.listenAddress
-		}
-		if !rule.remote {
-			address = formatAddress(address)
-		}
+		address := rule.displayAddress()
 		state := i18n.Stopped()
 		if rule.running {
 			state = i18n.Running()

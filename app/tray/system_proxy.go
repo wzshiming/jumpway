@@ -14,14 +14,9 @@ func (a *App) ruleAddress(name string) string {
 
 func localProxyAddress(rules []*ruleState, name string) string {
 	for _, rule := range rules {
-		if rule.name != name || !rule.localProxy() {
-			continue
+		if rule.name == name && rule.localProxy() {
+			return rule.displayAddress()
 		}
-		address := rule.address
-		if address == "" {
-			address = rule.listenAddress
-		}
-		return formatAddress(address)
 	}
 	return ""
 }
