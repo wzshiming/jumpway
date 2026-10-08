@@ -69,15 +69,16 @@ func (a *App) menuSnapshot() menuSnapshot {
 		rules[index] = *rule
 	}
 	address, webErr, lastErr := a.webAddress, a.webErr, a.lastErr
-	mode, selected, items := a.Mode, a.systemProxyRule, a.menuItems
+	selected, items := a.systemProxyRule, a.menuItems
 	a.mu.Unlock()
 	if lastErr != nil {
 		address = lastErr.Error()
 	} else if webErr != nil {
 		address = webErr.Error()
 	}
-	if mode == "" {
-		mode = i18n.ManualProxy()
+	mode := i18n.ManualProxy()
+	if selected != "" {
+		mode = i18n.SystemProxy()
 	}
 	return menuSnapshot{
 		web:      i18n.WebUI() + " \u00b7 " + address + " \u00b7 " + mode,

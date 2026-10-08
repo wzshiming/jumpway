@@ -46,7 +46,8 @@ func lookup() (service.Service, service.Status, error) {
 	return svc, status, err
 }
 
-func IsRunning() bool {
+// IsInstalled reports whether the OS service exists; it logs, but does not return, whether it is running.
+func IsInstalled() bool {
 	_, status, err := lookup()
 	if err != nil {
 		log.Info("daemon status", "err", err)
@@ -56,7 +57,8 @@ func IsRunning() bool {
 	return true
 }
 
-func Run(command string) {
+// Exec runs one service management command from the command line.
+func Exec(command string) {
 	switch command {
 	case "start":
 		Install()

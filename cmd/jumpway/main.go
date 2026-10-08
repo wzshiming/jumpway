@@ -24,7 +24,7 @@ import (
 func main() {
 	log.Info(i18n.Args(), "list", os.Args)
 	if len(os.Args) == 2 {
-		daemon.Run(os.Args[1])
+		daemon.Exec(os.Args[1])
 		return
 	}
 

@@ -31,10 +31,6 @@ func (a *App) syncSystemProxySelection() (address string, changed bool, removed 
 	}
 	changed = address != a.systemProxyAddress || removed != ""
 	a.systemProxyAddress = address
-	a.Mode = i18n.ManualProxy()
-	if a.systemProxyRule != "" {
-		a.Mode = i18n.SystemProxy()
-	}
 	return
 }
 

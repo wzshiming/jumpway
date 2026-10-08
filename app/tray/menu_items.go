@@ -10,14 +10,14 @@ import (
 
 func (a *App) itemDaemon(menu *systray.Menu) {
 	var item *systray.MenuItem
-	item = menu.AddCheckbox(i18n.Daemon(), daemon.IsRunning(), func() {
+	item = menu.AddCheckbox(i18n.Daemon(), daemon.IsInstalled(), func() {
 		a.do(func() {
-			if daemon.IsRunning() {
+			if daemon.IsInstalled() {
 				daemon.Remove()
 			} else {
 				daemon.Install()
 			}
-			item.SetChecked(daemon.IsRunning())
+			item.SetChecked(daemon.IsInstalled())
 		})
 	})
 }
@@ -53,7 +53,7 @@ func (a *App) itemView(menu *systray.Menu) {
 func (a *App) itemLog(menu *systray.Menu) {
 	menu.Add(i18n.Log(), func() {
 		a.do(func() {
-			err := browser.OpenFile(a.Log)
+			err := browser.OpenFile(a.logPath)
 			if err != nil {
 				log.Error(err, i18n.Log())
 			}

@@ -24,14 +24,12 @@ import (
 )
 
 type App struct {
-	Mode string
-	Log  string
-
 	tray    *systray.SystemTray
 	actions chan func()
 	store   *config.Store
 	web     http.Handler
 	metrics *metrics.Registry
+	logPath string
 
 	root          context.Context
 	cancel        context.CancelFunc
@@ -115,7 +113,7 @@ func (a *App) Run() {
 		return
 	}
 	logfile := filepath.Join(logdir, time.Now().Format("2006_01_02_15_04_05")+".log")
-	a.Log = logfile
+	a.logPath = logfile
 	err = log.Redirect(logfile)
 	if err != nil {
 		log.Error(err, i18n.RedirectLog())

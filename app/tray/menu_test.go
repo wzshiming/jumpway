@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"reflect"
 	"runtime"
+	"strings"
 	"sync"
 	"syscall"
 	"testing"
@@ -123,8 +124,8 @@ func TestBuildMenuNoLocalProxy(test *testing.T) {
 
 func TestMenuSnapshotStatus(test *testing.T) {
 	app := &App{
-		webAddress: "127.0.0.1:1098", Mode: i18n.ManualProxy(),
-		rules: []*ruleState{{name: "alpha", address: "127.0.0.1:1097", http: true, running: true}},
+		webAddress: "127.0.0.1:1098",
+		rules:      []*ruleState{{name: "alpha", address: "127.0.0.1:1097", http: true, running: true}},
 	}
 	before := app.menuSnapshot()
 	app.rules[0].running, app.rules[0].attempt = false, 4
@@ -187,7 +188,7 @@ func TestSystemProxySelectionReload(test *testing.T) {
 		},
 	}
 	address, changed, removed := app.syncSystemProxySelection()
-	if address != "127.0.0.1:1097" || !changed || removed != "" || app.Mode != i18n.SystemProxy() {
+	if address != "127.0.0.1:1097" || !changed || removed != "" || !strings.HasSuffix(app.menuSnapshot().web, i18n.SystemProxy()) {
 		test.Fatalf("initial selection = %q, %v, %q", address, changed, removed)
 	}
 	if _, changed, _ := app.syncSystemProxySelection(); changed {
@@ -199,7 +200,7 @@ func TestSystemProxySelectionReload(test *testing.T) {
 	}
 	app.rules = app.rules[1:]
 	address, changed, removed = app.syncSystemProxySelection()
-	if address != "" || !changed || removed != "alpha" || app.systemProxyRule != "" || app.Mode != i18n.ManualProxy() {
+	if address != "" || !changed || removed != "alpha" || app.systemProxyRule != "" || !strings.HasSuffix(app.menuSnapshot().web, i18n.ManualProxy()) {
 		test.Fatalf("removed selection = %q, %v, %q", address, changed, removed)
 	}
 	for _, rule := range []*ruleState{{name: "beta", remote: true, http: true}, {name: "beta", target: "127.0.0.1:5432"}, {name: "beta", address: "virtual://x", virtual: true, http: true, running: true}, {name: "beta", address: "127.0.0.1:1081", running: true}} {
