@@ -852,8 +852,18 @@
     ],
     "type": "object",
     "properties": {
+     "address": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
      "cipher": {
       "type": "string"
+     },
+     "mtu": {
+      "type": "integer",
+      "format": "int64"
      },
      "password": {
       "type": "string"
