@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -266,6 +267,136 @@ func TestValidate(t *testing.T) {
 			name:      "virtual_forward_with_protocols",
 			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Port: 1080, Protocols: []Protocol{{Type: "socks5"}}}, Forward: Forward{Virtual: "x"}}}},
 			wantError: "rules[0].listen.protocols is only used by proxy rules",
+		},
+		{
+			name: "tun_alone",
+			conf: &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "tun"}}}}}},
+		},
+		{
+			name: "tun_with_address_and_mtu",
+			conf: &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "tun", Address: []string{"198.18.0.1/30", "fd00::1/64"}, MTU: 9000}}}}}},
+		},
+		{
+			name: "tun_full_length_prefixes",
+			conf: &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "tun", Address: []string{"198.18.0.1/32", "fd00::1/128"}}}}}}},
+		},
+		{
+			name: "tun_mtu_minimum",
+			conf: &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "tun", MTU: 1280}}}}}},
+		},
+		{
+			name: "tun_mtu_maximum",
+			conf: &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "tun", MTU: 65535}}}}}},
+		},
+		{
+			name: "tun_beside_shared_credentials",
+			conf: &Config{Rules: []Rule{{Name: "a", Listen: Listen{Username: "user", Password: "secret", Protocols: []Protocol{{Type: "tun"}, {Type: "http"}}}}}},
+		},
+		{
+			name:      "unknown_protocol_beside_tun",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "tun"}, {Type: "quic"}}}}}},
+			wantError: `rules[0].listen.protocols[1].type "quic" is unknown`,
+		},
+		{
+			name:      "duplicate_tun",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "tun"}, {Type: "tun", MTU: 1000}}}}}},
+			wantError: `rules[0].listen.protocols[1].type "tun" is duplicated`,
+		},
+		{
+			name:      "tun_with_username",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "tun", Username: "alice"}}}}}},
+			wantError: "rules[0].listen.protocols[0].username is not used by tun",
+		},
+		{
+			name:      "tun_with_password",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "tun", Password: "secret"}}}}}},
+			wantError: "rules[0].listen.protocols[0].password is not used by tun",
+		},
+		{
+			name:      "tun_with_cipher",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "tun", Cipher: "aes-256-gcm"}}}}}},
+			wantError: "rules[0].listen.protocols[0].cipher is not used by tun",
+		},
+		{
+			name:      "protocol_address_on_http",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "http", Address: []string{"198.18.0.1/30"}}}}}}},
+			wantError: "rules[0].listen.protocols[0].address is only used by tun",
+		},
+		{
+			name:      "protocol_mtu_on_socks5",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "http"}, {Type: "socks5", MTU: 1500}}}}}},
+			wantError: "rules[0].listen.protocols[1].mtu is only used by tun",
+		},
+		{
+			name:      "tun_address_bare_ip",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "tun", Address: []string{"198.18.0.1"}}}}}}},
+			wantError: `rules[0].listen.protocols[0].address[0] "198.18.0.1" is not a CIDR (e.g. 198.18.0.1/30)`,
+		},
+		{
+			name:      "tun_address_ipv4_mapped",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "tun", Address: []string{"::ffff:198.18.0.1/126"}}}}}}},
+			wantError: `rules[0].listen.protocols[0].address[0] "::ffff:198.18.0.1/126" is not a CIDR (e.g. 198.18.0.1/30)`,
+		},
+		{
+			name:      "tun_address_network",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "tun", Address: []string{"198.18.0.0/30"}}}}}}},
+			wantError: `rules[0].listen.protocols[0].address[0] "198.18.0.0/30" has no host bits (e.g. 198.18.0.1/30)`,
+		},
+		{
+			name:      "tun_second_ipv4_address",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "tun", Address: []string{"198.18.0.1/30", "10.0.0.1/24"}}}}}}},
+			wantError: `rules[0].listen.protocols[0].address[1] "10.0.0.1/24" is a second IPv4 address`,
+		},
+		{
+			name:      "tun_second_ipv6_address",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "tun", Address: []string{"fd00::1/64", "198.18.0.1/30", "fd01::1/64"}}}}}}},
+			wantError: `rules[0].listen.protocols[0].address[2] "fd01::1/64" is a second IPv6 address`,
+		},
+		{
+			name:      "tun_mtu_below_minimum",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "tun", MTU: 1000}}}}}},
+			wantError: "rules[0].listen.protocols[0].mtu 1000 is out of range (1280-65535)",
+		},
+		{
+			name:      "tun_mtu_above_maximum",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "tun", MTU: 65536}}}}}},
+			wantError: "rules[0].listen.protocols[0].mtu 65536 is out of range (1280-65535)",
+		},
+		{
+			name:      "tun_with_virtual_listen",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Virtual: "x", Protocols: []Protocol{{Type: "tun"}}}}}},
+			wantError: `rules[0].listen.protocols[0].type "tun" must not be combined with virtual`,
+		},
+		{
+			name:      "tun_with_remote_listen",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Way: []bridgeconfig.Node{{LB: []string{"ssh://user@host:22"}}}, Protocols: []Protocol{{Type: "tun"}}}}}},
+			wantError: `rules[0].listen.protocols[0].type "tun" must not be combined with way`,
+		},
+		{
+			name:      "port_forward_with_tun",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Port: 1080, Protocols: []Protocol{{Type: "tun"}}}, Forward: Forward{Port: 5432}}}},
+			wantError: "rules[0].listen.protocols is only used by proxy rules",
+		},
+		{
+			name:      "protocol_password_without_username_beside_tun",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "tun"}, {Type: "http", Password: "x"}}}}}},
+			wantError: "rules[0].listen.protocols[1].password is set but username is empty",
+		},
+		{
+			name: "tun_in_two_rules",
+			conf: &Config{Rules: []Rule{
+				{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "tun"}}}},
+				{Name: "b", Listen: Listen{Protocols: []Protocol{{Type: "http"}, {Type: "tun"}}}},
+			}},
+			wantError: `rules[1].listen.protocols[1].type "tun" is already used by rule "a"`,
+		},
+		{
+			name: "disabled_duplicate_tun",
+			conf: &Config{Rules: []Rule{
+				{Name: "a", Disabled: true, Listen: Listen{Protocols: []Protocol{{Type: "tun"}}}},
+				{Name: "b", Listen: Listen{Protocols: []Protocol{{Type: "tun"}}}},
+				{Name: "c", Disabled: true, Listen: Listen{Protocols: []Protocol{{Type: "tun"}}}},
+			}},
 		},
 		{
 			name:      "no_lb",
@@ -750,17 +881,24 @@ func TestListenSchemes(t *testing.T) {
 				{Type: "http", Username: "alice", Password: "pw"},
 			},
 		},
+		{name: "tun_only", listen: Listen{Protocols: []Protocol{{Type: "tun"}}}},
+		{
+			name:   "tun_beside_http",
+			listen: Listen{Username: "user", Password: "secret", Protocols: []Protocol{{Type: "tun"}, {Type: "http"}}},
+			want:   []Protocol{{Type: "http", Username: "user", Password: "secret"}},
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			before := slices.Clone(test.listen.Protocols)
 			got := test.listen.Schemes()
-			if !reflect.DeepEqual(got, test.want) {
+			// An empty result may be nil or not.
+			if (len(got) != 0 || len(test.want) != 0) && !reflect.DeepEqual(got, test.want) {
 				t.Fatalf("Schemes() = %#v, want %#v", got, test.want)
 			}
 			if !reflect.DeepEqual(test.listen.Protocols, before) {
 				t.Fatalf("Schemes() mutated Protocols: %#v", test.listen.Protocols)
 			}
-			if len(test.listen.Protocols) != 0 {
+			if len(test.listen.Protocols) != 0 && len(got) != 0 {
 				got[0].Type = "mutated"
 				if test.listen.Protocols[0].Type == "mutated" {
 					t.Fatal("Schemes() shares its backing array with Protocols")
@@ -833,6 +971,147 @@ func TestListenProtocolsSchema(t *testing.T) {
 	}
 	if !reflect.DeepEqual(fromJSON, listen) {
 		t.Fatalf("json roundtrip = %#v, want %#v", fromJSON, listen)
+	}
+}
+
+func TestProtocolTUNSchema(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		protocol Protocol
+		wantYAML string
+		wantJSON string
+	}{
+		{
+			name:     "tun",
+			protocol: Protocol{Type: "tun", Address: []string{"198.18.0.1/30", "fd00::1/64"}, MTU: 9000},
+			wantYAML: "type: tun\naddress:\n    - 198.18.0.1/30\n    - fd00::1/64\nmtu: 9000\n",
+			wantJSON: `{"type":"tun","address":["198.18.0.1/30","fd00::1/64"],"mtu":9000}`,
+		},
+		{
+			name:     "without_address_and_mtu",
+			protocol: Protocol{Type: "ss", Username: "alice", Password: "secret", Cipher: "aes-256-gcm"},
+			wantYAML: "type: ss\nusername: alice\npassword: secret\ncipher: aes-256-gcm\n",
+			wantJSON: `{"type":"ss","username":"alice","password":"secret","cipher":"aes-256-gcm"}`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			yamlOut, err := yaml.Marshal(test.protocol)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(yamlOut) != test.wantYAML {
+				t.Fatalf("yaml = %q, want %q", yamlOut, test.wantYAML)
+			}
+			var fromYAML Protocol
+			if err := yaml.Unmarshal(yamlOut, &fromYAML); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(fromYAML, test.protocol) {
+				t.Fatalf("yaml roundtrip = %#v, want %#v", fromYAML, test.protocol)
+			}
+			jsonOut, err := json.Marshal(test.protocol)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(jsonOut) != test.wantJSON {
+				t.Fatalf("json = %s, want %s", jsonOut, test.wantJSON)
+			}
+			var fromJSON Protocol
+			if err := json.Unmarshal(jsonOut, &fromJSON); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(fromJSON, test.protocol) {
+				t.Fatalf("json roundtrip = %#v, want %#v", fromJSON, test.protocol)
+			}
+		})
+	}
+}
+
+func TestListenTUN(t *testing.T) {
+	for _, listen := range []Listen{{}, {Protocols: []Protocol{{Type: "http"}}}} {
+		if got := listen.TUN(); got != nil {
+			t.Fatalf("TUN() of %#v = %#v, want nil", listen.Protocols, got)
+		}
+	}
+	listen := Listen{Protocols: []Protocol{{Type: "http"}, {Type: ProtocolTUN, Address: []string{"198.18.0.1/30"}, MTU: 9000}}}
+	want := Protocol{Type: "tun", Address: []string{"198.18.0.1/30"}, MTU: 9000}
+	got := listen.TUN()
+	if got == nil || !reflect.DeepEqual(*got, want) {
+		t.Fatalf("TUN() = %#v, want %#v", got, want)
+	}
+	got.MTU = 1280
+	if listen.Protocols[1].MTU != 9000 {
+		t.Fatal("TUN() returned a pointer into Protocols, want a copy")
+	}
+}
+
+func TestProtocolTUNAddresses(t *testing.T) {
+	ipv4, ipv6 := netip.MustParsePrefix("198.18.0.1/30"), netip.MustParsePrefix("fd00::1/64")
+	defaults := []netip.Prefix{ipv4, netip.MustParsePrefix("fd00:6a77:7761::1/64")}
+	if !slices.Equal(DefaultTUNAddresses, defaults) {
+		t.Fatalf("DefaultTUNAddresses = %v, want %v", DefaultTUNAddresses, defaults)
+	}
+	for _, test := range []struct {
+		name    string
+		address []string
+		want    []netip.Prefix
+	}{
+		{name: "nil", want: defaults},
+		{name: "empty", address: []string{}, want: defaults},
+		{name: "in_order", address: []string{"198.18.0.1/30", "fd00::1/64"}, want: []netip.Prefix{ipv4, ipv6}},
+		{name: "ipv6_first", address: []string{"fd00::1/64", "198.18.0.1/30"}, want: []netip.Prefix{ipv6, ipv4}},
+		{name: "malformed_skipped", address: []string{"198.18.0.1", "fd00::1/64"}, want: []netip.Prefix{ipv6}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := (Protocol{Type: ProtocolTUN, Address: test.address}).TUNAddresses(); !slices.Equal(got, test.want) {
+				t.Fatalf("TUNAddresses() = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestProtocolTUNMTU(t *testing.T) {
+	if DefaultTUNMTU != 1500 {
+		t.Fatalf("DefaultTUNMTU = %d, want 1500", DefaultTUNMTU)
+	}
+	for _, test := range []struct {
+		name string
+		mtu  int
+		want int
+	}{
+		{name: "default", want: 1500},
+		{name: "set", mtu: 9000, want: 9000},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := (Protocol{Type: ProtocolTUN, MTU: test.mtu}).TUNMTU(); got != test.want {
+				t.Fatalf("TUNMTU() = %d, want %d", got, test.want)
+			}
+		})
+	}
+}
+
+func TestConfigTUNRule(t *testing.T) {
+	tun := Listen{Protocols: []Protocol{{Type: ProtocolTUN}}}
+	conf := &Config{Rules: []Rule{
+		{Name: "proxy", Listen: Listen{Port: 1080}},
+		{Name: "off", Disabled: true, Listen: tun},
+		{Name: "on", Listen: tun},
+		{Name: "later", Listen: tun},
+	}}
+	if got := conf.TUNRule(); got != &conf.Rules[2] {
+		t.Fatalf("TUNRule() = %#v, want a pointer to Rules[2] (%q)", got, conf.Rules[2].Name)
+	}
+	for _, test := range []struct {
+		name string
+		conf *Config
+	}{
+		{name: "no_rules", conf: &Config{}},
+		{name: "no_tun_row", conf: &Config{Rules: []Rule{{Name: "proxy", Listen: Listen{Protocols: []Protocol{{Type: "http"}}}}}}},
+		{name: "disabled_only", conf: &Config{Rules: []Rule{{Name: "off", Disabled: true, Listen: tun}}}},
+	} {
+		if got := test.conf.TUNRule(); got != nil {
+			t.Fatalf("TUNRule() with %s = %#v, want nil", test.name, got)
+		}
 	}
 }
 
