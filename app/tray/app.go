@@ -16,20 +16,20 @@ import (
 	"github.com/wzshiming/jumpway/app/web/services/stats"
 	"github.com/wzshiming/jumpway/config"
 	"github.com/wzshiming/jumpway/i18n"
+	"github.com/wzshiming/jumpway/icon"
 	"github.com/wzshiming/jumpway/log"
 	"github.com/wzshiming/jumpway/metrics"
 	"github.com/wzshiming/notify"
+	"github.com/wzshiming/systheme"
 )
 
 type App struct {
-	Mode string
-	Log  string
-
 	tray    *systray.SystemTray
 	actions chan func()
 	store   *config.Store
 	web     http.Handler
 	metrics *metrics.Registry
+	logPath string
 
 	root          context.Context
 	cancel        context.CancelFunc
@@ -80,6 +80,18 @@ func (r ruleState) localProxy() bool {
 	return !r.remote && !r.virtual && r.target == "" && r.http
 }
 
+// displayAddress is the bound address, or the configured one before the first bind, made dialable for local rules.
+func (r ruleState) displayAddress() string {
+	address := r.address
+	if address == "" {
+		address = r.listenAddress
+	}
+	if !r.remote {
+		address = formatAddress(address)
+	}
+	return address
+}
+
 var _ configs.Runtime = (*App)(nil)
 
 func NewApp(store *config.Store) *App {
@@ -101,7 +113,7 @@ func (a *App) Run() {
 		return
 	}
 	logfile := filepath.Join(logdir, time.Now().Format("2006_01_02_15_04_05")+".log")
-	a.Log = logfile
+	a.logPath = logfile
 	err = log.Redirect(logfile)
 	if err != nil {
 		log.Error(err, i18n.RedirectLog())
@@ -132,7 +144,30 @@ func (a *App) Run() {
 	if err != nil {
 		log.Error(err, "Unable to run systray")
 	}
-	a.onExit()
+	a.stop()
+}
+
+func (a *App) onReady() {
+	ico := icon.Black
+	switch t, _ := systheme.GetTheme(); t {
+	case systheme.Light:
+		ico = icon.Black
+	case systheme.Dark:
+		ico = icon.White
+	case systheme.Unknown:
+		ico = icon.Gray
+	}
+
+	a.tray.
+		SetIcon(ico).
+		SetTemplateIcon(ico).
+		SetTooltip("Jump Way").
+		SetMenu(a.buildMenu()).
+		Show()
+	a.do(func() {
+		a.selectSystemProxy("")
+		_ = a.reload()
+	})
 }
 
 // do runs fn on a dedicated worker so menu callbacks neither block the UI
@@ -208,6 +243,18 @@ func (a *App) webURL() string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return "http://" + a.webAddress
+}
+
+// formatAddress replaces an unspecified host with loopback so the address is dialable from this machine.
+func formatAddress(address string) string {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return address
+	}
+	if net.ParseIP(host).IsUnspecified() {
+		host = "127.0.0.1"
+	}
+	return net.JoinHostPort(host, port)
 }
 
 func (a *App) stop() {

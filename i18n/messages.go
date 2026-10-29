@@ -106,10 +106,6 @@ func WriteClipboard() string {
 	return fmt.Sprintf("Write Clipboard")
 }
 
-func RunProxy() string {
-	return fmt.Sprintf("Run Proxy")
-}
-
 func Args() string {
 	return fmt.Sprintf("Args")
 }

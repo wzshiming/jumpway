@@ -97,7 +97,7 @@ func TestInstallCreatesLogDirectory(t *testing.T) {
 	}
 }
 
-func TestIsRunning(t *testing.T) {
+func TestIsInstalled(t *testing.T) {
 	for _, tt := range []struct {
 		name               string
 		installed, running bool
@@ -109,8 +109,8 @@ func TestIsRunning(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			fake := useFake(t, tt.installed, tt.running)
-			if got := IsRunning(); got != tt.want || !reflect.DeepEqual(fake.calls, []string{"status"}) {
-				t.Fatalf("IsRunning() = %v, calls = %q, want %v", got, fake.calls, tt.want)
+			if got := IsInstalled(); got != tt.want || !reflect.DeepEqual(fake.calls, []string{"status"}) {
+				t.Fatalf("IsInstalled() = %v, calls = %q, want %v", got, fake.calls, tt.want)
 			}
 		})
 	}
@@ -136,8 +136,8 @@ func TestManagerCalls(t *testing.T) {
 		{"remove running", Remove, true, true, []string{"status", "uninstall"}},
 		{"status missing", Status, false, false, []string{"status"}},
 		{"status running", Status, true, true, []string{"status"}},
-		{"run start missing", func() { Run("start") }, false, false, []string{"status", "install", "status", "start"}},
-		{"run remove running", func() { Run("remove") }, true, true, []string{"status", "stop", "status", "uninstall"}},
+		{"run start missing", func() { Exec("start") }, false, false, []string{"status", "install", "status", "start"}},
+		{"run remove running", func() { Exec("remove") }, true, true, []string{"status", "stop", "status", "uninstall"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			fake := useFake(t, tt.installed, tt.running)
@@ -168,8 +168,8 @@ func TestNewDaemonOnDemand(t *testing.T) {
 			"LogDirectory": logs,
 		},
 	}
-	IsRunning()
-	IsRunning()
+	IsInstalled()
+	IsInstalled()
 	if len(system.configs) != 1 {
 		t.Fatalf("created %d services for two queries", len(system.configs))
 	}
@@ -182,8 +182,8 @@ func TestNoServiceSystem(t *testing.T) {
 	useSystems(t)
 	Stop()
 	Remove()
-	if IsRunning() {
-		t.Fatal("IsRunning() without a service manager")
+	if IsInstalled() {
+		t.Fatal("IsInstalled() without a service manager")
 	}
 	if _, err := globalDaemon(); !errors.Is(err, service.ErrNoServiceSystemDetected) {
 		t.Fatalf("initialization error = %v", err)

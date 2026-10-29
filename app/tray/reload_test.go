@@ -1378,7 +1378,7 @@ func TestReloadProtocolSelection(test *testing.T) {
 		test.Fatal(err)
 	}
 	app.restoreSystemProxy()
-	if !reflect.DeepEqual(calls, []string{"", multi, ""}) || app.systemProxyRule != "" || app.Mode != i18n.ManualProxy() {
+	if !reflect.DeepEqual(calls, []string{"", multi, ""}) || app.systemProxyRule != "" || !strings.HasSuffix(app.menuSnapshot().web, i18n.ManualProxy()) {
 		test.Fatalf("dropping HTTP kept the system proxy: calls = %q, rule = %q", calls, app.systemProxyRule)
 	}
 	if app.ruleAddress("multi") != "" || app.primaryAddress() != "" {
