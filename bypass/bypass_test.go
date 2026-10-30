@@ -41,12 +41,11 @@ func (l *ttLookup) lookup(ipv6 bool) (boundIface, error) {
 	return ttIface(len(l.families)), nil
 }
 
-// ttRawConn stands in for a dialed socket: Control hands the callback fd 0 and counts the call.
-type ttRawConn struct{ controls int }
+// ttRawConn stands in for a dialed socket; fd keeps it non-zero-size, so distinct fakes never share a pointer.
+type ttRawConn struct{ fd uintptr }
 
 func (c *ttRawConn) Control(f func(fd uintptr)) error {
-	c.controls++
-	f(0)
+	f(c.fd)
 	return nil
 }
 
@@ -55,21 +54,19 @@ func (c *ttRawConn) Read(func(fd uintptr) bool) error { return errors.ErrUnsuppo
 func (c *ttRawConn) Write(func(fd uintptr) bool) error { return errors.ErrUnsupported }
 
 type ttBindCall struct {
+	conn  syscall.RawConn
 	iface boundIface
 	ipv6  bool
 }
 
-// ttBinder is a bindFunc that reaches the socket through RawConn.Control, as the platform binds do.
+// ttBinder is a bindFunc recording each call, including the RawConn it was handed.
 type ttBinder struct {
 	err   error
 	calls []ttBindCall
 }
 
 func (b *ttBinder) bind(c syscall.RawConn, iface boundIface, ipv6 bool) error {
-	if err := c.Control(func(uintptr) {}); err != nil {
-		return err
-	}
-	b.calls = append(b.calls, ttBindCall{iface: iface, ipv6: ipv6})
+	b.calls = append(b.calls, ttBindCall{conn: c, iface: iface, ipv6: ipv6})
 	return b.err
 }
 
@@ -100,7 +97,13 @@ func TestShouldBind(t *testing.T) {
 		{"IPv6 over tcp without a family suffix", "tcp", "[2001:db8::1]:443", ttCaptureLab, true, true},
 		{"IPv4 over udp without a family suffix", "udp", "198.18.5.5:53", ttCaptureLab, false, true},
 		{"IPv4 over ip without a family suffix", "ip", "198.18.5.5:0", ttCaptureLab, false, true},
+		{"IPv4-mapped IPv6 inside the capture over tcp6", "tcp6", "[::ffff:198.18.5.5]:80", ttCaptureLab, true, true},
+		{"IPv4-mapped IPv6 inside the capture over udp6", "udp6", "[::ffff:198.18.5.5]:53", ttCaptureLab, true, true},
+		{"IPv4-mapped IPv6 inside the capture over tcp4", "tcp4", "[::ffff:198.18.5.5]:80", ttCaptureLab, false, true},
+		{"IPv4-mapped IPv6 over tcp without a family suffix", "tcp", "[::ffff:198.18.5.5]:80", ttCaptureLab, false, true},
 		{"IPv6 literal over tcp4", "tcp4", "[2001:db8::1]:443", ttCaptureAll, false, false},
+		{"unmapped IPv6 inside the capture over tcp4", "tcp4", "[2001:db8::1]:80", ttCaptureLab, false, false},
+		{"plain IPv4 inside the capture over tcp6", "tcp6", "198.18.5.5:80", ttCaptureLab, false, false},
 		{"IPv4 loopback", "tcp4", "127.0.0.1:80", ttCaptureAll, false, false},
 		{"IPv6 loopback", "tcp6", "[::1]:80", ttCaptureAll, false, false},
 		{"IPv4 link-local unicast", "tcp4", "169.254.10.10:80", ttCaptureAll, false, false},
@@ -114,6 +117,9 @@ func TestShouldBind(t *testing.T) {
 		{"host name", "tcp", "example.com:80", ttCaptureAll, false, false},
 		{"IPv4 outside the capture", "tcp4", "203.0.113.7:80", ttCaptureLab, false, false},
 		{"IPv6 outside the capture", "tcp6", "[2001:db9::1]:443", ttCaptureLab, false, false},
+		{"IPv4-mapped IPv6 outside the capture over tcp6", "tcp6", "[::ffff:203.0.113.7]:80", ttCaptureLab, false, false},
+		// Containment is tested on the unmapped IPv4, which no IPv6 prefix contains.
+		{"IPv4-mapped IPv6 over tcp6 with only IPv6 captured", "tcp6", "[::ffff:198.18.5.5]:80", []netip.Prefix{netip.MustParsePrefix("::/0")}, false, false},
 		{"empty capture", "tcp4", "198.18.5.5:80", nil, false, false},
 	}
 	for _, tc := range tests {
@@ -220,23 +226,20 @@ func TestNewDialerControlBindsCapturedDestination(t *testing.T) {
 	if err := ttControl(t, l, b)("tcp4", "198.18.5.5:80", raw); err != nil {
 		t.Fatalf("Control(tcp4, 198.18.5.5:80) error = %v, want nil", err)
 	}
-	if want := []ttBindCall{{iface: ttIface(1), ipv6: false}}; !slices.Equal(b.calls, want) {
-		t.Errorf("bind calls = %+v, want %+v: once, with the looked-up IPv4 interface", b.calls, want)
+	if want := []ttBindCall{{conn: raw, iface: ttIface(1), ipv6: false}}; !slices.Equal(b.calls, want) {
+		t.Errorf("bind calls = %+v, want %+v: once, on the RawConn handed to Control, with the looked-up IPv4 interface", b.calls, want)
 	}
 	if want := []bool{false}; !slices.Equal(l.families, want) {
 		t.Errorf("lookup families = %v, want %v", l.families, want)
 	}
-	if raw.controls != 1 {
-		t.Errorf("the RawConn handed to Control was used %d times, want 1: bind must act on the dialed socket", raw.controls)
-	}
 }
 
 func TestNewDialerControlBindsIPv6DestinationAsIPv6(t *testing.T) {
-	l, b := &ttLookup{}, &ttBinder{}
-	if err := ttControl(t, l, b)("tcp6", "[2001:db8::1]:443", &ttRawConn{}); err != nil {
+	l, b, raw := &ttLookup{}, &ttBinder{}, &ttRawConn{}
+	if err := ttControl(t, l, b)("tcp6", "[2001:db8::1]:443", raw); err != nil {
 		t.Fatalf("Control(tcp6, [2001:db8::1]:443) error = %v, want nil", err)
 	}
-	if want := []ttBindCall{{iface: ttIface(1), ipv6: true}}; !slices.Equal(b.calls, want) {
+	if want := []ttBindCall{{conn: raw, iface: ttIface(1), ipv6: true}}; !slices.Equal(b.calls, want) {
 		t.Errorf("bind calls = %+v, want %+v: once, with the looked-up IPv6 interface", b.calls, want)
 	}
 	if want := []bool{true}; !slices.Equal(l.families, want) {
@@ -245,15 +248,29 @@ func TestNewDialerControlBindsIPv6DestinationAsIPv6(t *testing.T) {
 }
 
 func TestNewDialerControlLeavesLoopbackUnbound(t *testing.T) {
-	l, b, raw := &ttLookup{}, &ttBinder{}, &ttRawConn{}
-	if err := ttControl(t, l, b)("tcp4", "127.0.0.1:80", raw); err != nil {
+	l, b := &ttLookup{}, &ttBinder{}
+	if err := ttControl(t, l, b)("tcp4", "127.0.0.1:80", &ttRawConn{}); err != nil {
 		t.Fatalf("Control(tcp4, 127.0.0.1:80) error = %v, want nil", err)
 	}
-	if len(b.calls) != 0 || raw.controls != 0 {
-		t.Errorf("loopback dial: %d bind calls, socket used %d times, want none", len(b.calls), raw.controls)
+	if len(b.calls) != 0 {
+		t.Errorf("loopback dial: bind calls = %+v, want none", b.calls)
 	}
 	if len(l.families) != 0 {
 		t.Errorf("loopback dial looked up the default route %d times, want 0", len(l.families))
+	}
+}
+
+func TestNewDialerControlLeavesUncapturedDestinationUnbound(t *testing.T) {
+	l, b := &ttLookup{}, &ttBinder{}
+	d := newDialer(ttCaptureLab, l.lookup, b.bind, ttNow)
+	if d == nil || d.Control == nil {
+		t.Fatal("newDialer returned no Control hook")
+	}
+	if err := d.Control("tcp4", "203.0.113.9:80", &ttRawConn{}); err != nil {
+		t.Fatalf("Control(tcp4, 203.0.113.9:80) error = %v, want nil", err)
+	}
+	if len(l.families) != 0 || len(b.calls) != 0 {
+		t.Errorf("dial outside the capture %v: lookup families %v, bind calls %+v, want neither", ttCaptureLab, l.families, b.calls)
 	}
 }
 
@@ -290,15 +307,16 @@ func TestNewDialerControlReusesCachedLookup(t *testing.T) {
 func TestNewDialerControlInvalidatesCacheAfterBindError(t *testing.T) {
 	l, b := &ttLookup{}, &ttBinder{err: ttErrBind}
 	control := ttControl(t, l, b)
-	_ = control("tcp4", "198.18.5.5:80", &ttRawConn{})
+	failed, retried := &ttRawConn{}, &ttRawConn{}
+	_ = control("tcp4", "198.18.5.5:80", failed)
 	b.err = nil
-	if err := control("tcp4", "198.18.5.5:80", &ttRawConn{}); err != nil {
+	if err := control("tcp4", "198.18.5.5:80", retried); err != nil {
 		t.Fatalf("Control after the failed bind error = %v, want nil", err)
 	}
 	if want := []bool{false, false}; !slices.Equal(l.families, want) {
 		t.Errorf("lookup families = %v for a failed bind then a dial at the same instant, want %v: the failed bind must invalidate the cache", l.families, want)
 	}
-	if want := []ttBindCall{{iface: ttIface(1)}, {iface: ttIface(2)}}; !slices.Equal(b.calls, want) {
+	if want := []ttBindCall{{conn: failed, iface: ttIface(1)}, {conn: retried, iface: ttIface(2)}}; !slices.Equal(b.calls, want) {
 		t.Errorf("bind calls = %+v, want %+v: the retry binds the fresh lookup", b.calls, want)
 	}
 }
