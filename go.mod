@@ -28,6 +28,7 @@ require (
 	github.com/wzshiming/sysnotify v0.0.2
 	github.com/wzshiming/sysproxy v0.2.2
 	github.com/wzshiming/systheme v0.0.1
+	go4.org/netipx v0.0.0-20260823151212-3075585bcbeb
 	golang.org/x/crypto v0.57.0
 	golang.org/x/net v0.60.0
 	golang.org/x/sys v0.48.0
