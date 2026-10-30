@@ -25,15 +25,16 @@ func RunForward(ctx context.Context, listener net.Listener, dialer bridge.Dialer
 				conn.Close()
 				return
 			}
-			tunnel(ctx, conn, remote)
+			Tunnel(ctx, conn, remote)
 		}()
 	}
 }
 
-func tunnel(ctx context.Context, client, remote net.Conn) {
+// Tunnel pipes a and b into each other, passing an ended direction on with CloseWrite, and closes both once done or when ctx ends.
+func Tunnel(ctx context.Context, a, b net.Conn) {
 	closeBoth := func() {
-		client.Close()
-		remote.Close()
+		a.Close()
+		b.Close()
 	}
 	defer closeBoth()
 	stop := context.AfterFunc(ctx, closeBoth)
@@ -49,8 +50,8 @@ func tunnel(ctx context.Context, client, remote net.Conn) {
 		}
 		done <- halfClosed
 	}
-	go copyConn(client, remote)
-	go copyConn(remote, client)
+	go copyConn(a, b)
+	go copyConn(b, a)
 	if !<-done {
 		closeBoth()
 	}
