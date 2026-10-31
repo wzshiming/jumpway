@@ -6,7 +6,9 @@ import (
 	"errors"
 	"io"
 	"net"
+	"net/netip"
 	"reflect"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -14,6 +16,7 @@ import (
 	bridgeconfig "github.com/wzshiming/bridge/config"
 	"github.com/wzshiming/jumpway"
 	"github.com/wzshiming/jumpway/config"
+	"github.com/wzshiming/jumpway/netproc"
 )
 
 func TestHopDialer(t *testing.T) {
@@ -31,6 +34,8 @@ func TestHopDialer(t *testing.T) {
 		if dialErr != nil {
 			return nil, dialErr
 		}
+		// Outlasts the 15.6 ms Windows clock tick so the dial never measures 0.
+		time.Sleep(20 * time.Millisecond)
 		return inner, nil
 	})}
 	connected, err := wrapped.DialContext(ctx, "tcp", "example.com:443")
@@ -187,6 +192,8 @@ func TestRuleDialerTargets(t *testing.T) {
 				if test.err != nil {
 					return nil, test.err
 				}
+				// Outlasts the 15.6 ms Windows clock tick so the dial never measures 0.
+				time.Sleep(20 * time.Millisecond)
 				return inner, nil
 			})
 			if test.url != "" {
@@ -529,6 +536,61 @@ func TestLiveConnectionTraffic(t *testing.T) {
 		if connection.Stats.RateUp != 0 || connection.Stats.RateDown != 0 {
 			t.Fatalf("idle connection rates = %+v, want zero", connection)
 		}
+	}
+}
+
+func TestRuleDialerPendingTUNClient(t *testing.T) {
+	want := netproc.Process{PID: 4242, Name: "curl"}
+	for _, test := range []struct {
+		name    string
+		rule    string
+		client  string
+		pending bool
+	}{
+		{name: "tun address", rule: "tun", client: "198.18.0.1:40000", pending: true},
+		{name: "tun IPv6 address", rule: "tun", client: "[fd00:6a77:7761::1]:40000", pending: true},
+		{name: "tun subnet peer", rule: "tun", client: "198.18.0.2:40000"},
+		{name: "rule without tun", rule: "plain", client: "198.18.0.1:40000"},
+		{name: "loopback with tun", rule: "tun", client: "127.0.0.1:40000", pending: true},
+		{name: "loopback without tun", rule: "plain", client: "127.0.0.1:40000", pending: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			registry := NewRegistry()
+			registry.Sync([]config.Rule{
+				{Name: "tun", Listen: config.Listen{Protocols: []config.Protocol{{Type: config.ProtocolHTTP}, {Type: config.ProtocolTUN}}}},
+				{Name: "plain"},
+			})
+			client := netip.MustParseAddrPort(test.client)
+			var calls atomic.Int32
+			registry.lookup = func(context.Context) (map[netip.AddrPort]netproc.Process, error) {
+				calls.Add(1)
+				return map[netip.AddrPort]netproc.Process{client: want}, nil
+			}
+			inner, peer := net.Pipe()
+			closeOnCleanup(t, peer)
+			ctx := jumpway.WithClientAddr(context.Background(), net.TCPAddrFromAddrPort(client))
+			connected, err := registry.Rule(test.rule).WrapDialer(bridge.DialFunc(func(context.Context, string, string) (net.Conn, error) {
+				return inner, nil
+			})).DialContext(ctx, "tcp", "example.com:443")
+			if err != nil {
+				t.Fatal(err)
+			}
+			closeOnCleanup(t, connected)
+			var connections []Connection
+			for _, rule := range registry.Snapshot().Rules {
+				connections = append(connections, rule.Connections...)
+			}
+			if len(connections) != 1 || connections[0].Client != client.String() {
+				t.Fatalf("connections = %+v, want one from %s", connections, client)
+			}
+			process := connections[0].Process
+			if test.pending && (calls.Load() != 1 || process == nil || *process != want) {
+				t.Fatalf("lookups = %d, process = %+v; want the %s connection pending and resolved to %+v", calls.Load(), process, test.rule, want)
+			}
+			if !test.pending && (calls.Load() != 0 || process != nil) {
+				t.Fatalf("lookups = %d, process = %+v; want the %s connection not pending", calls.Load(), process, test.rule)
+			}
+		})
 	}
 }
 

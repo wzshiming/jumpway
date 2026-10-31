@@ -852,8 +852,18 @@
     ],
     "type": "object",
     "properties": {
+     "address": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
      "cipher": {
       "type": "string"
+     },
+     "mtu": {
+      "type": "integer",
+      "format": "int64"
      },
      "password": {
       "type": "string"
@@ -865,7 +875,7 @@
       "type": "string"
      }
     },
-    "description": "Protocol is one proxy scheme served on the entry; empty credentials inherit the shared Listen ones.\n"
+    "description": "Protocol is the tun entry, or a proxy scheme whose empty credentials inherit the shared Listen ones.\n"
    },
    "RawConfig": {
     "required": [
@@ -1028,6 +1038,10 @@
      "target": {
       "type": "string",
       "description": "Target is the fixed destination for port-forward rules; empty for proxy rules.\n"
+     },
+     "tun": {
+      "type": "string",
+      "description": "Tun is the TUN's interface name while the rule's TUN half is up.\n"
      }
     },
     "description": "RuleStatus is one rule's listener state; Attempt counts consecutive failed listen attempts.\n"

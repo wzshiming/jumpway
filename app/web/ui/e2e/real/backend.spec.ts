@@ -483,3 +483,46 @@ test('live traffic through a proxy rule reaches the API and the connections page
 		expect.soft(await removeRules(request, [name]), 'cleanup').toEqual([]);
 	}
 });
+
+// Disabled on purpose: the backend never opens a TUN device for it, so the host network is untouched.
+test('a disabled rule with a TUN row round-trips through the API and opens with TUN checked in the editor', async ({
+	page,
+	request
+}) => {
+	test.skip(!writable, WRITE_HINT);
+	const name = unique('tun');
+	const rule: Rule = {
+		name,
+		disabled: true,
+		listen: {
+			host: '127.0.0.1',
+			port: 0,
+			protocols: [
+				{ type: 'http' },
+				{ type: 'tun', address: ['198.18.0.1/30', 'fd00:6a77:7761::1/64'], mtu: 1400 }
+			]
+		},
+		forward: {}
+	};
+	try {
+		await ok(await request.post('/apis/configs/rules', { data: rule }));
+		expect(await body<Rule>(await request.get(rulePath(name)))).toEqual(rule);
+		expect((await statusOf(request)).rules?.find((entry) => entry.name === name)).toBeUndefined();
+
+		await page.goto('/#/rules/' + encodeURIComponent(name));
+		await expect(heading(page)).toHaveText(name);
+		await expect(page.getByRole('switch', { name: 'Enabled' })).not.toBeChecked();
+		await expect(page.getByRole('checkbox', { name: 'HTTP', exact: true })).toBeChecked();
+		const tun = page.getByRole('checkbox', { name: 'TUN', exact: true });
+		await expect(tun).toBeChecked();
+		await expect(tun).toBeEnabled();
+		const fields = page.getByRole('group', { name: 'TUN', exact: true });
+		await expect(fields.getByLabel('Addresses', { exact: true })).toHaveValue(
+			'198.18.0.1/30, fd00:6a77:7761::1/64'
+		);
+		await expect(fields.getByLabel('MTU', { exact: true })).toHaveValue('1400');
+		await expect(unsaved(page)).toHaveCount(0);
+	} finally {
+		expect.soft(await removeRules(request, [name]), 'cleanup').toEqual([]);
+	}
+});

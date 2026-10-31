@@ -45,6 +45,8 @@ type Rule struct {
 	counters       map[hopKey]*counter
 	targets        map[targetKey]*counter
 	targetsEvicted int64
+	// local are the rule's TUN addresses, the client addresses of connections arriving through the TUN.
+	local []netip.Addr
 }
 
 type hopKey struct {
@@ -120,6 +122,12 @@ func (r *Registry) Sync(rules []config.Rule) {
 		entry.ways[Listen] = entry.syncWay(Listen, rule.Listen.Way, counters)
 		entry.ways[Forward] = entry.syncWay(Forward, rule.Forward.Way, counters)
 		entry.counters = counters
+		entry.local = nil
+		if tun := rule.Listen.TUN(); tun != nil {
+			for _, prefix := range tun.TUNAddresses() {
+				entry.local = append(entry.local, prefix.Addr())
+			}
+		}
 		updated[rule.Name] = entry
 		order = append(order, rule.Name)
 	}

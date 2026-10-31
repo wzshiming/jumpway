@@ -160,6 +160,16 @@
                     "expr": "message"
                 }
             ]
+        },
+        {
+            "id": "TUN denied, reload config to retry",
+            "message": "TUN denied, reload config to retry",
+            "translation": "TUN 授权被拒绝，重载配置以重试"
+        },
+        {
+            "id": "TUN unavailable, reload config to retry",
+            "message": "TUN unavailable, reload config to retry",
+            "translation": "TUN 不可用，重载配置以重试"
         }
     ]
 }

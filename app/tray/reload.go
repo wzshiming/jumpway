@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"slices"
 	"sync"
 	"time"
@@ -19,15 +20,17 @@ import (
 	"github.com/wzshiming/jumpway/i18n"
 	"github.com/wzshiming/jumpway/log"
 	"github.com/wzshiming/jumpway/metrics"
+	"github.com/wzshiming/jumpway/tundev"
 )
 
 // firstEventTimeout bounds how long reload waits for new rules to report their first listen result.
 const firstEventTimeout = 2 * time.Second
 
-// exit is the shared outbound policy of one reload: the no-proxy list and its matcher.
+// exit is the shared outbound policy of one reload: the no-proxy list, its matcher and the first-hop base dialer.
 type exit struct {
 	noProxy []string
 	matcher hostmatcher.Matcher
+	base    *local.Local
 }
 
 // reload applies the stored config: it restarts the rules whose definition changed, leaves the
@@ -52,8 +55,14 @@ func (a *App) reload() error {
 
 	a.listenWebUI(conf.WebUI.String())
 	noProxy := conf.NoProxy.GetList(a.store.Dir())
-	policy := exit{noProxy: noProxy, matcher: hostmatcher.NewMatcher(noProxy)}
-	enabled, fingerprints := enabledRules(conf.Rules, noProxy)
+	policy := exit{noProxy: noProxy, matcher: hostmatcher.NewMatcher(noProxy), base: local.LOCAL}
+	tunRule := conf.TUNRule()
+	var capture []netip.Prefix
+	if tunRule != nil {
+		capture = tundev.CaptureRoutes(tunConfig(*tunRule.Listen.TUN(), noProxy))
+		policy.base = bypassBase(capture)
+	}
+	enabled, fingerprints := enabledRules(conf.Rules, noProxy, tunRule != nil, capture)
 	a.stopStaleRules(fingerprints)
 	rules := a.syncRuleStates(enabled)
 
@@ -95,11 +104,12 @@ func (a *App) failReload(err error) error {
 }
 
 // enabledRules drops disabled rules and fingerprints the rest; proxy rules fold in the no-proxy
-// list so that changing it restarts them too.
-func enabledRules(rules []config.Rule, noProxy []string) ([]config.Rule, map[string]string) {
+// list so that changing it restarts them too, and with a tun rule every rule also folds in the list and capture.
+func enabledRules(rules []config.Rule, noProxy []string, tun bool, capture []netip.Prefix) ([]config.Rule, map[string]string) {
 	enabled := make([]config.Rule, 0, len(rules))
 	fingerprints := make(map[string]string, len(rules))
 	noProxyJSON, _ := json.Marshal(noProxy)
+	captureJSON, _ := json.Marshal(capture)
 	for _, rule := range rules {
 		if rule.Disabled {
 			continue
@@ -107,8 +117,11 @@ func enabledRules(rules []config.Rule, noProxy []string) ([]config.Rule, map[str
 		enabled = append(enabled, rule)
 		ruleJSON, _ := json.Marshal(rule)
 		fingerprint := string(ruleJSON)
-		if rule.Forward.IsProxy() {
+		if rule.Forward.IsProxy() || tun {
 			fingerprint += string(noProxyJSON)
+		}
+		if tun {
+			fingerprint += string(captureJSON)
 		}
 		fingerprints[rule.Name] = fingerprint
 	}
@@ -152,10 +165,15 @@ func (a *App) syncRuleStates(enabled []config.Rule) []*ruleState {
 }
 
 func newRuleState(rule config.Rule) *ruleState {
+	address := rule.Listen.Address()
+	if len(rule.Listen.Schemes()) == 0 {
+		// A tun-only rule has no TCP listener.
+		address = config.ProtocolTUN
+	}
 	return &ruleState{
 		name:          rule.Name,
-		listenAddress: rule.Listen.Address(),
-		address:       rule.Listen.Address(),
+		listenAddress: address,
+		address:       address,
 		target:        rule.Forward.Target(),
 		remote:        rule.Listen.Remote(),
 		virtual:       rule.Listen.Virtual != "",
@@ -178,18 +196,41 @@ func (a *App) startRule(rule config.Rule, state *ruleState, fingerprint string, 
 	}
 	first := make(chan error, 1)
 	report := a.ruleReporter(ctx, rule, state, first)
-	listen, serve, err := a.buildRule(ctx, rule, policy)
+	listen, serve, dialer, err := a.buildRule(ctx, rule, policy)
 	if err != nil {
 		report(jumpway.Event{Err: err})
 		cancel()
 		close(done)
 		return first
 	}
+	// Read on the actions worker so that replacing openTUN between reloads cannot race.
+	open := a.openTUN
 	a.wg.Add(1)
 	go func() {
 		defer a.wg.Done()
 		defer close(done)
-		jumpway.Serve(ctx, listen, serve, report)
+		tcpCtx, stopTCP := context.WithCancel(ctx)
+		defer stopTCP()
+		tcpDone := make(chan struct{})
+		var tun sync.WaitGroup
+		if rule.Listen.TUN() != nil {
+			tun.Go(func() {
+				err := a.serveTUN(ctx, open, rule, state, dialer, policy.noProxy, report)
+				if ctx.Err() != nil {
+					return
+				}
+				// The TCP half ends first so that a late listen event cannot mask the failure.
+				stopTCP()
+				<-tcpDone
+				report(jumpway.Event{Err: err, Attempt: 1})
+				cancel()
+			})
+		}
+		if len(rule.Listen.Schemes()) != 0 {
+			jumpway.Serve(tcpCtx, listen, serve, report)
+		}
+		close(tcpDone)
+		tun.Wait()
 	}()
 	return first
 }
@@ -231,16 +272,16 @@ func (a *App) ruleReporter(ctx context.Context, rule config.Rule, state *ruleSta
 	}
 }
 
-// buildRule assembles the entry listener and the connection handler of one rule.
-func (a *App) buildRule(ctx context.Context, rule config.Rule, policy exit) (listen func(context.Context) (net.Listener, error), serve func(context.Context, net.Listener) error, err error) {
+// buildRule assembles the entry listener, the connection handler and the outermost dialer of one rule.
+func (a *App) buildRule(ctx context.Context, rule config.Rule, policy exit) (listen func(context.Context) (net.Listener, error), serve func(context.Context, net.Listener) error, dialer bridge.Dialer, err error) {
 	rs := a.metrics.Rule(rule.Name)
-	listenConfig, err := jumpway.NewListenConfig(ctx, rule.Listen.Way, rs.HopWrapper(metrics.Listen))
+	listenConfig, err := jumpway.NewListenConfig(ctx, policy.base, rule.Listen.Way, rs.HopWrapper(metrics.Listen))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	dialer, err := a.buildDialer(ctx, rule, rs, policy)
+	dialer, err = a.buildDialer(ctx, rule, rs, policy)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	listen = func(ctx context.Context) (net.Listener, error) {
 		return listenConfig.Listen(ctx, "tcp", rule.Listen.Address())
@@ -259,13 +300,13 @@ func (a *App) buildRule(ctx context.Context, rule config.Rule, policy exit) (lis
 		}
 		return jumpway.RunForward(ctx, listener, dialer, target)
 	}
-	return listen, serve, nil
+	return listen, serve, dialer, nil
 }
 
 // buildDialer is the exit side of a rule: the forward chain with retries, logging, no-proxy shunting and metrics.
 func (a *App) buildDialer(ctx context.Context, rule config.Rule, rs *metrics.Rule, policy exit) (bridge.Dialer, error) {
 	target := rule.Forward.Target()
-	dialer := jumpway.NewLogDialer(local.LOCAL, func(ctx context.Context, network, address string) {
+	dialer := jumpway.NewLogDialer(policy.base, func(ctx context.Context, network, address string) {
 		log.Info(i18n.UseProxy(), "address", address, "rule", rule.Name)
 	})
 	if rule.Forward.Virtual != "" {
@@ -287,7 +328,7 @@ func (a *App) buildDialer(ctx context.Context, rule config.Rule, rs *metrics.Rul
 
 	// Fixed targets must stay on their configured chain, including exit-node loopback addresses.
 	if target == "" && len(policy.noProxy) != 0 {
-		subDialer := jumpway.NewLogDialer(local.LOCAL, func(ctx context.Context, network, address string) {
+		subDialer := jumpway.NewLogDialer(policy.base, func(ctx context.Context, network, address string) {
 			log.Info(i18n.Connect(), "proxy", false, "address", address, "rule", rule.Name)
 		})
 		dialer = chain.NewShuntDialer(dialer, subDialer, policy.matcher)

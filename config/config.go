@@ -3,7 +3,9 @@ package config
 import (
 	"fmt"
 	"net"
+	"net/netip"
 	"net/url"
+	"slices"
 
 	bridgeconfig "github.com/wzshiming/bridge/config"
 )
@@ -12,6 +14,16 @@ type Config struct {
 	WebUI   Address `yaml:"web_ui" json:"web_ui"`
 	Rules   []Rule  `yaml:"rules" json:"rules"`
 	NoProxy NoProxy `yaml:"no_proxy" json:"no_proxy"`
+}
+
+// TUNRule is the first enabled rule whose listen has a tun row, nil when there is none.
+func (c *Config) TUNRule() *Rule {
+	for index := range c.Rules {
+		if rule := &c.Rules[index]; !rule.Disabled && rule.Listen.TUN() != nil {
+			return rule
+		}
+	}
+	return nil
 }
 
 // Address is a local TCP listen address; an empty Host means 127.0.0.1.
@@ -47,12 +59,14 @@ type Listen struct {
 	Protocols []Protocol          `yaml:"protocols,omitempty" json:"protocols,omitempty"`
 }
 
-// Protocol is one proxy scheme served on the entry; empty credentials inherit the shared Listen ones.
+// Protocol is the tun entry, or a proxy scheme whose empty credentials inherit the shared Listen ones.
 type Protocol struct {
-	Type     string `yaml:"type" json:"type"`
-	Username string `yaml:"username,omitempty" json:"username,omitempty"`
-	Password string `yaml:"password,omitempty" json:"password,omitempty"`
-	Cipher   string `yaml:"cipher,omitempty" json:"cipher,omitempty"`
+	Type     string   `yaml:"type" json:"type"`
+	Username string   `yaml:"username,omitempty" json:"username,omitempty"`
+	Password string   `yaml:"password,omitempty" json:"password,omitempty"`
+	Cipher   string   `yaml:"cipher,omitempty" json:"cipher,omitempty"`
+	Address  []string `yaml:"address,omitempty" json:"address,omitempty"`
+	MTU      int      `yaml:"mtu,omitempty" json:"mtu,omitempty"`
 }
 
 const (
@@ -61,10 +75,17 @@ const (
 	ProtocolSOCKS4      = "socks4"
 	ProtocolSSH         = "ssh"
 	ProtocolShadowsocks = "ss"
+	ProtocolTUN         = "tun"
 )
 
 // DefaultProtocols is served when Protocols is empty, plus Shadowsocks when Cipher is set.
 var DefaultProtocols = []string{ProtocolHTTP, ProtocolSOCKS5, ProtocolSOCKS4, ProtocolSSH}
+
+// DefaultTUNMTU is used when a tun row's mtu is 0.
+const DefaultTUNMTU = 1500
+
+// DefaultTUNAddresses is used when a tun row has no address.
+var DefaultTUNAddresses = []netip.Prefix{netip.MustParsePrefix("198.18.0.1/30"), netip.MustParsePrefix("fd00:6a77:7761::1/64")}
 
 func (l Listen) Address() string {
 	if l.Virtual != "" {
@@ -77,7 +98,7 @@ func (l Listen) Remote() bool {
 	return len(l.Way) > 0
 }
 
-// Schemes is the served protocol list with shared credentials filled in; the receiver's slices are left untouched.
+// Schemes lists the served proxy schemes with shared credentials filled in.
 func (l Listen) Schemes() []Protocol {
 	protocols := l.Protocols
 	if len(protocols) == 0 {
@@ -89,8 +110,11 @@ func (l Listen) Schemes() []Protocol {
 			protocols = append(protocols, Protocol{Type: ProtocolShadowsocks})
 		}
 	}
-	schemes := make([]Protocol, len(protocols))
-	for index, protocol := range protocols {
+	schemes := make([]Protocol, 0, len(protocols))
+	for _, protocol := range protocols {
+		if protocol.Type == ProtocolTUN {
+			continue
+		}
 		if protocol.Username == "" {
 			protocol.Username = l.Username
 		}
@@ -100,9 +124,48 @@ func (l Listen) Schemes() []Protocol {
 		if protocol.Type == ProtocolShadowsocks && protocol.Cipher == "" {
 			protocol.Cipher = l.Cipher
 		}
-		schemes[index] = protocol
+		schemes = append(schemes, protocol)
 	}
 	return schemes
+}
+
+// TUN is a copy of the tun row, nil when there is none.
+func (l Listen) TUN() *Protocol {
+	for _, protocol := range l.Protocols {
+		if protocol.Type == ProtocolTUN {
+			protocol.Address = slices.Clone(protocol.Address)
+			return &protocol
+		}
+	}
+	return nil
+}
+
+// TUNAddresses lists the tun device's own addresses with their subnets.
+func (p Protocol) TUNAddresses() []netip.Prefix {
+	if len(p.Address) == 0 {
+		return slices.Clone(DefaultTUNAddresses)
+	}
+	prefixes := make([]netip.Prefix, 0, len(p.Address))
+	for _, address := range p.Address {
+		if prefix, ok := parseTUNAddress(address); ok {
+			prefixes = append(prefixes, prefix)
+		}
+	}
+	return prefixes
+}
+
+// parseTUNAddress parses one address entry; IPv4-mapped IPv6 counts as malformed.
+func parseTUNAddress(address string) (netip.Prefix, bool) {
+	prefix, err := netip.ParsePrefix(address)
+	return prefix, err == nil && !prefix.Addr().Is4In6()
+}
+
+// TUNMTU is the MTU the tun device is opened with.
+func (p Protocol) TUNMTU() int {
+	if p.MTU == 0 {
+		return DefaultTUNMTU
+	}
+	return p.MTU
 }
 
 // User is the proxy URL userinfo: cipher:password for ss, username only for socks4, nil when unauthenticated.

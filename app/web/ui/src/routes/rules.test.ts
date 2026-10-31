@@ -5,6 +5,7 @@ import {
 	rulesFixture,
 	snapshotFixture,
 	statusFixture,
+	tunRulesFixture,
 	virtualRulesFixture,
 	webUIFixture
 } from '../../e2e/fixtures/api';
@@ -1005,7 +1006,7 @@ const mode = (value: 'proxy' | 'forward') =>
 const CIPHERS = fieldsOf(layoutFor('shadowsocks')!).find(
 	(input) => input.name === 'encrypto'
 )!.items!;
-const TYPES = ['http', 'socks5', 'socks4', 'ssh', 'ss'];
+const TYPES = ['http', 'socks5', 'socks4', 'ssh', 'ss', 'tun'];
 const checkedTypes = () =>
 	TYPES.filter((type) => target.querySelector<HTMLInputElement>(`#protocol-${type}`)?.checked);
 const group = (name: string) =>
@@ -1066,7 +1067,7 @@ test('a legacy rule checks HTTP, SOCKS5, SOCKS4 and SSH; checking Shadowsocks ad
 		Array.from(group('Protocols')!.querySelectorAll('label')).map((label) =>
 			label.textContent?.trim()
 		)
-	).toEqual(['HTTP', 'SOCKS5', 'SOCKS4', 'SSH', 'Shadowsocks']);
+	).toEqual(['HTTP', 'SOCKS5', 'SOCKS4', 'SSH', 'Shadowsocks', 'TUN']);
 	expect(group('HTTP')).not.toBeUndefined();
 	expect(group('SSH')).not.toBeUndefined();
 	expect(group('Shadowsocks')).toBeUndefined();
@@ -1511,4 +1512,264 @@ test('editing a rule shows field skeletons behind a busy wrapper until the rule 
 	expect(target.querySelectorAll('main [data-skeleton]')).toHaveLength(0);
 	expect(target.querySelector('main [aria-busy="true"]')).toBeNull();
 	expect(field('rule-name').value).toBe('office');
+});
+
+// TUN: a protocol row without credentials that opens a virtual interface; one enabled rule at a time.
+const TUN_HELP =
+	"TUN: a virtual network interface that captures this machine's TCP traffic and sends it through the rule's exit chain; of UDP only DNS (port 53) is relayed. macOS and Linux only; only one rule may enable it.";
+const TUN_HINT =
+	'The first start asks for system authorization; if denied, reload the configuration to be asked again. Networks under No proxy bypass the TUN. JumpWay does not change DNS: for remote resolution set the system DNS to a public resolver.';
+const tunReason = () => target.querySelector('#protocol-tun-reason')?.textContent?.trim() ?? null;
+
+test('the TUN checkbox has its help tip outside the label; checked, it shows optional address and MTU fields and no custom toggle', async () => {
+	await render('#/rules/lab');
+	expect([field('protocol-tun').checked, field('protocol-tun').disabled]).toEqual([false, false]);
+	expect(field('protocol-tun').closest('label')?.textContent?.trim()).toBe('TUN');
+	const help = group('Protocols')!.querySelector('button[aria-label="About TUN device"]');
+	if (!help) throw new Error('missing TUN help');
+	expect(help.closest('label')).toBeNull();
+	help.dispatchEvent(new Event('pointerenter'));
+	flushSync();
+	expect(target.querySelector('#tooltip')?.textContent).toBe(TUN_HELP);
+	expect(group('TUN')).toBeUndefined();
+	expect(target.querySelector('#protocol-tun-address')).toBeNull();
+
+	toggle('protocol-tun', true);
+	expect(badge()).toBe('Unsaved changes');
+	const fields = group('TUN')!;
+	expect(fields).not.toBeUndefined();
+	expect(target.querySelector('#protocol-tun-heading')?.textContent?.trim()).toBe('TUN');
+	expect(target.querySelector('#protocol-tun-custom')).toBeNull();
+	expect(fields.querySelector('input[type="checkbox"]')).toBeNull();
+	expect(fields.textContent).toContain(TUN_HINT);
+	const address = field('protocol-tun-address');
+	const mtu = field('protocol-tun-mtu');
+	expect([fields.contains(address), fields.contains(mtu)]).toEqual([true, true]);
+	const label = (id: string) => form()!.querySelector(`label[for="${id}"]`);
+	expect(label('protocol-tun-address')?.textContent).toBe('Addresses');
+	expect(label('protocol-tun-mtu')?.textContent).toBe('MTU');
+	for (const id of ['protocol-tun-address', 'protocol-tun-mtu']) {
+		expect(label(id)?.parentElement?.textContent, id).toContain('(optional)');
+	}
+	expect(target.querySelector('#protocol-tun-address-hint')?.textContent).toBe(
+		'Comma-separated CIDRs with host bits, at most one IPv4 and one IPv6; empty uses the defaults.'
+	);
+	expect(target.querySelector('#protocol-tun-mtu-hint')?.textContent).toBe(
+		'1280 to 65535; empty uses 1500.'
+	);
+	expect([address.value, address.placeholder, address.getAttribute('spellcheck')]).toEqual([
+		'',
+		'198.18.0.1/30, fd00:6a77:7761::1/64',
+		'false'
+	]);
+	expect(address.classList.contains('font-mono')).toBe(true);
+	expect([mtu.value, mtu.placeholder, mtu.type, mtu.getAttribute('inputmode')]).toEqual([
+		'',
+		'1500',
+		'text',
+		'numeric'
+	]);
+
+	toggle('protocol-tun', false);
+	expect(group('TUN')).toBeUndefined();
+	expect(badge()).toBeNull();
+});
+
+test('TUN with blank fields sends a bare row, with filled ones their values; the editor reopens either as saved', async () => {
+	await render('#/rules/lab');
+	toggle('protocol-tun', true);
+	await save();
+	expect(writes()).toEqual([
+		{
+			method: 'PUT',
+			url: '/apis/configs/rules/lab',
+			body: {
+				name: 'lab',
+				disabled: true,
+				listen: {
+					host: '127.0.0.1',
+					port: 18100,
+					username: 'demo',
+					password: 'placeholder',
+					protocols: [...LEGACY, { type: 'tun' }]
+				},
+				forward: {}
+			}
+		}
+	]);
+
+	await reopen('#/rules/lab');
+	expect(checkedTypes()).toEqual(['http', 'socks5', 'socks4', 'ssh', 'tun']);
+	expect(inputs()).toMatchObject({ 'protocol-tun-address': '', 'protocol-tun-mtu': '' });
+	expect(badge()).toBeNull();
+	type('protocol-tun-address', ' 198.18.0.1/30 , fd00::1/64 ');
+	type('protocol-tun-mtu', '1400');
+	await save();
+	expect((writes()[1].body as Rule).listen.protocols).toEqual([
+		...LEGACY,
+		{ type: 'tun', address: ['198.18.0.1/30', 'fd00::1/64'], mtu: 1400 }
+	]);
+
+	await reopen('#/rules/lab');
+	expect(inputs()).toMatchObject({
+		'protocol-tun': true,
+		'protocol-tun-address': '198.18.0.1/30, fd00::1/64',
+		'protocol-tun-mtu': '1400'
+	});
+	expect(badge()).toBeNull();
+});
+
+test('TUN alone is a valid selection: checking it clears the missing-protocol error and the POST carries only the row', async () => {
+	await render('#/new');
+	type('rule-name', 'tun-only');
+	for (const type of ['http', 'socks5', 'socks4', 'ssh']) toggle(`protocol-${type}`, false);
+	await save();
+	expect(writes()).toEqual([]);
+	expect(target.querySelector('#protocols-error')?.textContent).toBe(
+		'Select at least one protocol.'
+	);
+	toggle('protocol-tun', true);
+	expect(target.querySelector('#protocols-error')).toBeNull();
+	await save();
+	expect(writes()).toEqual([
+		{
+			method: 'POST',
+			url: '/apis/configs/rules',
+			body: {
+				name: 'tun-only',
+				listen: { host: '127.0.0.1', port: 0, protocols: [{ type: 'tun' }] },
+				forward: {}
+			}
+		}
+	]);
+	expect(location.hash).toBe('#/rules/tun-only');
+});
+
+test('a TUN address or MTU the server would refuse is marked on its own field and focused before any request; typing clears the mark', async () => {
+	await render('#/rules/lab');
+	toggle('protocol-tun', true);
+	type('protocol-tun-mtu', '900');
+	await save();
+	expect(writes()).toEqual([]);
+	expect(field('protocol-tun-mtu').getAttribute('aria-invalid')).toBe('true');
+	expect(document.activeElement).toBe(field('protocol-tun-mtu'));
+	expect(errorText('protocol-tun-mtu')).toBe('MTU must be a whole number between 1280 and 65535.');
+	type('protocol-tun-mtu', '9000');
+	expect(errorText('protocol-tun-mtu')).toBeNull();
+	expect(field('protocol-tun-mtu').hasAttribute('aria-invalid')).toBe(false);
+
+	type('protocol-tun-address', '198.18.0.1/30, 10.0.0.1/24');
+	await save();
+	expect(writes()).toEqual([]);
+	expect(errorText('protocol-tun-address')).toBe(
+		'Each address must be a CIDR such as 198.18.0.1/30, with at most one IPv4 and one IPv6.'
+	);
+	expect(document.activeElement).toBe(field('protocol-tun-address'));
+	type('protocol-tun-address', '198.18.0.1/30');
+	expect(errorText('protocol-tun-address')).toBeNull();
+	await save();
+	expect((writes()[0].body as Rule).listen.protocols?.at(-1)).toEqual({
+		type: 'tun',
+		address: ['198.18.0.1/30'],
+		mtu: 9000
+	});
+});
+
+test('TUN is unavailable on a virtual listen or behind a listen hop: the checkbox is disabled with the reason but stays checked, its fields hide and the body omits the row until switched back', async () => {
+	rules.push(...structuredClone(tunRulesFixture));
+	await render('#/rules/tun-entry');
+	expect([field('protocol-tun').checked, field('protocol-tun').disabled]).toEqual([true, false]);
+	expect(tunReason()).toBeFalsy();
+	type('protocol-tun-mtu', '1400');
+
+	choose(kind('listen', 'virtual'));
+	expect([field('protocol-tun').checked, field('protocol-tun').disabled]).toEqual([true, true]);
+	expect(field('protocol-tun').getAttribute('aria-describedby')).toBe('protocol-tun-reason');
+	expect(tunReason()).toBe('TUN is not available with a virtual listen.');
+	expect(group('TUN')).toBeUndefined();
+	type('listen-virtual', 'entry');
+	await save();
+	expect(writes().map((call) => call.body)).toEqual([
+		{
+			name: 'tun-entry',
+			listen: {
+				host: '',
+				port: 0,
+				virtual: 'entry',
+				protocols: [{ type: 'http' }, { type: 'socks5' }]
+			},
+			forward: {}
+		}
+	]);
+
+	choose(kind('listen', 'address'));
+	expect([field('protocol-tun').checked, field('protocol-tun').disabled]).toEqual([true, false]);
+	expect(tunReason()).toBeFalsy();
+	expect(field('protocol-tun-mtu').value).toBe('1400');
+	click(target.querySelector('#listen-add-hop'));
+	await settle();
+	expect([field('protocol-tun').checked, field('protocol-tun').disabled]).toEqual([true, true]);
+	expect(tunReason()).toBe('TUN is not available with a listen-through chain.');
+	expect(group('TUN')).toBeUndefined();
+	type(target.querySelector('input[id^="listen-url-"]')!.id, 'ssh://ops@edge.example:22');
+	await save();
+	expect((writes()[1].body as Rule).listen).toEqual({
+		host: '127.0.0.1',
+		port: 18300,
+		way: [{ lb: ['ssh://ops@edge.example:22'] }],
+		protocols: [{ type: 'http' }, { type: 'socks5' }]
+	});
+
+	click(button('Delete hop', target.querySelector('#listen-hint')!.parentElement!));
+	await settle();
+	expect([field('protocol-tun').checked, field('protocol-tun').disabled]).toEqual([true, false]);
+	expect(tunReason()).toBeFalsy();
+	expect(field('protocol-tun-mtu').value).toBe('1400');
+	await save();
+	expect((writes()[2].body as Rule).listen.protocols).toEqual([
+		{ type: 'http' },
+		{ type: 'socks5' },
+		{ type: 'tun', mtu: 1400 }
+	]);
+});
+
+test('a second rule enabling TUN is refused before any request: the checkbox is marked and focused, the error names the owner; unchecking clears it and a disabled rule may keep the row', async () => {
+	rules.push(...structuredClone(tunRulesFixture));
+	await render('#/rules/office');
+	toggle('protocol-tun', true);
+	await save();
+	expect(writes()).toEqual([]);
+	expect(field('protocol-tun').getAttribute('aria-invalid')).toBe('true');
+	expect(document.activeElement).toBe(field('protocol-tun'));
+	expect(errorText('protocol-tun')?.trim()).toBe(
+		'Only one rule can enable TUN; rule "tun-entry" already does.'
+	);
+	toggle('protocol-tun', false);
+	expect(errorText('protocol-tun')).toBeNull();
+	expect(field('protocol-tun').hasAttribute('aria-invalid')).toBe(false);
+
+	// Switched off, the rule holds no TUN, so it may keep the row beside the enabled owner.
+	toggle('protocol-tun', true);
+	const enabled = form()!.querySelector<HTMLInputElement>('input[role="switch"]')!;
+	enabled.checked = false;
+	enabled.dispatchEvent(new Event('change', { bubbles: true }));
+	flushSync();
+	await save();
+	expect(writes()).toEqual([
+		{
+			method: 'PUT',
+			url: '/apis/configs/rules/office',
+			body: {
+				name: 'office',
+				disabled: true,
+				listen: { host: '127.0.0.1', port: 18097, protocols: [...LEGACY, { type: 'tun' }] },
+				forward: {
+					way: [
+						{ lb: ['socks5://demo:placeholder@hop-a.example:1080'] },
+						{ lb: ['ssh://ops@bastion.example:22', 'ssh://ops@bastion-2.example:22'] }
+					]
+				}
+			}
+		}
+	]);
 });

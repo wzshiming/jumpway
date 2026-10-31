@@ -20,6 +20,9 @@ export interface Protocol {
 	username?: string;
 	password?: string;
 	cipher?: string;
+	// tun only; absent means the server's defaults.
+	address?: string[];
+	mtu?: number;
 }
 
 // virtual names an in-app channel instead of a socket; the server then reports host '' and port 0.
@@ -67,6 +70,8 @@ export interface RuleStatus {
 	running: boolean;
 	attempt?: number;
 	error?: string;
+	// The tun interface name while it runs.
+	tun?: string;
 }
 
 export interface Status {

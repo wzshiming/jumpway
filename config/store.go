@@ -96,7 +96,7 @@ func (s *Store) SaveRaw(data []byte) error {
 	if err := tmpFile.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmpFile.Name(), s.path)
+	return renameFile(tmpFile.Name(), s.path)
 }
 
 func (s *Store) Edit() error {

@@ -1,9 +1,12 @@
 import { t, type MessageKey } from './i18n.svelte';
-import type { Rule } from './types';
+import { list, type Rule } from './types';
 
 // forward.port 0 or absent means proxy mode: clients pick their own target.
 export const isForward = (rule: Rule): boolean =>
 	(rule.forward.port ?? 0) > 0 || !!rule.forward.virtual;
+
+export const hasTUN = (rule: Rule): boolean =>
+	list(rule.listen.protocols).some((protocol) => protocol.type === 'tun');
 
 export const virtualAddress = (channel: string): string => 'virtual://' + channel;
 

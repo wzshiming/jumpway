@@ -129,3 +129,11 @@ func Listen(address string) string {
 func Alert(message string) string {
 	return fmt.Sprintf("Alert %s", message)
 }
+
+func TUNDenied() string {
+	return fmt.Sprintf("TUN denied, reload config to retry")
+}
+
+func TUNUnavailable() string {
+	return fmt.Sprintf("TUN unavailable, reload config to retry")
+}

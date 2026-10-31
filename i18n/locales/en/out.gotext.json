@@ -162,6 +162,16 @@
                     "expr": "message"
                 }
             ]
+        },
+        {
+            "id": "TUN denied, reload config to retry",
+            "message": "TUN denied, reload config to retry",
+            "translation": "TUN denied, reload config to retry"
+        },
+        {
+            "id": "TUN unavailable, reload config to retry",
+            "message": "TUN unavailable, reload config to retry",
+            "translation": "TUN unavailable, reload config to retry"
         }
     ]
 }

@@ -19,6 +19,7 @@ import (
 	"github.com/wzshiming/jumpway/icon"
 	"github.com/wzshiming/jumpway/log"
 	"github.com/wzshiming/jumpway/metrics"
+	"github.com/wzshiming/jumpway/tundev"
 	"github.com/wzshiming/notify"
 	"github.com/wzshiming/systheme"
 )
@@ -30,6 +31,7 @@ type App struct {
 	web     http.Handler
 	metrics *metrics.Registry
 	logPath string
+	openTUN func(context.Context, tundev.Config) (*tundev.Device, error)
 
 	root          context.Context
 	cancel        context.CancelFunc
@@ -66,6 +68,7 @@ type ruleState struct {
 	name          string
 	listenAddress string
 	address       string
+	tun           string
 	target        string
 	remote        bool
 	virtual       bool
@@ -99,6 +102,7 @@ func NewApp(store *config.Store) *App {
 		actions: make(chan func()),
 		store:   store,
 		metrics: metrics.NewRegistry(),
+		openTUN: tundev.Open,
 	}
 	notify.On(syscall.SIGINT, a.Quit)
 	notify.On(syscall.SIGTERM, func() { a.do(a.Quit) })
@@ -208,6 +212,7 @@ func (a *App) Status() configs.Status {
 		state := configs.RuleStatus{
 			Name:    rule.name,
 			Address: rule.address,
+			Tun:     rule.tun,
 			Target:  rule.target,
 			Remote:  rule.remote,
 			Running: rule.running,

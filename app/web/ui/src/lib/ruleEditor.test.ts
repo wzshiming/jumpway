@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'vitest';
-import { rulesFixture, virtualRulesFixture } from '../../e2e/fixtures/api';
+import { rulesFixture, tunRulesFixture, virtualRulesFixture } from '../../e2e/fixtures/api';
 import {
+	DEFAULT_TUN_ADDRESSES,
+	DEFAULT_TUN_MTU,
 	draftFrom,
 	duplicateName,
 	emptyDraft,
@@ -8,6 +10,7 @@ import {
 	PROTOCOLS,
 	readRule,
 	snapshot,
+	tunAvailable,
 	type DraftErrors,
 	type ProtocolDraft,
 	type ReadContext,
@@ -411,13 +414,14 @@ describe('listen protocols', () => {
 		forward: {}
 	});
 
-	test('PROTOCOLS is the fixed row order with the credential fields each scheme takes', () => {
+	test('PROTOCOLS is the fixed row order with the credential fields each scheme takes; TUN comes last and takes none', () => {
 		expect(PROTOCOLS.map((entry) => [entry.type, entry.label, [...entry.fields]])).toEqual([
 			['http', 'HTTP', ['username', 'password']],
 			['socks5', 'SOCKS5', ['username', 'password']],
 			['socks4', 'SOCKS4', ['username']],
 			['ssh', 'SSH', ['username', 'password']],
-			['ss', 'Shadowsocks', ['password']]
+			['ss', 'Shadowsocks', ['password']],
+			['tun', 'TUN', []]
 		]);
 	});
 
@@ -446,7 +450,9 @@ describe('listen protocols', () => {
 			custom: false,
 			username: '',
 			password: '',
-			cipher: 'aes-128-gcm'
+			cipher: 'aes-128-gcm',
+			address: '',
+			mtu: ''
 		});
 		expect(draft.listen).toMatchObject({ username: '', password: 'placeholder' });
 		expect(draft.listen).not.toHaveProperty('cipher');
@@ -607,6 +613,225 @@ describe('listen protocols', () => {
 	});
 });
 
+describe('the TUN row', () => {
+	const [tunEntry, tunLab] = tunRulesFixture;
+	const read = (draft: RuleDraft) => {
+		const result = readRule(draft);
+		if (!result.ok) throw new Error('unexpected errors ' + JSON.stringify(result.errors));
+		return result.rule;
+	};
+	const errorsOf = (draft: RuleDraft, context?: ReadContext): DraftErrors => {
+		const result = readRule(draft, context);
+		return result.ok ? {} : result.errors;
+	};
+	const enabledTypes = (draft: RuleDraft) =>
+		draft.listen.protocols.filter((entry) => entry.enabled).map((entry) => entry.type);
+	const proxy = (listen: Partial<Listen>): Rule => ({
+		name: 'r',
+		listen: { host: '127.0.0.1', port: 18200, ...listen },
+		forward: {}
+	});
+	// A new proxy rule serving the legacy four plus TUN with the given typed fields.
+	const withTUN = (address = '', mtu = ''): RuleDraft => {
+		const draft = emptyDraft();
+		draft.name = 'r';
+		const tun = row(draft, 'tun');
+		tun.enabled = true;
+		tun.address = address;
+		tun.mtu = mtu;
+		return draft;
+	};
+	const tunOf = (draft: RuleDraft) => read(draft).listen.protocols?.at(-1);
+
+	test("the defaults are the server's, and TUN needs an address listen without listen-through hops", () => {
+		expect(DEFAULT_TUN_ADDRESSES).toEqual(['198.18.0.1/30', 'fd00:6a77:7761::1/64']);
+		expect(DEFAULT_TUN_MTU).toBe(1500);
+		const draft = emptyDraft();
+		expect(tunAvailable(draft.listen)).toBe(true);
+		draft.listen.kind = 'virtual';
+		expect(tunAvailable(draft.listen)).toBe(false);
+		draft.listen.kind = 'address';
+		draft.listen.way = [newHop(['ssh://ops@edge.example:22'])];
+		expect(tunAvailable(draft.listen)).toBe(false);
+		// A hop counts as soon as it is added, before its URL is typed.
+		draft.listen.way = [newHop()];
+		expect(tunAvailable(draft.listen)).toBe(false);
+	});
+
+	test('a stored tun row drafts checked with its addresses joined and its MTU as text; other rows keep both empty', () => {
+		expect(row(draftFrom(tunLab), 'tun')).toEqual({
+			type: 'tun',
+			enabled: true,
+			custom: false,
+			username: '',
+			password: '',
+			cipher: '',
+			address: '198.18.0.1/30, fd00:6a77:7761::1/64',
+			mtu: '1400'
+		});
+		const bare = draftFrom(tunEntry);
+		expect(enabledTypes(bare)).toEqual(['http', 'socks5', 'tun']);
+		expect(row(bare, 'tun')).toMatchObject({ enabled: true, address: '', mtu: '' });
+		for (const entry of bare.listen.protocols.filter((entry) => entry.type !== 'tun')) {
+			expect(entry).toMatchObject({ address: '', mtu: '' });
+		}
+		const zero = draftFrom(proxy({ protocols: [{ type: 'tun', address: [], mtu: 0 }] }));
+		expect(row(zero, 'tun')).toMatchObject({ enabled: true, address: '', mtu: '' });
+	});
+
+	test('rules without a stored tun row, legacy ones included, leave TUN unchecked', () => {
+		for (const rule of [
+			office,
+			lab,
+			proxy({ protocols: [] }),
+			proxy({ protocols: null }),
+			proxy({ password: 'placeholder', cipher: 'aes-256-gcm' }),
+			proxy({ protocols: [{ type: 'http' }] })
+		]) {
+			expect(row(draftFrom(rule), 'tun')).toMatchObject({ enabled: false, address: '', mtu: '' });
+		}
+		expect(row(emptyDraft(), 'tun').enabled).toBe(false);
+	});
+
+	test('blank fields send a bare tun row, always after the schemes', () => {
+		expect(read(withTUN()).listen.protocols).toEqual([...LEGACY, { type: 'tun' }]);
+		expect(tunOf(withTUN(' , \n'))).toEqual({ type: 'tun' });
+		const stored = proxy({ protocols: [{ type: 'tun' }, { type: 'http' }] });
+		expect(read(draftFrom(stored)).listen.protocols).toEqual([{ type: 'http' }, { type: 'tun' }]);
+	});
+
+	test('addresses split on commas and whitespace without blanks; the MTU is sent as a number, "0" not at all', () => {
+		expect(tunOf(withTUN(' 198.18.0.1/30 ,, fd00::1/64\n', '1400'))).toEqual({
+			type: 'tun',
+			address: ['198.18.0.1/30', 'fd00::1/64'],
+			mtu: 1400
+		});
+		expect(tunOf(withTUN('fd00::1/64 198.18.0.1/30'))).toEqual({
+			type: 'tun',
+			address: ['fd00::1/64', '198.18.0.1/30']
+		});
+		expect(tunOf(withTUN('', '0'))).toEqual({ type: 'tun' });
+		expect(tunOf(withTUN('', '1280'))).toEqual({ type: 'tun', mtu: 1280 });
+		expect(tunOf(withTUN('', '65535'))).toEqual({ type: 'tun', mtu: 65535 });
+	});
+
+	test('the row is left out for a virtual listen, behind listen hops and in forward mode while its draft survives', () => {
+		const draft = draftFrom(tunEntry);
+		const tun = row(draft, 'tun');
+		tun.address = '198.18.0.1/30';
+		tun.mtu = '1400';
+		const schemes = [{ type: 'http' }, { type: 'socks5' }];
+		draft.listen.kind = 'virtual';
+		draft.listen.virtual = 'entry';
+		expect(read(draft).listen).toEqual({
+			host: '',
+			port: 0,
+			virtual: 'entry',
+			protocols: schemes
+		});
+		draft.listen.kind = 'address';
+		draft.listen.way = [newHop(['ssh://ops@edge.example:22'])];
+		expect(read(draft).listen).toEqual({
+			host: '127.0.0.1',
+			port: 18300,
+			way: [{ lb: ['ssh://ops@edge.example:22'] }],
+			protocols: schemes
+		});
+		draft.listen.way = [];
+		draft.mode = 'forward';
+		draft.target.port = '5432';
+		expect(read(draft).listen).toEqual({ host: '127.0.0.1', port: 18300 });
+		draft.mode = 'proxy';
+		expect(row(draft, 'tun')).toMatchObject({
+			enabled: true,
+			address: '198.18.0.1/30',
+			mtu: '1400'
+		});
+		expect(read(draft).listen.protocols).toEqual([
+			...schemes,
+			{ type: 'tun', address: ['198.18.0.1/30'], mtu: 1400 }
+		]);
+	});
+
+	test('TUN alone is a valid selection, and a shared password beside it needs no username', () => {
+		const draft = withTUN();
+		for (const entry of draft.listen.protocols) entry.enabled = entry.type === 'tun';
+		expect(read(draft).listen).toEqual({
+			host: '127.0.0.1',
+			port: 0,
+			protocols: [{ type: 'tun' }]
+		});
+		draft.listen.password = 'placeholder';
+		expect(read(draft).listen).toEqual({
+			host: '127.0.0.1',
+			port: 0,
+			password: 'placeholder',
+			protocols: [{ type: 'tun' }]
+		});
+	});
+
+	test('an MTU must be a whole number from 1280 to 65535', () => {
+		for (const bad of ['1279', '65536', '1500.5', '-1500', 'abc']) {
+			expect(errorsOf(withTUN('', bad)), bad).toEqual({ tunMTU: 'invalidMTU' });
+		}
+	});
+
+	test('each address must look like a CIDR, at most one IPv4 and one IPv6; host bits are left to the server', () => {
+		for (const bad of [
+			'198.18.0.1',
+			'utun5/30',
+			'198.18.0.1/30/2',
+			'198.18.0.1/1000',
+			'198.18.0.1/30, 10.0.0.1/24',
+			'fd00::1/64 fd01::1/64'
+		]) {
+			expect(errorsOf(withTUN(bad)), bad).toEqual({ tunAddress: 'invalidTUNAddress' });
+		}
+		expect(tunOf(withTUN('198.18.0.0/30, FD00::1/64'))).toEqual({
+			type: 'tun',
+			address: ['198.18.0.0/30', 'FD00::1/64']
+		});
+	});
+
+	test('a second enabled TUN rule is refused by name; disabled rules, the rule itself and drafts that leave the row out are no clash', () => {
+		const context = (others: readonly Rule[], self: string | null = null): ReadContext => ({
+			others,
+			self,
+			webUI: null
+		});
+		const draft = withTUN();
+		expect(errorsOf(draft, context(tunRulesFixture))).toEqual({
+			tun: 'tunTaken',
+			tunOwner: 'tun-entry'
+		});
+		expect(errorsOf(draft)).toEqual({});
+		// The stored copy of the rule being edited is no peer, even while renamed.
+		expect(errorsOf(draft, context(tunRulesFixture, 'tun-entry'))).toEqual({});
+		expect(errorsOf(draft, context([tunLab]))).toEqual({});
+		draft.enabled = false;
+		expect(errorsOf(draft, context(tunRulesFixture))).toEqual({});
+		draft.enabled = true;
+		row(draft, 'tun').enabled = false;
+		expect(errorsOf(draft, context(tunRulesFixture))).toEqual({});
+		row(draft, 'tun').enabled = true;
+		draft.listen.kind = 'virtual';
+		draft.listen.virtual = 'entry';
+		expect(errorsOf(draft, context(tunRulesFixture))).toEqual({});
+		draft.listen.kind = 'address';
+		draft.mode = 'forward';
+		draft.target.port = '5432';
+		expect(errorsOf(draft, context(tunRulesFixture))).toEqual({});
+	});
+
+	test('stored TUN rows round-trip through draftFrom and readRule', () => {
+		for (const rule of tunRulesFixture) {
+			const draft = draftFrom(rule);
+			expect(read(draft)).toEqual(rule);
+			expect(snapshot(draftFrom(read(draft)))).toBe(snapshot(draft));
+		}
+	});
+});
+
 describe('duplicateName', () => {
 	test('suggests "<name>-copy", counting up past taken names', () => {
 		expect(duplicateName('office', ['office', 'mirror'])).toBe('office-copy');
@@ -709,12 +934,29 @@ describe('readRule mirrors validateListenAuth', () => {
 			'ss_username_with_colon',
 			{ protocols: [{ ...ss, username: 'a:b', password: 'secret' }] },
 			null
+		],
+		// TUN is no scheme: it takes no credentials and leaves the others' checks as they are.
+		['tun_alone', { protocols: [{ type: 'tun' }] }, null],
+		[
+			'tun_beside_shared_credentials',
+			{ username: 'user', password: 'secret', protocols: [{ type: 'tun' }, { type: 'http' }] },
+			null
+		],
+		[
+			'protocol_password_without_username_beside_tun',
+			{ protocols: [{ type: 'tun' }, { type: 'http', password: 'x' }] },
+			{ protocolErrors: { http: { password: 'passwordNeedsUsername' } } }
 		]
 	];
 
 	test.each(cases)('%s', (_, listen, expected) => {
 		const result = readRule(draftFrom(proxy(listen)));
 		expect(result.ok ? null : result.errors).toEqual(expected);
+		// What the server accepts reaches it whole: no stored row is dropped on the way.
+		if (result.ok && listen.protocols) {
+			const types = (protocols: Protocol[]) => protocols.map((entry) => entry.type).sort();
+			expect(types(result.rule.listen.protocols ?? [])).toEqual(types(listen.protocols));
+		}
 	});
 
 	test('a stored ss username the form cannot show is neither refused nor altered', () => {

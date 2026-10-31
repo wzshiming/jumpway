@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -30,7 +31,7 @@ import (
 func TestNewListenConfigLocal(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	listenConfig, err := NewListenConfig(ctx, nil, nil)
+	listenConfig, err := NewListenConfig(ctx, local.LOCAL, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +57,7 @@ func TestNewListenConfigIgnoresDialRouting(t *testing.T) {
 	})
 	chain.NoProxy = hostmatcher.NewMatcher([]string{"*"})
 	chain.OnlyProxy = hostmatcher.NewMatcher([]string{"*"})
-	listenConfig, err := NewListenConfig(context.Background(), []config.Node{{LB: []string{"ssh://u:p@127.0.0.1:1"}}}, nil)
+	listenConfig, err := NewListenConfig(context.Background(), local.LOCAL, []config.Node{{LB: []string{"ssh://u:p@127.0.0.1:1"}}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +74,7 @@ func TestNewListenConfigCannotListen(t *testing.T) {
 		t.Run(scheme, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
-			listenConfig, err := NewListenConfig(ctx, []config.Node{{LB: []string{scheme + "://127.0.0.1:1"}}}, nil)
+			listenConfig, err := NewListenConfig(ctx, local.LOCAL, []config.Node{{LB: []string{scheme + "://127.0.0.1:1"}}}, nil)
 			if err == nil {
 				listener, listenErr := listenConfig.Listen(ctx, "tcp", "127.0.0.1:0")
 				if listener != nil {
@@ -91,7 +92,7 @@ func TestNewListenConfigCannotListen(t *testing.T) {
 			{LB: []string{"ssh://u:p@127.0.0.1:1"}},
 			{LB: []string{"socks5://127.0.0.1:1"}},
 		}
-		if _, err := NewListenConfig(context.Background(), way, nil); err != nil {
+		if _, err := NewListenConfig(context.Background(), local.LOCAL, way, nil); err != nil {
 			t.Fatalf("SOCKS transit hop should not prevent constructing an SSH listen chain: %v", err)
 		}
 	})
@@ -101,7 +102,7 @@ func TestNewListenConfigWrapperCannotListen(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	way := []config.Node{{LB: []string{"ssh://u:p@127.0.0.1:1"}}}
-	listenConfig, err := NewListenConfig(ctx, way, func(index int, url string, dialer bridge.Dialer) bridge.Dialer {
+	listenConfig, err := NewListenConfig(ctx, local.LOCAL, way, func(index int, url string, dialer bridge.Dialer) bridge.Dialer {
 		return bridge.DialFunc(dialer.DialContext)
 	})
 	if err != nil {
@@ -115,6 +116,45 @@ func TestNewListenConfigWrapperCannotListen(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "could not listen") {
 		t.Fatalf("Listen error = %v, want could not listen", err)
 	}
+}
+
+func TestNewListenConfigDialsThroughBase(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	base := &ttRecordingDialer{}
+	listenConfig, err := NewListenConfig(ctx, base, []config.Node{{LB: []string{"ssh://u:p@127.0.0.1:1"}}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, err := listenConfig.Listen(ctx, "tcp", "127.0.0.1:0")
+	if listener != nil {
+		listener.Close()
+	}
+	if err == nil {
+		t.Fatal("Listen succeeded although the base dialer refused the listen hop")
+	}
+	if dials := base.recorded(); !slices.Contains(dials, "tcp 127.0.0.1:1") {
+		t.Fatalf("base dials = %q, want the listen hop's tcp 127.0.0.1:1", dials)
+	}
+}
+
+// ttRecordingDialer records every dial and refuses it.
+type ttRecordingDialer struct {
+	mu    sync.Mutex
+	dials []string
+}
+
+func (dialer *ttRecordingDialer) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	dialer.mu.Lock()
+	defer dialer.mu.Unlock()
+	dialer.dials = append(dialer.dials, network+" "+address)
+	return nil, errors.New("tt base dialer refused")
+}
+
+func (dialer *ttRecordingDialer) recorded() []string {
+	dialer.mu.Lock()
+	defer dialer.mu.Unlock()
+	return slices.Clone(dialer.dials)
 }
 
 func TestNewListenConfigSSHRemoteBind(t *testing.T) {
@@ -143,7 +183,7 @@ func TestNewListenConfigSSHRemoteBind(t *testing.T) {
 	defer server.Close()
 	var wrapped, accepted atomic.Int32
 	proxyURL := server.ProxyURL()
-	listenConfig, err := NewListenConfig(ctx, []config.Node{{LB: []string{proxyURL}}}, func(index int, url string, dialer bridge.Dialer) bridge.Dialer {
+	listenConfig, err := NewListenConfig(ctx, local.LOCAL, []config.Node{{LB: []string{proxyURL}}}, func(index int, url string, dialer bridge.Dialer) bridge.Dialer {
 		if index != 0 || url != proxyURL {
 			t.Errorf("wrapped hop = (%d, %q), want (0, %q)", index, url, proxyURL)
 		}
@@ -344,7 +384,7 @@ func TestSSHRemoteListenerSurvivesConnectionLoss(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer server.Close()
-	listenConfig, err := NewListenConfig(ctx, []config.Node{{LB: []string{server.ProxyURL()}}}, nil)
+	listenConfig, err := NewListenConfig(ctx, local.LOCAL, []config.Node{{LB: []string{server.ProxyURL()}}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -39,66 +39,71 @@ func init() {
 }
 
 var messageKeyToIndex = map[string]int{
-	"About":                 15,
-	"Alert %s":              25,
-	"Args":                  20,
-	"Config":                10,
-	"Connect":               22,
-	"Daemon":                0,
-	"Edit Config":           11,
-	"Export Command":        4,
-	"Init Config":           18,
-	"Listen %s":             24,
-	"Log":                   14,
-	"Manual Proxy":          1,
-	"No enabled local rule": 5,
-	"Open File":             21,
-	"Proxy Mode":            3,
-	"Quit":                  16,
-	"Redirect Log":          17,
-	"Reload Config":         12,
-	"Remote":                9,
-	"Retrying (%d)":         7,
-	"Running":               6,
-	"Stopped":               8,
-	"System Proxy":          2,
-	"Use Proxy":             23,
-	"Web UI":                13,
-	"Write Clipboard":       19,
+	"About":                              15,
+	"Alert %s":                           25,
+	"Args":                               20,
+	"Config":                             10,
+	"Connect":                            22,
+	"Daemon":                             0,
+	"Edit Config":                        11,
+	"Export Command":                     4,
+	"Init Config":                        18,
+	"Listen %s":                          24,
+	"Log":                                14,
+	"Manual Proxy":                       1,
+	"No enabled local rule":              5,
+	"Open File":                          21,
+	"Proxy Mode":                         3,
+	"Quit":                               16,
+	"Redirect Log":                       17,
+	"Reload Config":                      12,
+	"Remote":                             9,
+	"Retrying (%d)":                      7,
+	"Running":                            6,
+	"Stopped":                            8,
+	"System Proxy":                       2,
+	"TUN denied, reload config to retry": 26,
+	"TUN unavailable, reload config to retry": 27,
+	"Use Proxy":       23,
+	"Web UI":          13,
+	"Write Clipboard": 19,
 }
 
-var enIndex = []uint32{ // 27 elements
+var enIndex = []uint32{ // 29 elements
 	0x00000000, 0x00000007, 0x00000014, 0x00000021,
 	0x0000002c, 0x0000004b, 0x00000061, 0x00000069,
 	0x0000007a, 0x00000082, 0x00000089, 0x00000090,
 	0x0000009c, 0x000000aa, 0x000000b1, 0x000000b5,
 	0x000000bb, 0x000000c0, 0x000000cd, 0x000000d9,
 	0x000000e9, 0x000000ee, 0x000000f8, 0x00000100,
-	0x0000010a, 0x00000117, 0x00000123,
-} // Size: 132 bytes
+	0x0000010a, 0x00000117, 0x00000123, 0x00000146,
+	0x0000016e,
+} // Size: 140 bytes
 
-const enData string = "" + // Size: 291 bytes
+const enData string = "" + // Size: 366 bytes
 	"\x02Daemon\x02Manual Proxy\x02System Proxy\x02Proxy Mode\x02Proxy Export" +
 	" Line To Clipboard\x02No enabled local rule\x02Running\x02Retrying (%[1]" +
 	"d)\x02Stopped\x02Remote\x02Config\x02Edit Config\x02Reload Config\x02Web" +
 	" UI\x02Log\x02About\x02Quit\x02Redirect Log\x02Init Config\x02Write Clip" +
 	"board\x02Args\x02Open File\x02Connect\x02Use Proxy\x02Listen %[1]s\x02Al" +
-	"ert %[1]s"
+	"ert %[1]s\x02TUN denied, reload config to retry\x02TUN unavailable, relo" +
+	"ad config to retry"
 
-var zhIndex = []uint32{ // 27 elements
+var zhIndex = []uint32{ // 29 elements
 	0x00000000, 0x0000000d, 0x0000001a, 0x00000027,
 	0x00000034, 0x00000053, 0x0000006f, 0x00000079,
 	0x0000008b, 0x00000095, 0x0000009c, 0x000000a3,
 	0x000000b0, 0x000000bd, 0x000000ca, 0x000000d1,
 	0x000000d8, 0x000000df, 0x000000ef, 0x00000105,
 	0x00000118, 0x0000011f, 0x0000012c, 0x00000133,
-	0x00000140, 0x0000014d, 0x0000015a,
-} // Size: 132 bytes
+	0x00000140, 0x0000014d, 0x0000015a, 0x00000186,
+	0x000001ac,
+} // Size: 140 bytes
 
-const zhData string = "" + // Size: 346 bytes
+const zhData string = "" + // Size: 428 bytes
 	"\x02开机启动\x02手动代理\x02系统代理\x02代理模式\x02导出代理命令到剪切板\x02没有启用的本地规则\x02运行中\x02重试" +
 	"中 (%[1]d)\x02已停止\x02远端\x02配置\x02编辑配置\x02重载配置\x02网页配置\x02日志\x02关于\x02退出" +
 	"\x02重定向日志\x02初始化加载配置\x02导出到剪切板\x02参数\x02打开文件\x02连接\x02使用代理\x02监听 %[1]s" +
-	"\x02警告 %[1]s"
+	"\x02警告 %[1]s\x02TUN 授权被拒绝，重载配置以重试\x02TUN 不可用，重载配置以重试"
 
-	// Total table size 901 bytes (0KiB); checksum: 2117D7C
+	// Total table size 1074 bytes (1KiB); checksum: D546F1E7
