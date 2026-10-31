@@ -15,6 +15,9 @@ import (
 // testIdleBound is how long a 200ms DNSIdle may take to end a flow; the 10s default exceeds it.
 const testIdleBound = 5 * time.Second
 
+// testDNSQuery is a well-formed DNS query for the A record of example.com.
+const testDNSQuery = "\x12\x34\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x07example\x03com\x00\x00\x01\x00\x01"
+
 func TestUDPDNSDialsTCPWithClientAddr(t *testing.T) {
 	env := testServe(t, Options{Addresses: testAddresses})
 	conn := env.dialUDP(t, "10.0.0.53:53")
@@ -66,6 +69,16 @@ func TestUDPDNSFlowEndsAfterIdle(t *testing.T) {
 	testReadEOF(t, target, "target of a flow idle past Options.DNSIdle 200ms")
 }
 
+func TestUDPDNSFlowWithStalledRemoteEndsAfterIdle(t *testing.T) {
+	env := testServe(t, Options{Addresses: testAddresses, DNSIdle: 200 * time.Millisecond})
+	remote := testStalledDNS(t, env)
+	select {
+	case <-remote.closed:
+	case <-time.After(testIdleBound):
+		t.Fatalf("a DNS relay blocked writing to its stalled TCP/53 conn still held it open %v later, want the Options.DNSIdle 200ms idle timer to close it", testIdleBound)
+	}
+}
+
 func TestUDPOtherPortGetsPortUnreachable(t *testing.T) {
 	env := testServe(t, Options{Addresses: testAddresses})
 	conn := env.dialUDP(t, "10.0.0.9:1234")
@@ -103,6 +116,20 @@ func testSend(t *testing.T, conn net.Conn, datagram string) {
 	if _, err := io.WriteString(conn, datagram); err != nil {
 		t.Fatalf("client send %q: %v", datagram, err)
 	}
+}
+
+// testStalledDNS opens a DNS flow whose TCP/53 conn stalls and returns that conn once the relay is blocked writing a query to it.
+func testStalledDNS(t *testing.T, env *testEnv) *stalledConn {
+	t.Helper()
+	env.dialer.stall()
+	testSend(t, env.dialUDP(t, "10.0.0.53:53"), testDNSQuery)
+	remote := env.nextTarget(t).(*stalledConn)
+	select {
+	case <-remote.writing:
+	case <-time.After(testWait):
+		t.Fatalf("the DNS relay did not write the query to its TCP/53 conn within %v%s", testWait, env.returned())
+	}
+	return remote
 }
 
 // testReadFrame reads one message prefixed with its 2-byte big-endian length.

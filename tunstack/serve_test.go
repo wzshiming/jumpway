@@ -3,11 +3,15 @@ package tunstack
 import (
 	"context"
 	"errors"
+	"net/netip"
 	"testing"
 	"time"
 
 	"golang.zx2c4.com/wireguard/tun"
 )
+
+// testStopBound is how long Serve may take to return once its context ends.
+const testStopBound = 3 * time.Second
 
 func TestServeReturnsContextErrorAndClosesDevice(t *testing.T) {
 	env := testServe(t, Options{Addresses: testAddresses})
@@ -37,6 +41,17 @@ func TestServeCancelClosesTargetConns(t *testing.T) {
 	testReadEOF(t, dnsTarget, "DNS flow's target after cancel")
 }
 
+func TestServeDNSShutdownWithStalledRemote(t *testing.T) {
+	env := testServe(t, Options{Addresses: testAddresses})
+	testStalledDNS(t, env)
+	env.cancel()
+	select {
+	case <-env.done:
+	case <-time.After(testStopBound):
+		t.Fatalf("Serve did not return within %v of its context ending while a DNS relay was blocked writing to a stalled TCP/53 conn, want shutdown to close that conn", testStopBound)
+	}
+}
+
 func TestServeReturnsDeviceReadError(t *testing.T) {
 	env := testServe(t, Options{Addresses: testAddresses})
 	injected := errors.New("test read failure")
@@ -53,6 +68,24 @@ func TestServeKeepsReadingAfterTooManySegments(t *testing.T) {
 	env := testServe(t, Options{Addresses: testAddresses})
 	env.failOneRead(t, tun.ErrTooManySegments)
 	conn := env.dialTCP(t, "10.0.0.9:443")
+	target := env.nextTarget(t)
+	testRelay(t, conn, target, "from the client")
+	testRelay(t, target, conn, "from the target")
+}
+
+func TestServeDeliversPacketsReadWithTooManySegments(t *testing.T) {
+	env := testServe(t, Options{Addresses: testAddresses})
+	env.dev.segmentSYN()
+	ctx, cancel := context.WithTimeout(env.alive, testWait)
+	defer cancel()
+	conn, err := env.client.DialContextTCPAddrPort(ctx, netip.MustParseAddrPort("10.0.0.9:443"))
+	if err != nil {
+		t.Fatalf("client dial whose only SYN came from a device Read returning (1, tun.ErrTooManySegments): %v%s, want Serve to inject the packet read with that error", err, env.returned())
+	}
+	if !env.dev.synSegmented.Load() {
+		t.Fatal("the client's SYN bypassed the device Read returning tun.ErrTooManySegments")
+	}
+	conn.SetDeadline(time.Now().Add(testWait))
 	target := env.nextTarget(t)
 	testRelay(t, conn, target, "from the client")
 	testRelay(t, target, conn, "from the target")

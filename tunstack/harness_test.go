@@ -18,6 +18,7 @@ import (
 	"golang.zx2c4.com/wireguard/tun"
 	"golang.zx2c4.com/wireguard/tun/netstack"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 const (
@@ -48,6 +49,10 @@ type fakeDevice struct {
 	closeCalls atomic.Int32
 	events     chan tun.Event
 	feeding    sync.Mutex
+	// segmented carries the one SYN that Read returns with tun.ErrTooManySegments.
+	segmented    chan []byte
+	synArmed     atomic.Bool
+	synSegmented atomic.Bool
 }
 
 func (d *fakeDevice) File() *os.File           { return nil }
@@ -60,6 +65,9 @@ func (d *fakeDevice) Read(bufs [][]byte, sizes []int, offset int) (int, error) {
 	var packet []byte
 	select {
 	case packet = <-d.inbound:
+	case syn := <-d.segmented:
+		sizes[0] = copy(bufs[0][offset:], syn)
+		return 1, tun.ErrTooManySegments
 	case err := <-d.failNext:
 		return 0, err
 	case <-d.readFailed:
@@ -113,10 +121,31 @@ func (d *fakeDevice) release() {
 
 // inject queues a client packet for Serve's next Read, dropping it once the device is closed.
 func (d *fakeDevice) inject(packet []byte) {
+	queue := d.inbound
+	if d.synArmed.Load() && testIsSYN(packet) {
+		// A retransmitted SYN could open the connection in place of one Serve dropped.
+		if d.synSegmented.Swap(true) {
+			return
+		}
+		queue = d.segmented
+	}
 	select {
-	case d.inbound <- packet:
+	case queue <- packet:
 	case <-d.closed:
 	}
+}
+
+// segmentSYN makes Read return the client's next TCP SYN as (1, tun.ErrTooManySegments) and drops every later SYN.
+func (d *fakeDevice) segmentSYN() { d.synArmed.Store(true) }
+
+// testIsSYN reports whether packet is an IPv4 TCP segment opening a connection.
+func testIsSYN(packet []byte) bool {
+	ip := header.IPv4(packet)
+	if !ip.IsValid(len(packet)) || ip.TransportProtocol() != header.TCPProtocolNumber {
+		return false
+	}
+	segment := header.TCP(ip.Payload())
+	return len(segment) >= header.TCPMinimumSize && segment.Flags()&(header.TCPFlagSyn|header.TCPFlagAck) == header.TCPFlagSyn
 }
 
 // failRead makes every Read from now on fail with err.
@@ -155,11 +184,12 @@ func (d *fakeDevice) feedEvents(n int) (received *atomic.Int32, all <-chan struc
 
 func (d *fakeDevice) closedByServe() bool { return d.closeCalls.Load() > 0 }
 
-// fakeDialer records every dial and answers it with one end of a fresh loopback TCP connection.
+// fakeDialer records every dial and answers it with one end of a fresh loopback TCP connection, or once stalled with a stalledConn.
 type fakeDialer struct {
 	mu      sync.Mutex
 	dials   []fakeDial
 	err     error
+	stalled bool
 	opened  []net.Conn
 	targets chan net.Conn
 }
@@ -172,13 +202,16 @@ type fakeDial struct {
 func (d *fakeDialer) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
 	d.mu.Lock()
 	d.dials = append(d.dials, fakeDial{network: network, address: address, client: jumpway.ClientAddr(ctx)})
-	err := d.err
+	err, stalled := d.err, d.stalled
 	d.mu.Unlock()
 	if err != nil {
 		return nil, err
 	}
-	conn, target, err := testLoopbackPair()
-	if err != nil {
+	var conn, target net.Conn
+	if stalled {
+		conn = &stalledConn{writing: make(chan struct{}), closed: make(chan struct{})}
+		target = conn
+	} else if conn, target, err = testLoopbackPair(); err != nil {
 		return nil, err
 	}
 	d.mu.Lock()
@@ -194,6 +227,13 @@ func (d *fakeDialer) DialContext(ctx context.Context, network, address string) (
 func (d *fakeDialer) fail(err error) {
 	d.mu.Lock()
 	d.err = err
+	d.mu.Unlock()
+}
+
+// stall makes every later dial answer with a stalledConn, handed to the test as its own target.
+func (d *fakeDialer) stall() {
+	d.mu.Lock()
+	d.stalled = true
 	d.mu.Unlock()
 }
 
@@ -225,6 +265,37 @@ func (d *fakeDialer) closeTargets() {
 		conn.Close()
 	}
 }
+
+// stalledConn is a connection to an upstream that never answers: Read and Write block until Close, deadlines notwithstanding.
+type stalledConn struct {
+	// writing is closed once a Write is blocked.
+	writing   chan struct{}
+	writeOnce sync.Once
+	closed    chan struct{}
+	closeOnce sync.Once
+}
+
+func (c *stalledConn) Read([]byte) (int, error) {
+	<-c.closed
+	return 0, net.ErrClosed
+}
+
+func (c *stalledConn) Write([]byte) (int, error) {
+	c.writeOnce.Do(func() { close(c.writing) })
+	<-c.closed
+	return 0, net.ErrClosed
+}
+
+func (c *stalledConn) Close() error {
+	c.closeOnce.Do(func() { close(c.closed) })
+	return nil
+}
+
+func (c *stalledConn) LocalAddr() net.Addr              { return &net.TCPAddr{} }
+func (c *stalledConn) RemoteAddr() net.Addr             { return &net.TCPAddr{} }
+func (c *stalledConn) SetDeadline(time.Time) error      { return nil }
+func (c *stalledConn) SetReadDeadline(time.Time) error  { return nil }
+func (c *stalledConn) SetWriteDeadline(time.Time) error { return nil }
 
 // testLoopbackPair returns both ends of a real loopback TCP connection.
 func testLoopbackPair() (conn, target net.Conn, err error) {
@@ -266,6 +337,7 @@ func testServe(t *testing.T, opts Options) *testEnv {
 	dev := &fakeDevice{
 		client:     clientDev,
 		inbound:    make(chan []byte, 1024),
+		segmented:  make(chan []byte),
 		failNext:   make(chan error),
 		readFailed: make(chan struct{}),
 		closed:     make(chan struct{}),
