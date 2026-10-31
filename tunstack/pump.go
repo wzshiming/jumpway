@@ -2,6 +2,7 @@ package tunstack
 
 import (
 	"context"
+	"errors"
 
 	"golang.zx2c4.com/wireguard/tun"
 	"gvisor.dev/gvisor/pkg/buffer"
@@ -14,7 +15,6 @@ import (
 // offset is the headroom kept in front of every packet, enough for the virtio-net header of Linux TUN offloads.
 const offset = 16
 
-// readPackets injects the IPv4 and IPv6 packets read from dev into ep until dev.Read fails.
 func readPackets(dev tun.Device, ep *channel.Endpoint) error {
 	bufs := make([][]byte, dev.BatchSize())
 	for i := range bufs {
@@ -23,6 +23,9 @@ func readPackets(dev tun.Device, ep *channel.Endpoint) error {
 	sizes := make([]int, len(bufs))
 	for {
 		n, err := dev.Read(bufs, sizes, offset)
+		if errors.Is(err, tun.ErrTooManySegments) {
+			continue
+		}
 		for i := range n {
 			injectPacket(ep, bufs[i][offset:offset+sizes[i]])
 		}
@@ -47,7 +50,6 @@ func injectPacket(ep *channel.Endpoint, packet []byte) {
 	pkt.DecRef()
 }
 
-// writePackets writes the packets the stack sends to dev, up to dev.BatchSize() per write, until ctx ends.
 func writePackets(ctx context.Context, dev tun.Device, ep *channel.Endpoint) {
 	bufs := make([][]byte, dev.BatchSize())
 	for i := range bufs {
@@ -69,5 +71,18 @@ func writePackets(ctx context.Context, dev tun.Device, ep *channel.Endpoint) {
 			pkt = ep.Read()
 		}
 		dev.Write(batch, offset)
+	}
+}
+
+func drainEvents(events <-chan tun.Event, stop <-chan struct{}) {
+	for {
+		select {
+		case _, ok := <-events:
+			if !ok {
+				return
+			}
+		case <-stop:
+			return
+		}
 	}
 }

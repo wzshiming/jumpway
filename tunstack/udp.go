@@ -30,7 +30,6 @@ func (g *gateway) handleUDP(r *udp.ForwarderRequest) bool {
 	return true
 }
 
-// relayDNS carries the datagrams of one flow over a single TCP connection, each framed by its 2-byte length as DNS over TCP is.
 func (g *gateway) relayDNS(conn *gonet.UDPConn, id stack.TransportEndpointID) {
 	defer g.flows.Done()
 	defer conn.Close()

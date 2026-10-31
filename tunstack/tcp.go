@@ -9,7 +9,6 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-// handleTCP dials the destination of a connection request before completing its handshake, refusing it with RST when the dial fails.
 func (g *gateway) handleTCP(r *tcp.ForwarderRequest) {
 	if !g.start() {
 		r.Complete(true)

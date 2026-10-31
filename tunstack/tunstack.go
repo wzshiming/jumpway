@@ -36,6 +36,13 @@ type Options struct {
 
 // Serve dials the TCP connections and DNS flows arriving on dev through dialer until ctx ends or reading dev fails, and always closes dev.
 func Serve(ctx context.Context, dev tun.Device, dialer bridge.Dialer, opts Options) error {
+	// The event goroutines of a native device block once its Events buffer is full.
+	stopEvents := make(chan struct{})
+	var drain sync.WaitGroup
+	drain.Go(func() { drainEvents(dev.Events(), stopEvents) })
+	defer drain.Wait()
+	defer close(stopEvents)
+
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	g := &gateway{ctx: runCtx, dialer: dialer, dnsIdle: cmp.Or(opts.DNSIdle, 10*time.Second)}
@@ -122,8 +129,12 @@ func (g *gateway) newStack(dev tun.Device, opts Options) (_ *stack.Stack, _ *cha
 	if e := s.CreateNIC(nicID, ep); e != nil {
 		return nil, nil, fmt.Errorf("tunstack: create NIC: %s", e)
 	}
-	s.SetPromiscuousMode(nicID, true)
-	s.SetSpoofing(nicID, true)
+	if e := s.SetPromiscuousMode(nicID, true); e != nil {
+		return nil, nil, fmt.Errorf("tunstack: enable promiscuous mode: %s", e)
+	}
+	if e := s.SetSpoofing(nicID, true); e != nil {
+		return nil, nil, fmt.Errorf("tunstack: enable spoofing: %s", e)
+	}
 	s.SetRouteTable([]tcpip.Route{
 		{Destination: header.IPv4EmptySubnet, NIC: nicID},
 		{Destination: header.IPv6EmptySubnet, NIC: nicID},
