@@ -875,7 +875,7 @@
       "type": "string"
      }
     },
-    "description": "Protocol is one proxy scheme served on the entry; empty credentials inherit the shared Listen ones.\n"
+    "description": "Protocol is the tun entry, or a proxy scheme whose empty credentials inherit the shared Listen ones.\n"
    },
    "RawConfig": {
     "required": [

@@ -59,7 +59,7 @@ type Listen struct {
 	Protocols []Protocol          `yaml:"protocols,omitempty" json:"protocols,omitempty"`
 }
 
-// Protocol is one proxy scheme served on the entry; empty credentials inherit the shared Listen ones.
+// Protocol is the tun entry, or a proxy scheme whose empty credentials inherit the shared Listen ones.
 type Protocol struct {
 	Type     string   `yaml:"type" json:"type"`
 	Username string   `yaml:"username,omitempty" json:"username,omitempty"`
@@ -98,7 +98,7 @@ func (l Listen) Remote() bool {
 	return len(l.Way) > 0
 }
 
-// Schemes is the served proxy protocol list, tun rows left out, with shared credentials filled in; the receiver's slices are left untouched.
+// Schemes lists the served proxy schemes with shared credentials filled in.
 func (l Listen) Schemes() []Protocol {
 	protocols := l.Protocols
 	if len(protocols) == 0 {
@@ -140,7 +140,7 @@ func (l Listen) TUN() *Protocol {
 	return nil
 }
 
-// TUNAddresses is Address parsed in order with malformed entries skipped, or DefaultTUNAddresses when Address is empty.
+// TUNAddresses lists the tun device's own addresses with their subnets.
 func (p Protocol) TUNAddresses() []netip.Prefix {
 	if len(p.Address) == 0 {
 		return slices.Clone(DefaultTUNAddresses)
@@ -160,7 +160,7 @@ func parseTUNAddress(address string) (netip.Prefix, bool) {
 	return prefix, err == nil && !prefix.Addr().Is4In6()
 }
 
-// TUNMTU is MTU, or DefaultTUNMTU when MTU is 0.
+// TUNMTU is the MTU the tun device is opened with.
 func (p Protocol) TUNMTU() int {
 	if p.MTU == 0 {
 		return DefaultTUNMTU
