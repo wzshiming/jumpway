@@ -1038,6 +1038,10 @@
      "target": {
       "type": "string",
       "description": "Target is the fixed destination for port-forward rules; empty for proxy rules.\n"
+     },
+     "tun": {
+      "type": "string",
+      "description": "Tun is the TUN's interface name while the rule's TUN half is up.\n"
      }
     },
     "description": "RuleStatus is one rule's listener state; Attempt counts consecutive failed listen attempts.\n"

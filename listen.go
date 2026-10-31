@@ -11,7 +11,7 @@ import (
 	"github.com/wzshiming/bridge/protocols/local"
 )
 
-func NewListenConfig(ctx context.Context, way []config.Node, wrap HopWrapper) (bridge.ListenConfig, error) {
+func NewListenConfig(ctx context.Context, base bridge.Dialer, way []config.Node, wrap HopWrapper) (bridge.ListenConfig, error) {
 	if len(way) == 0 {
 		return local.LOCAL, nil
 	}
@@ -26,7 +26,7 @@ func NewListenConfig(ctx context.Context, way []config.Node, wrap HopWrapper) (b
 			return nil, fmt.Errorf("the first hop %q cannot listen: SOCKS BIND is not a listener", hop.Redacted())
 		}
 	}
-	dialer, err := NewChainDialer(ctx, local.LOCAL, way, wrap)
+	dialer, err := NewChainDialer(ctx, base, way, wrap)
 	if err != nil {
 		return nil, err
 	}
