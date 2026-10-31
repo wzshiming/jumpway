@@ -70,21 +70,24 @@ func shouldBind(network, address string, capture []netip.Prefix) (ipv6 bool, ok 
 		// Control receives ip networks' addresses without a port.
 		host = address
 	}
-	ip, err := netip.ParseAddr(host)
+	literal, err := netip.ParseAddr(host)
 	if err != nil {
 		return false, false
 	}
-	ip = ip.Unmap()
+	ip := literal.Unmap()
 	switch network {
 	case "tcp", "udp", "ip":
+		ipv6 = ip.Is6()
 	case "tcp4", "udp4", "ip4":
 		if !ip.Is4() {
 			return false, false
 		}
 	case "tcp6", "udp6", "ip6":
-		if !ip.Is6() {
+		// The socket is IPv6 even when the literal is IPv4-mapped.
+		if !literal.Is6() {
 			return false, false
 		}
+		ipv6 = true
 	default:
 		return false, false
 	}
@@ -93,7 +96,7 @@ func shouldBind(network, address string, capture []netip.Prefix) (ipv6 bool, ok 
 	}
 	for _, prefix := range capture {
 		if prefix.Contains(ip) {
-			return ip.Is6(), true
+			return ipv6, true
 		}
 	}
 	return false, false
