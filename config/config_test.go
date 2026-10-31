@@ -343,6 +343,56 @@ func TestValidate(t *testing.T) {
 			wantError: `rules[0].listen.protocols[0].address[0] "198.18.0.0/30" has no host bits (e.g. 198.18.0.1/30)`,
 		},
 		{
+			name:      "tun_address_zero_prefix",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "tun", Address: []string{"198.18.0.1/0"}}}}}}},
+			wantError: `rules[0].listen.protocols[0].address[0] "198.18.0.1/0" has prefix length 0`,
+		},
+		{
+			name:      "tun_address_zero_prefix_before_host_bits",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "tun", Address: []string{"0.0.0.0/0"}}}}}}},
+			wantError: `rules[0].listen.protocols[0].address[0] "0.0.0.0/0" has prefix length 0`,
+		},
+		{
+			name:      "tun_address_ipv4_loopback",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "tun", Address: []string{"127.0.0.1/8"}}}}}}},
+			wantError: `rules[0].listen.protocols[0].address[0] "127.0.0.1/8" is not a usable interface address`,
+		},
+		{
+			name:      "tun_address_ipv4_link_local",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "tun", Address: []string{"169.254.1.1/16"}}}}}}},
+			wantError: `rules[0].listen.protocols[0].address[0] "169.254.1.1/16" is not a usable interface address`,
+		},
+		{
+			name:      "tun_address_ipv4_multicast",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "tun", Address: []string{"224.0.0.1/4"}}}}}}},
+			wantError: `rules[0].listen.protocols[0].address[0] "224.0.0.1/4" is not a usable interface address`,
+		},
+		{
+			name:      "tun_address_ipv6_loopback",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "tun", Address: []string{"::1/128"}}}}}}},
+			wantError: `rules[0].listen.protocols[0].address[0] "::1/128" is not a usable interface address`,
+		},
+		{
+			name:      "tun_address_ipv6_link_local",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "tun", Address: []string{"198.18.0.1/30", "fe80::1/64"}}}}}}},
+			wantError: `rules[0].listen.protocols[0].address[1] "fe80::1/64" is not a usable interface address`,
+		},
+		{
+			name:      "tun_address_ipv6_link_local_multicast",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "tun", Address: []string{"ff02::1/16"}}}}}}},
+			wantError: `rules[0].listen.protocols[0].address[0] "ff02::1/16" is not a usable interface address`,
+		},
+		{
+			name:      "tun_address_ipv6_unspecified",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "tun", Address: []string{"::/128"}}}}}}},
+			wantError: `rules[0].listen.protocols[0].address[0] "::/128" is not a usable interface address`,
+		},
+		{
+			name:      "tun_address_unusable_before_host_bits",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "tun", Address: []string{"127.0.0.0/8"}}}}}}},
+			wantError: `rules[0].listen.protocols[0].address[0] "127.0.0.0/8" is not a usable interface address`,
+		},
+		{
 			name:      "tun_second_ipv4_address",
 			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "tun", Address: []string{"198.18.0.1/30", "10.0.0.1/24"}}}}}}},
 			wantError: `rules[0].listen.protocols[0].address[1] "10.0.0.1/24" is a second IPv4 address`,

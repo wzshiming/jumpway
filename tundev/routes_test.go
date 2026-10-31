@@ -9,7 +9,7 @@ import (
 )
 
 // ttHoles are the ranges no capture may ever route into the TUN.
-var ttHoles = ttPrefixes("127.0.0.0/8", "169.254.0.0/16", "224.0.0.0/4", "255.255.255.255/32", "::1/128", "fe80::/10", "ff00::/8")
+var ttHoles = ttPrefixes("127.0.0.0/8", "169.254.0.0/16", "224.0.0.0/4", "255.255.255.255/32", "::/128", "::1/128", "fe80::/10", "ff00::/8")
 
 func ttSet(t *testing.T, add, remove []netip.Prefix) *netipx.IPSet {
 	t.Helper()
@@ -55,6 +55,23 @@ func TestCaptureRoutesCoverEachFamilyMinusBypassSubnetsAndHoles(t *testing.T) {
 		if got := ttSet(t, tc.routes, nil); !got.Equal(want) {
 			t.Errorf("%s routes = %v\nwant the set %v", tc.family, tc.routes, want.Prefixes())
 		}
+	}
+}
+
+func TestCaptureRoutesLeaveOutIPv6Unspecified(t *testing.T) {
+	unspecified := netip.PrefixFrom(netip.IPv6Unspecified(), 128)
+	if !slices.Contains(fixedHoles, unspecified) {
+		t.Errorf("fixedHoles = %v, want it to hold %v", fixedHoles, unspecified)
+	}
+	routes := CaptureRoutes(ttDefaultConfig())
+	for _, p := range routes {
+		if p.Contains(unspecified.Addr()) {
+			t.Errorf("route %v contains ::, want the IPv6 unspecified address left out of the TUN", p)
+		}
+	}
+	_, v6 := ttSplit(routes)
+	if want := netip.MustParsePrefix("::2/127"); len(v6) == 0 || v6[0] != want {
+		t.Errorf("IPv6 routes start with %v, want %v", v6[:min(len(v6), 1)], want)
 	}
 }
 
