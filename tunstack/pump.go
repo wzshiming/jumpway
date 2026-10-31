@@ -23,13 +23,11 @@ func readPackets(dev tun.Device, ep *channel.Endpoint) error {
 	sizes := make([]int, len(bufs))
 	for {
 		n, err := dev.Read(bufs, sizes, offset)
-		if errors.Is(err, tun.ErrTooManySegments) {
-			continue
-		}
 		for i := range n {
 			injectPacket(ep, bufs[i][offset:offset+sizes[i]])
 		}
-		if err != nil {
+		// ErrTooManySegments comes with the segments that fit; only the rest of the GSO packet is lost.
+		if err != nil && !errors.Is(err, tun.ErrTooManySegments) {
 			return err
 		}
 	}
