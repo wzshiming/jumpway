@@ -38,20 +38,25 @@ func (g *gateway) relayDNS(conn *gonet.UDPConn, id stack.TransportEndpointID) {
 	if err != nil {
 		return
 	}
-	defer remote.Close()
-	stop := context.AfterFunc(g.ctx, func() { conn.Close() })
+	closeBoth := func() {
+		conn.Close()
+		remote.Close()
+	}
+	defer closeBoth()
+	stop := context.AfterFunc(g.ctx, closeBoth)
 	defer stop()
-	// Datagrams either way push back the read deadline of conn, so its expiry is the idle timeout of the flow.
-	touch := func() { conn.SetReadDeadline(time.Now().Add(g.dnsIdle)) }
-	touch()
+	// Datagrams either way push back the idle timer, whose expiry closes both conns wherever the relay blocks.
+	idle := time.AfterFunc(g.dnsIdle, closeBoth)
+	defer idle.Stop()
+	touch := func() { idle.Reset(g.dnsIdle) }
 	replies := make(chan struct{})
 	go func() {
 		defer close(replies)
-		defer conn.Close()
+		defer closeBoth()
 		relayReplies(conn, remote, touch)
 	}()
 	relayQueries(conn, remote, touch)
-	remote.Close()
+	closeBoth()
 	<-replies
 }
 
