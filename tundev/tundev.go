@@ -51,11 +51,13 @@ func validate(cfg Config) error {
 	if n := len(cfg.Addresses); n < 1 || n > 2 {
 		return fmt.Errorf("tundev: want 1 or 2 addresses, got %d", n)
 	}
-	for _, p := range cfg.Addresses {
+	for i, p := range cfg.Addresses {
 		a := p.Addr()
 		switch {
 		case !p.IsValid():
 			return fmt.Errorf("tundev: invalid address %v", p)
+		case p.Bits() == 0:
+			return fmt.Errorf("tundev: address[%d] %v has prefix length 0", i, p)
 		case a.Is4In6():
 			return fmt.Errorf("tundev: address %v is IPv4-mapped", p)
 		case a.IsLoopback(), a.IsMulticast(), a.IsUnspecified(), a.IsLinkLocalUnicast():
@@ -78,7 +80,7 @@ func validate(cfg Config) error {
 	return nil
 }
 
-// CaptureRoutes returns the routes into the TUN: for each family with an address, all of it except Bypass, the TUN's own subnets and fixedHoles; sorted, IPv4 first.
+// CaptureRoutes returns the routes into the TUN, sorted with IPv4 first.
 func CaptureRoutes(cfg Config) []netip.Prefix {
 	var b netipx.IPSetBuilder
 	for _, p := range cfg.Addresses {

@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// Helper runs the tun-helper subcommand as root: it creates and configures the TUN the Open listening on the unix socket args[0] requests and hands it over; it returns 0 on success, 1 on failure, and 2 on misuse.
+// Helper runs the tun-helper subcommand that Open launches as root.
 func Helper(args []string) int {
 	if len(args) != 1 || !filepath.IsAbs(args[0]) {
 		fmt.Fprintln(os.Stderr, "usage: tun-helper <absolute unix socket path>")
@@ -46,6 +46,8 @@ func Helper(args []string) int {
 	if err == nil {
 		dev, err = openLocal(ctx, cfg)
 	}
+	// A client that stops reading must not stall the root helper.
+	conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "tun-helper:", err)
 		sendReply(conn, reply{Error: err.Error()}, nil)

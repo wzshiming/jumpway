@@ -42,20 +42,26 @@ func recvReply(conn *net.UnixConn) (reply, *os.File, error) {
 	buf := make([]byte, 4096)
 	oob := make([]byte, unix.CmsgSpace(4))
 	n, oobn, _, _, err := conn.ReadMsgUnix(buf, oob)
-	if err != nil {
-		return reply{}, nil, err
-	}
+	// A failed read may still have delivered descriptors, which must not leak.
+	msgs, perr := unix.ParseSocketControlMessage(oob[:oobn])
 	var f *os.File
-	msgs, err := unix.ParseSocketControlMessage(oob[:oobn])
 	for _, m := range msgs {
-		fds, _ := unix.ParseUnixRights(&m)
+		fds, rerr := unix.ParseUnixRights(&m)
+		if perr == nil {
+			perr = rerr
+		}
 		for _, fd := range fds {
+			// On darwin, net sets close-on-exec only after a successful read.
+			unix.CloseOnExec(fd)
 			if f == nil {
 				f = os.NewFile(uintptr(fd), "tun")
 			} else {
 				unix.Close(fd)
 			}
 		}
+	}
+	if err == nil {
+		err = perr
 	}
 	var rep reply
 	if err == nil {

@@ -20,7 +20,7 @@ import (
 
 var createTUN = func(name string, mtu int) (tun.Device, error) { return tun.CreateTUN(name, mtu) }
 
-// Open creates the TUN cfg describes with its addresses and capture routes, through the tun-helper behind an administrator prompt unless the process is root.
+// Open prompts for administrator privileges unless the process is root.
 func Open(ctx context.Context, cfg Config) (*Device, error) {
 	if err := validate(cfg); err != nil {
 		return nil, err

@@ -32,12 +32,23 @@ func defaultTools(goos string) tools {
 				return tools{ip: p}
 			}
 		}
-		return tools{ip: "ip"}
 	}
 	return tools{}
 }
 
 func steps(goos string, t tools, name string, cfg Config) ([]step, error) {
+	missing := ""
+	switch {
+	case goos == "darwin" && t.ifconfig == "":
+		missing = "ifconfig"
+	case goos == "darwin" && t.route == "":
+		missing = "route"
+	case goos == "linux" && t.ip == "":
+		missing = "ip"
+	}
+	if missing != "" {
+		return nil, fmt.Errorf("tundev: %s command not found", missing)
+	}
 	var a4, a6 netip.Prefix
 	for _, p := range cfg.Addresses {
 		if p.Addr().Is4() {
