@@ -1,5 +1,10 @@
 import type { Locator, Page } from '@playwright/test';
-import { protocolRulesFixture, rulesFixture } from './fixtures/api.ts';
+import {
+	protocolRulesFixture,
+	rulesFixture,
+	tunRulesFixture,
+	tunStatusFixture
+} from './fixtures/api.ts';
 import { expect, test } from './fixtures/test.ts';
 import { count, type MockApi } from './mockApi.ts';
 
@@ -1273,7 +1278,8 @@ test('listen protocols: one checked scheme is a single-protocol port, several sh
 		'SOCKS5',
 		'SOCKS4',
 		'SSH',
-		'Shadowsocks'
+		'Shadowsocks',
+		'TUN'
 	]);
 	await expect.poll(checked).toEqual(['HTTP', 'SOCKS5', 'SOCKS4', 'SSH']);
 	await expect(row('HTTP').getByRole('checkbox', { name: 'Custom credentials' })).not.toBeChecked();
@@ -1383,7 +1389,8 @@ test('listen protocols: one checked scheme is a single-protocol port, several sh
 		'SOCKS5',
 		'SOCKS4',
 		'SSH',
-		'Shadowsocks'
+		'Shadowsocks',
+		'TUN'
 	]);
 	await expect(row('SOCKS5').getByRole('checkbox', { name: '单独凭据' })).toBeChecked();
 	await expect(row('SOCKS5').getByLabel('用户名')).toHaveValue('socks-user');
@@ -1472,6 +1479,229 @@ test('listen and exit headings are spaced below the preceding separators', async
 			await shoot(page, `section-heading-${width}-${name}`);
 		}
 	}
+});
+
+// TUN: a protocol row without credentials; the runtime names the interface it opened.
+const TUN_HELP =
+	"TUN: a virtual network interface that captures this machine's TCP traffic and sends it through the rule's exit chain; of UDP only DNS (port 53) is relayed. macOS and Linux only; only one rule may enable it.";
+const tunBox = (page: Page) => page.getByRole('checkbox', { name: 'TUN', exact: true });
+const tunFields = (page: Page) => page.getByRole('group', { name: 'TUN', exact: true });
+const cardOf = (page: Page, name: string) =>
+	cards(page).filter({ has: page.getByRole('link', { name, exact: true }) });
+// A card's facts as [term, value] pairs.
+const terms = (card: Locator) =>
+	card
+		.locator('dl dt')
+		.evaluateAll((items) =>
+			items.map((term) =>
+				[term, term.nextElementSibling!].map((node) =>
+					node.textContent!.replace(/\s+/g, ' ').trim()
+				)
+			)
+		);
+
+test('TUN: the checkbox opens Addresses and MTU beside its help tip; the POST carries the row, the editor reopens it and the card names the interface until switched off', async ({
+	page,
+	api
+}) => {
+	const fields = tunFields(page);
+	const addresses = fields.getByLabel('Addresses', { exact: true });
+	const mtu = fields.getByLabel('MTU', { exact: true });
+	await page.goto('/#/new');
+	await expect(heading(page)).toHaveText('New rule');
+	await expect(tunBox(page)).not.toBeChecked();
+	await expect(fields).toHaveCount(0);
+	await hover(page, page.getByRole('button', { name: 'About TUN device' }));
+	await expect(page.locator('#tooltip')).toHaveText(TUN_HELP);
+	await tunBox(page).check();
+	await expect(fields).toHaveCount(1);
+	await expect(fields.getByRole('checkbox')).toHaveCount(0);
+	await expect(addresses).toHaveAttribute('placeholder', '198.18.0.1/30, fd00:6a77:7761::1/64');
+	await expect(mtu).toHaveAttribute('placeholder', '1500');
+	await page.getByLabel('Rule name').fill('tun-new');
+	await page.getByLabel('Port', { exact: true }).fill('18302');
+	await addresses.fill('198.18.0.1/30, fd00::1/64');
+	await mtu.fill('1400');
+	await page.keyboard.press('ControlOrMeta+s');
+	await expect(page).toHaveURL(/#\/rules\/tun-new$/);
+	await expect(unsaved(page)).toHaveCount(0);
+	expect(api.writes).toEqual([
+		{
+			method: 'POST',
+			path: '/apis/configs/rules',
+			body: {
+				name: 'tun-new',
+				listen: {
+					host: '127.0.0.1',
+					port: 18302,
+					protocols: [
+						...LEGACY,
+						{ type: 'tun', address: ['198.18.0.1/30', 'fd00::1/64'], mtu: 1400 }
+					]
+				},
+				forward: {}
+			}
+		}
+	]);
+
+	await page.reload();
+	await expect(heading(page)).toHaveText('tun-new');
+	await expect(tunBox(page)).toBeChecked();
+	await expect(addresses).toHaveValue('198.18.0.1/30, fd00::1/64');
+	await expect(mtu).toHaveValue('1400');
+
+	await page.goto('/#/');
+	const card = cardOf(page, 'tun-new');
+	await expect.poll(() => terms(card)).toContainEqual(['TUN', 'utun5']);
+	await card.getByRole('switch', { name: 'Enabled' }).click();
+	await expect(card.locator('[data-state]')).toHaveText('Disabled');
+	await expect.poll(() => terms(card)).toContainEqual(['TUN', '—']);
+});
+
+test('TUN on the overview and where it is unavailable: cards name the running interface or a dash; a virtual listen or a listen hop disables the checkbox with the reason and the body omits the row', async ({
+	page,
+	api
+}) => {
+	api.rules.push(...structuredClone(tunRulesFixture));
+	api.status.rules!.push(...structuredClone(tunStatusFixture));
+	await page.goto('/');
+	await expect(cards(page)).toHaveCount(6);
+	await expect
+		.poll(() => terms(cardOf(page, 'tun-entry')))
+		.toEqual([
+			['Listen', '127.0.0.1:18300'],
+			['Target', '—'],
+			['Exit chain', 'direct'],
+			['TUN', 'utun5']
+		]);
+	await expect.poll(() => terms(cardOf(page, 'tun-lab'))).toContainEqual(['TUN', '—']);
+	expect((await terms(cardOf(page, 'office'))).map(([term]) => term)).toEqual([
+		'Listen',
+		'Target',
+		'Exit chain'
+	]);
+
+	await cardOf(page, 'tun-entry').getByRole('link', { name: 'tun-entry', exact: true }).click();
+	await expect(heading(page)).toHaveText('tun-entry');
+	const general = page.getByRole('group', { name: 'General', exact: true });
+	const tun = tunBox(page);
+	await expect(tun).toBeChecked();
+	await expect(tun).toBeEnabled();
+	await expect(tunFields(page)).toHaveCount(1);
+
+	await general.getByRole('radio', { name: 'Virtual' }).check();
+	await expect(tun).toBeDisabled();
+	await expect(tun).toBeChecked();
+	await expect(tun).toHaveAccessibleDescription('TUN is not available with a virtual listen.');
+	await expect(tunFields(page)).toHaveCount(0);
+	await page
+		.getByRole('group', { name: 'Listen', exact: true })
+		.getByLabel('Channel')
+		.fill('entry');
+	await page.keyboard.press('ControlOrMeta+s');
+	await expect(unsaved(page)).toHaveCount(0);
+	expect(api.writes.at(-1)!.body).toEqual({
+		name: 'tun-entry',
+		listen: {
+			host: '',
+			port: 0,
+			virtual: 'entry',
+			protocols: [{ type: 'http' }, { type: 'socks5' }]
+		},
+		forward: {}
+	});
+
+	await general.getByRole('radio', { name: 'Address' }).check();
+	await expect(tun).toBeEnabled();
+	await expect(tun).toBeChecked();
+	await page.locator('#listen-add-hop').click();
+	await page.locator('input[id^="listen-url-"]').fill('ssh://ops@edge.example:22');
+	await expect(tun).toBeDisabled();
+	await expect(tun).toHaveAccessibleDescription(
+		'TUN is not available with a listen-through chain.'
+	);
+	await expect(tunFields(page)).toHaveCount(0);
+	await page.keyboard.press('ControlOrMeta+s');
+	await expect(unsaved(page)).toHaveCount(0);
+	expect(api.writes.at(-1)!.body).toEqual({
+		name: 'tun-entry',
+		listen: {
+			host: '127.0.0.1',
+			port: 18300,
+			way: [{ lb: ['ssh://ops@edge.example:22'] }],
+			protocols: [{ type: 'http' }, { type: 'socks5' }]
+		},
+		forward: {}
+	});
+
+	await page.locator('li[id^="listen-hop-"]').getByRole('button', { name: 'Delete hop' }).click();
+	await expect(tun).toBeEnabled();
+	await expect(tunFields(page)).toHaveCount(1);
+	await page.keyboard.press('ControlOrMeta+s');
+	await expect(unsaved(page)).toHaveCount(0);
+	expect(api.writes.at(-1)!.body).toEqual({
+		name: 'tun-entry',
+		listen: {
+			host: '127.0.0.1',
+			port: 18300,
+			protocols: [{ type: 'http' }, { type: 'socks5' }, { type: 'tun' }]
+		},
+		forward: {}
+	});
+	expect(api.writes).toHaveLength(3);
+});
+
+test('only one enabled rule may hold TUN: a second is refused inline before any request, naming the owner; a disabled rule keeps its row until switched on', async ({
+	page,
+	api
+}) => {
+	api.rules.push(...structuredClone(tunRulesFixture));
+	const tun = tunBox(page);
+	const error = page.locator('#protocol-tun-error');
+	const taken = 'Only one rule can enable TUN; rule "tun-entry" already does.';
+	await page.goto('/#/rules/office');
+	await expect(heading(page)).toHaveText('office');
+	await tun.check();
+	await page.keyboard.press('ControlOrMeta+s');
+	await expect(error).toHaveText(taken);
+	await expect(tun).toHaveAttribute('aria-invalid', 'true');
+	await expect(tun).toBeFocused();
+	await tun.uncheck();
+	await expect(error).toHaveCount(0);
+	await expect(tun).not.toHaveAttribute('aria-invalid', /./);
+	await expect(unsaved(page)).toHaveCount(0);
+	expect(api.writes).toEqual([]);
+
+	await page.goto('/#/rules/tun-lab');
+	await expect(heading(page)).toHaveText('tun-lab');
+	await expect(tun).toBeChecked();
+	await tunFields(page).getByLabel('MTU', { exact: true }).fill('1500');
+	await page.keyboard.press('ControlOrMeta+s');
+	await expect(unsaved(page)).toHaveCount(0);
+	expect(api.writes).toEqual([
+		{
+			method: 'PUT',
+			path: '/apis/configs/rules/tun-lab',
+			body: {
+				name: 'tun-lab',
+				disabled: true,
+				listen: {
+					host: '127.0.0.1',
+					port: 18301,
+					protocols: [
+						{ type: 'tun', address: ['198.18.0.1/30', 'fd00:6a77:7761::1/64'], mtu: 1500 }
+					]
+				},
+				forward: {}
+			}
+		}
+	]);
+	await page.getByRole('switch', { name: 'Enabled' }).check();
+	await page.keyboard.press('ControlOrMeta+s');
+	await expect(error).toHaveText(taken);
+	await expect(tun).toBeFocused();
+	await expect(unsaved(page)).toBeVisible();
+	expect(api.writes).toHaveLength(1);
 });
 
 test('Duplicate on a card opens a dirty copy named "<name>-copy"; once its port is free, Save creates it and the overview lists it', async ({

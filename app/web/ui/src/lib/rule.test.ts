@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'vitest';
+import { tunRulesFixture } from '../../e2e/fixtures/api';
 import {
 	chainSummary,
 	EXIT_ROLES,
 	forwardTarget,
+	hasTUN,
 	hopTitle,
 	hostPort,
 	isForward,
@@ -64,6 +66,17 @@ describe('virtual endpoints', () => {
 
 	test('a virtual listen formats as virtual://channel instead of host:port', () => {
 		expect(listenAddress(rule({}, { host: '', port: 0, virtual: 'exit' }))).toBe('virtual://exit');
+	});
+});
+
+describe('TUN', () => {
+	test('hasTUN is true for a stored tun row, whether or not the rule is enabled', () => {
+		const [entry, lab] = tunRulesFixture;
+		expect(hasTUN(entry)).toBe(true);
+		expect(hasTUN(lab)).toBe(true);
+		expect(hasTUN(rule({}, { protocols: [{ type: 'http' }, { type: 'socks5' }] }))).toBe(false);
+		expect(hasTUN(rule({}))).toBe(false);
+		expect(hasTUN(rule({}, { protocols: null }))).toBe(false);
 	});
 });
 

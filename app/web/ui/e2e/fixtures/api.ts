@@ -3,6 +3,7 @@ import type {
 	NoProxy,
 	RawConfig,
 	Rule,
+	RuleStatus,
 	Snapshot,
 	Stats,
 	Status
@@ -102,6 +103,36 @@ export const protocolRulesFixture: Rule[] = [
 		},
 		forward: {}
 	}
+];
+
+// TUN rows, kept apart too: tun-entry serves two schemes beside a bare tun row (the defaults);
+// tun-lab is disabled, its row spelling out the default addresses with an MTU of its own.
+export const tunRulesFixture: Rule[] = [
+	{
+		name: 'tun-entry',
+		listen: {
+			host: '127.0.0.1',
+			port: 18300,
+			protocols: [{ type: 'http' }, { type: 'socks5' }, { type: 'tun' }]
+		},
+		forward: {}
+	},
+	{
+		name: 'tun-lab',
+		disabled: true,
+		listen: {
+			host: '127.0.0.1',
+			port: 18301,
+			protocols: [{ type: 'tun', address: ['198.18.0.1/30', 'fd00:6a77:7761::1/64'], mtu: 1400 }]
+		},
+		forward: {}
+	}
+];
+
+// The status entries of tunRulesFixture: tun-entry runs on its interface, tun-lab is stopped.
+export const tunStatusFixture: RuleStatus[] = [
+	{ name: 'tun-entry', address: '127.0.0.1:18300', remote: false, running: true, tun: 'utun5' },
+	{ name: 'tun-lab', address: '127.0.0.1:18301', remote: false, running: false }
 ];
 
 const zero: Stats = {

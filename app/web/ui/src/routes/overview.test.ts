@@ -5,6 +5,8 @@ import {
 	snapshotFixture,
 	snapshotTotals,
 	statusFixture,
+	tunRulesFixture,
+	tunStatusFixture,
 	virtualRulesFixture
 } from '../../e2e/fixtures/api';
 import App from '../App.svelte';
@@ -12,6 +14,7 @@ import { SAVED_PREFIX } from '../lib/api';
 import { formatCount, formatDateTime, formatRate, formatShortTime } from '../lib/format';
 import { sumStats } from '../lib/hosts';
 import { router } from '../lib/router.svelte';
+import { STATUS_INTERVAL_MS } from '../lib/status.svelte';
 import { toasts } from '../lib/toast.svelte';
 import { trend } from '../lib/trend.svelte';
 import { list, type Rule, type Snapshot, type Status } from '../lib/types';
@@ -1023,4 +1026,49 @@ test('every card footer carries one hidden rate line after its rates; a rule wit
 		)
 	).toBe(true);
 	expect(target.querySelectorAll('[data-sparkline]')).toHaveLength(5);
+});
+
+// The configuration says whether a rule has a TUN row; the runtime names the interface it opened.
+const TUN_HELP =
+	"TUN: a virtual network interface that captures this machine's TCP traffic and sends it through the rule's exit chain; of UDP only DNS (port 53) is relayed. macOS and Linux only; only one rule may enable it.";
+const terms = (name: string) =>
+	Array.from(card(name).querySelectorAll('dl dt')).map((term) => [
+		compact(term),
+		compact(term.nextElementSibling)
+	]);
+
+test('a card whose rule has a TUN row names the running interface in a fourth row, a dash while stopped; other cards have no such row', async () => {
+	rules.push(...structuredClone(tunRulesFixture));
+	runtime.rules!.push(...structuredClone(tunStatusFixture));
+	await render();
+	expect(terms('tun-entry')).toEqual([
+		['Listen', '127.0.0.1:18300'],
+		['Target', '\u2014'],
+		['Exit chain', 'direct'],
+		['TUN', 'utun5']
+	]);
+	expect(card('tun-entry').querySelectorAll('dl dd')[3].classList.contains('font-mono')).toBe(true);
+	// No mode chip: TUN is a protocol of the proxy rule, not a mode of its own.
+	expect(compact(card('tun-entry').querySelector('header p'))).toBe('Proxy');
+	expect(terms('tun-lab').at(-1)).toEqual(['TUN', '\u2014']);
+	for (const name of ['office', 'mirror', 'db-tunnel', 'lab']) {
+		expect(
+			terms(name).map(([term]) => term),
+			name
+		).toEqual(['Listen', 'Target', 'Exit chain']);
+	}
+	const help = card('tun-entry').querySelectorAll('dl dt')[3].querySelector('[data-help]');
+	if (!help) throw new Error('missing TUN help');
+	help.dispatchEvent(new Event('pointerenter'));
+	flushSync();
+	expect(tooltipText()).toBe(TUN_HELP);
+
+	// The next status poll finds the runtime stopped: the interface is gone, the dash stays.
+	const entry = runtime.rules!.find((rule) => rule.name === 'tun-entry')!;
+	entry.running = false;
+	delete entry.tun;
+	await vi.advanceTimersByTimeAsync(STATUS_INTERVAL_MS);
+	await settle();
+	expect(chip('tun-entry')).toBe('stopped');
+	expect(terms('tun-entry').at(-1)).toEqual(['TUN', '\u2014']);
 });

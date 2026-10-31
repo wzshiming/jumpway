@@ -82,7 +82,8 @@ function resetSnapshot(snapshot: Snapshot, now: string): void {
 	}
 }
 
-// Like the status API: virtual endpoints report virtual://channel and never count as remote.
+// Like the status API: virtual endpoints report virtual://channel and never count as remote; an
+// enabled rule with a tun row names its interface, and an explicit undefined clears a stale one.
 const runtimeOf = (rule: Rule): RuleStatus => ({
 	name: rule.name,
 	address: rule.listen.virtual
@@ -94,7 +95,11 @@ const runtimeOf = (rule: Rule): RuleStatus => ({
 			? (rule.forward.host || '127.0.0.1') + ':' + rule.forward.port
 			: undefined,
 	remote: !rule.listen.virtual && Array.isArray(rule.listen.way) && rule.listen.way.length > 0,
-	running: !rule.disabled
+	running: !rule.disabled,
+	tun:
+		!rule.disabled && (rule.listen.protocols ?? []).some((protocol) => protocol.type === 'tun')
+			? 'utun5'
+			: undefined
 });
 
 // Serves /apis from in-memory fixtures; mutations mirror the backend's validation messages.
