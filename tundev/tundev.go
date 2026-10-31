@@ -42,6 +42,8 @@ var fixedHoles = []netip.Prefix{
 	netip.MustParsePrefix("169.254.0.0/16"),
 	netip.MustParsePrefix("224.0.0.0/4"),
 	netip.MustParsePrefix("255.255.255.255/32"),
+	// The unspecified address is never a destination; this keeps the first IPv6 route from being ::/128.
+	netip.MustParsePrefix("::/128"),
 	netip.MustParsePrefix("::1/128"),
 	netip.MustParsePrefix("fe80::/10"),
 	netip.MustParsePrefix("ff00::/8"),
@@ -62,7 +64,7 @@ func validate(cfg Config) error {
 			return fmt.Errorf("tundev: address %v is IPv4-mapped", p)
 		case a.IsLoopback(), a.IsMulticast(), a.IsUnspecified(), a.IsLinkLocalUnicast():
 			return fmt.Errorf("tundev: address %v is loopback, multicast, unspecified or link-local", p)
-		case a == p.Masked().Addr():
+		case p.Bits() < a.BitLen() && a == p.Masked().Addr():
 			return fmt.Errorf("tundev: address %v has no host bits", p)
 		}
 	}

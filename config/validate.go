@@ -196,6 +196,12 @@ func validateTUN(field string, protocol Protocol, listen Listen) error {
 		if !ok {
 			return fmt.Errorf("%s is not a CIDR (e.g. 198.18.0.1/30)", entry)
 		}
+		if prefix.Bits() == 0 {
+			return fmt.Errorf("%s has prefix length 0", entry)
+		}
+		if addr := prefix.Addr(); addr.IsLoopback() || addr.IsLinkLocalUnicast() || addr.IsMulticast() || addr.IsUnspecified() {
+			return fmt.Errorf("%s is not a usable interface address", entry)
+		}
 		if prefix.Bits() < prefix.Addr().BitLen() && prefix.Addr() == prefix.Masked().Addr() {
 			return fmt.Errorf("%s has no host bits (e.g. 198.18.0.1/30)", entry)
 		}
