@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -140,6 +141,26 @@ func TestStepsFollowCommandTable(t *testing.T) {
 	}
 }
 
+func TestStepsFailNamingToolWithoutPath(t *testing.T) {
+	cfg := ttDefaultConfig()
+	for _, tc := range []struct {
+		goos    string
+		have    tools
+		missing string
+	}{
+		{"linux", tools{}, "ip"},
+		{"darwin", tools{route: ttTools.route}, "ifconfig"},
+		{"darwin", tools{ifconfig: ttTools.ifconfig}, "route"},
+	} {
+		t.Run(tc.goos+" without "+tc.missing, func(t *testing.T) {
+			got, err := steps(tc.goos, tc.have, ttIfNames[tc.goos], cfg)
+			if err == nil || !regexp.MustCompile(`\b`+tc.missing+`\b`).MatchString(err.Error()) {
+				t.Errorf("steps(%s) without a %s path = %v with\n%s\nwant an error naming %s", tc.goos, tc.missing, err, ttLines(ttArgvs(got)), tc.missing)
+			}
+		})
+	}
+}
+
 func TestConfigureRunsEveryStepInOrder(t *testing.T) {
 	ttGuardSystem(t)
 	cfg := ttDefaultConfig()
@@ -160,7 +181,6 @@ func TestConfigureStopsAtFailingIPv4Step(t *testing.T) {
 	cfg := ttDefaultConfig()
 	for _, goos := range []string{"darwin", "linux"} {
 		want := ttWantSteps(t, goos, cfg)
-		// The default table runs the IPv4 address, the IPv6 address, link up, then the IPv4 routes.
 		for _, tc := range []struct {
 			name string
 			fail int

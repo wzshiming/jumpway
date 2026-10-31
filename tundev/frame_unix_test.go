@@ -16,6 +16,8 @@ import (
 	"testing"
 	"testing/iotest"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 func TestFrameRoundTrip(t *testing.T) {
@@ -159,6 +161,9 @@ func TestReplyPassesFileDescriptor(t *testing.T) {
 		t.Fatal("recvReply returned no file for a reply that carried one")
 	}
 	defer f.Close()
+	if flags, err := unix.FcntlInt(f.Fd(), unix.F_GETFD, 0); err != nil || flags&unix.FD_CLOEXEC == 0 {
+		t.Errorf("received descriptor F_GETFD = %#x, %v; want FD_CLOEXEC set so child processes do not inherit it", flags, err)
+	}
 
 	const msg = "bytes through the passed descriptor"
 	if _, err := io.WriteString(w, msg); err != nil {

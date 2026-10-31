@@ -1,8 +1,12 @@
 package tundev
 
-import "net/netip"
+import (
+	"net/netip"
+	"os"
+	"path"
+	"testing"
+)
 
-// ttDefaultConfig is the default TUN rule of the contract's acceptance criteria.
 func ttDefaultConfig() Config {
 	return Config{
 		Addresses: ttPrefixes("198.18.0.1/30", "fd00:6a77:7761::1/64"),
@@ -17,4 +21,17 @@ func ttPrefixes(s ...string) []netip.Prefix {
 		prefixes[i] = netip.MustParsePrefix(p)
 	}
 	return prefixes
+}
+
+func TestDefaultToolsLinuxIPIsAbsoluteOrEmpty(t *testing.T) {
+	ip := defaultTools("linux").ip
+	if ip == "" {
+		return
+	}
+	if !path.IsAbs(ip) {
+		t.Fatalf("defaultTools(linux).ip = %q, want an absolute path or empty, never a name looked up in PATH", ip)
+	}
+	if _, err := os.Stat(ip); err != nil {
+		t.Errorf("defaultTools(linux).ip = %q, want an existing file: %v", ip, err)
+	}
 }
