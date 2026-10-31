@@ -50,6 +50,19 @@ export const zh = {
 	cipher: '加密方式',
 	cipherRequired: 'Shadowsocks 需要加密方式。',
 	passwordRequired: 'Shadowsocks 需要密码。',
+	tun: 'TUN',
+	tunDevice: 'TUN 虚拟网卡',
+	tunHint:
+		'首次启动会弹出系统授权；若被拒绝，重新加载配置后会再次询问。“不走代理”中的网段不经过 TUN。JumpWay 不会修改 DNS：如需远端解析，请把系统 DNS 设为公共解析器。',
+	tunAddress: '地址',
+	tunAddressHint: '逗号分隔、含主机位的 CIDR，IPv4 和 IPv6 各最多一个；留空使用默认值。',
+	tunMTU: 'MTU',
+	tunMTUHint: '1280 到 65535；留空使用 1500。',
+	invalidTUNAddress: '每个地址必须是 CIDR（例如 198.18.0.1/30），IPv4 和 IPv6 各最多一个。',
+	invalidMTU: 'MTU 必须是 1280 到 65535 之间的整数。',
+	tunTaken: '只能有一条规则启用 TUN；规则“{name}”已启用。',
+	tunNotWithVirtual: '虚拟监听不支持 TUN。',
+	tunNotWithWay: '经由监听不支持 TUN。',
 	listenThroughHint:
 		'留空时在本机打开端口；否则由第一个节点在其所在机器上绑定主机和端口（SSH 远程端口转发；远端 sshd 默认仅绑定回环地址，启用 GatewayPorts 后才能绑定其他地址），最后一个节点由本机直接连接。只有 ssh://、cmd: 和 nc 节点支持监听。',
 	deleteRule: '删除',
@@ -258,6 +271,8 @@ export const zh = {
 	'help.target': '目标：端口转发规则把每条连接转发到的主机和端口，从出口节点连接。',
 	'help.exitChain':
 		'出口链路：出站时由本机连接的代理。节点 1 是紧邻目标的出口节点，最后一个节点最先被连接；留空表示直连。',
+	'help.tun':
+		'TUN：虚拟网卡，捕获本机 TCP 流量并经由规则的出口链路发出；UDP 仅转发 DNS（53 端口）。仅支持 macOS 和 Linux，且只能有一条规则启用。',
 	'help.endpoints': '端点：这台主机上不同的代理 URL（scheme://host:port），涵盖所有规则和节点。',
 	'help.path':
 		'路径：此连接实际经过的路线，从本机依次经过各代理 URL 到达目标；“复用连接”表示该节点通过已有的传输通道到达。',

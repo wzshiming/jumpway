@@ -13,7 +13,7 @@
 	import { DASH, formatRate, redactCredentials } from '../../lib/format';
 	import { t } from '../../lib/i18n.svelte';
 	import { duplicateRoute, ruleRoute, statsRoute } from '../../lib/routes';
-	import { forwardTarget, isForward, listenAddress } from '../../lib/rule';
+	import { forwardTarget, hasTUN, isForward, listenAddress } from '../../lib/rule';
 	import { cardState } from '../../lib/status.svelte';
 	import { DIRECTIONS } from '../../lib/traffic';
 	import { trend } from '../../lib/trend.svelte';
@@ -131,6 +131,13 @@
 		<dd>
 			{hops === 0 ? t('direct') : hops === 1 ? t('hopCountOne') : t('hopCount', { count: hops })}
 		</dd>
+		{#if hasTUN(rule)}
+			<dt class="flex items-center gap-1 text-fg-muted">
+				{t('tun')}
+				<HelpTip concept={t('tun')} text={t('help.tun')} />
+			</dt>
+			<dd class="font-mono text-[13px] [overflow-wrap:anywhere]">{runtime?.tun || DASH}</dd>
+		{/if}
 	</dl>
 	{#if runtime?.error}
 		<p class="line-clamp-2 text-xs break-words text-danger">{redactCredentials(runtime.error)}</p>

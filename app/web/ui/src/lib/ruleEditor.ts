@@ -1,6 +1,6 @@
 import { text } from './format';
 import type { MessageKey } from './i18n/en';
-import { isVirtualChannel, joinHostPort, virtualAddress } from './rule';
+import { hasTUN, isVirtualChannel, joinHostPort, virtualAddress } from './rule';
 import {
 	list,
 	type Address,
@@ -26,7 +26,8 @@ export const PROTOCOLS = [
 	{ type: 'socks5', label: 'SOCKS5', fields: ['username', 'password'] },
 	{ type: 'socks4', label: 'SOCKS4', fields: ['username'] },
 	{ type: 'ssh', label: 'SSH', fields: ['username', 'password'] },
-	{ type: 'ss', label: 'Shadowsocks', fields: ['password'] }
+	{ type: 'ss', label: 'Shadowsocks', fields: ['password'] },
+	{ type: 'tun', label: 'TUN', fields: [] }
 ] as const satisfies readonly {
 	type: string;
 	label: string;
@@ -40,6 +41,10 @@ const LEGACY_TYPES: readonly ProtocolType[] = ['http', 'socks5', 'socks4', 'ssh'
 const DEFAULT_CIPHER =
 	fieldsOf(layoutFor('shadowsocks')!).find((input) => input.name === 'encrypto')?.value ?? '';
 
+// The server's defaults for a tun row's blank address and mtu.
+export const DEFAULT_TUN_ADDRESSES = ['198.18.0.1/30', 'fd00:6a77:7761::1/64'];
+export const DEFAULT_TUN_MTU = 1500;
+
 // One row per PROTOCOLS entry; custom off means the row inherits the shared credentials.
 export interface ProtocolDraft {
 	type: ProtocolType;
@@ -48,6 +53,9 @@ export interface ProtocolDraft {
 	username: string;
 	password: string;
 	cipher: string;
+	// tun only, as typed: a comma list of CIDRs and the MTU text.
+	address: string;
+	mtu: string;
 }
 
 export interface UrlDraft {
@@ -79,6 +87,10 @@ export interface RuleDraft {
 	forward: { way: HopDraft[] };
 }
 
+// The server refuses a tun row on a virtual listen or one bound through hops.
+export const tunAvailable = (listen: Pick<RuleDraft['listen'], 'kind' | 'way'>): boolean =>
+	listen.kind === 'address' && listen.way.length === 0;
+
 let sequence = 0;
 
 export const newUrl = (value = ''): UrlDraft => ({ id: ++sequence, value });
@@ -105,7 +117,17 @@ function protocolsFrom(listen: Listen): ProtocolDraft[] {
 		const enabled = stored.length
 			? !!entry
 			: LEGACY_TYPES.includes(type) || (type === 'ss' && !!listen.cipher);
-		return { type, enabled, custom: !!(username || password), username, password, cipher };
+		const mtu = entry?.mtu ?? 0;
+		return {
+			type,
+			enabled,
+			custom: !!(username || password),
+			username,
+			password,
+			cipher,
+			address: list(entry?.address).join(', '),
+			mtu: mtu > 0 ? String(mtu) : ''
+		};
 	});
 }
 
@@ -171,6 +193,11 @@ export interface DraftErrors {
 	protocolErrors?: Partial<Record<ProtocolType, ProtocolFieldErrors>>;
 	ssCipher?: MessageKey;
 	ssPassword?: MessageKey;
+	tun?: MessageKey;
+	// The rule named by a tunTaken error.
+	tunOwner?: string;
+	tunAddress?: MessageKey;
+	tunMTU?: MessageKey;
 	targetPort?: MessageKey;
 	targetVirtual?: MessageKey;
 	// Keyed by UrlDraft.id.
@@ -232,6 +259,24 @@ const configuredAddress = (listen: Listen): string =>
 const protocolFields = (type: ProtocolType): readonly string[] =>
 	PROTOCOLS.find((entry) => entry.type === type)!.fields;
 
+// Host bits are left to the server's 400.
+const TUN_ADDRESS = /^[0-9a-fA-F:.]+\/\d{1,3}$/;
+
+// Blank fields leave the server's defaults; at most one address per family.
+function readTUN(row: ProtocolDraft, errors: DraftErrors): Protocol {
+	const entry: Protocol = { type: 'tun' };
+	const address = row.address.split(/[\s,]+/).filter(Boolean);
+	const v6 = address.filter((cidr) => cidr.includes(':')).length;
+	if (v6 > 1 || address.length - v6 > 1 || !address.every((cidr) => TUN_ADDRESS.test(cidr)))
+		errors.tunAddress = 'invalidTUNAddress';
+	if (address.length) entry.address = address;
+	// Blank text and '0' both read as 0, the default.
+	const mtu = Number(row.mtu);
+	if (Number.isInteger(mtu) && mtu >= 1280 && mtu <= 65535) entry.mtu = mtu;
+	else if (mtu !== 0) errors.tunMTU = 'invalidMTU';
+	return entry;
+}
+
 // Mirrors validateListenAuth for an explicit protocol list: a row's own credentials win, empty
 // ones inherit the shared pair, and the shared password may serve Shadowsocks alone.
 function readAuth(listen: RuleDraft['listen'], errors: DraftErrors) {
@@ -241,7 +286,8 @@ function readAuth(listen: RuleDraft['listen'], errors: DraftErrors) {
 		((errors.protocolErrors ??= {})[row.type] ??= {})[field] = key;
 	};
 	if (listen.username.includes(':')) errors.listenUsername = 'usernameColon';
-	const rows = listen.protocols.filter((row) => row.enabled);
+	// Like Schemes(), which leaves the tun row out.
+	const rows = listen.protocols.filter((row) => row.enabled && row.type !== 'tun');
 	const sharedForSS = rows.some((row) => row.type === 'ss' && !(row.custom && row.password));
 	for (const row of rows) {
 		const ownUsername = row.custom ? row.username : '';
@@ -278,6 +324,10 @@ export function readRule(draft: RuleDraft, context?: ReadContext): ReadResult {
 	const protocols: Protocol[] = [];
 	for (const row of draft.listen.protocols) {
 		if (forwarding || !row.enabled) continue;
+		if (row.type === 'tun') {
+			if (tunAvailable(draft.listen)) protocols.push(readTUN(row, errors));
+			continue;
+		}
 		const entry: Protocol = { type: row.type };
 		if (row.custom && row.username) entry.username = row.username;
 		if (row.custom && row.password) entry.password = row.password;
@@ -323,6 +373,16 @@ export function readRule(draft: RuleDraft, context?: ReadContext): ReadResult {
 			joinHostPort(context.webUI.host, context.webUI.port) === address
 		) {
 			errors[field] = 'listenAddressWebUI';
+		}
+	}
+	// Like Validate: at most one enabled rule holds a tun row.
+	if (context && draft.enabled && protocols.some((entry) => entry.type === 'tun')) {
+		const owner = context.others.find(
+			(rule) => rule.name !== context.self && !rule.disabled && hasTUN(rule)
+		);
+		if (owner) {
+			errors.tun = 'tunTaken';
+			errors.tunOwner = owner.name;
 		}
 	}
 	if (
