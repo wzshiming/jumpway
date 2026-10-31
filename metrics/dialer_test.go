@@ -31,6 +31,8 @@ func TestHopDialer(t *testing.T) {
 		if dialErr != nil {
 			return nil, dialErr
 		}
+		// Outlasts the 15.6 ms Windows clock tick so the dial never measures 0.
+		time.Sleep(20 * time.Millisecond)
 		return inner, nil
 	})}
 	connected, err := wrapped.DialContext(ctx, "tcp", "example.com:443")
@@ -187,6 +189,8 @@ func TestRuleDialerTargets(t *testing.T) {
 				if test.err != nil {
 					return nil, test.err
 				}
+				// Outlasts the 15.6 ms Windows clock tick so the dial never measures 0.
+				time.Sleep(20 * time.Millisecond)
 				return inner, nil
 			})
 			if test.url != "" {

@@ -1265,7 +1265,8 @@ func TestStoreSaveRawAtomic(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if info.Mode().Perm() != 0o644 {
+		// Windows has no POSIX permission bits; Go reports 0666 for any writable file.
+		if runtime.GOOS != "windows" && info.Mode().Perm() != 0o644 {
 			t.Fatalf("config mode = %04o, want 0644", info.Mode().Perm())
 		}
 	})
