@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"golang.zx2c4.com/wireguard/tun"
 )
 
 func TestServeReturnsContextErrorAndClosesDevice(t *testing.T) {
@@ -44,5 +46,27 @@ func TestServeReturnsDeviceReadError(t *testing.T) {
 	}
 	if !env.dev.closedByServe() {
 		t.Fatal("Serve returned without closing the device after its Read failed")
+	}
+}
+
+func TestServeKeepsReadingAfterTooManySegments(t *testing.T) {
+	env := testServe(t, Options{Addresses: testAddresses})
+	env.failOneRead(t, tun.ErrTooManySegments)
+	conn := env.dialTCP(t, "10.0.0.9:443")
+	target := env.nextTarget(t)
+	testRelay(t, conn, target, "from the client")
+	testRelay(t, target, conn, "from the target")
+}
+
+func TestServeDrainsDeviceEvents(t *testing.T) {
+	const sends, wait = 20, 2 * time.Second
+	env := testServe(t, Options{Addresses: testAddresses})
+	received, all := env.dev.feedEvents(sends)
+	select {
+	case <-all:
+	case <-env.done:
+		t.Fatalf("Serve returned %v while the device sent events, want it to ignore them", env.err)
+	case <-time.After(wait):
+		t.Fatalf("Serve received %d of %d events sent on the device's unbuffered Events channel within %v, want it to drain them all", received.Load(), sends, wait)
 	}
 }

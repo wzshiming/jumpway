@@ -39,6 +39,7 @@ var (
 type fakeDevice struct {
 	client     tun.Device
 	inbound    chan []byte
+	failNext   chan error
 	readFailed chan struct{}
 	readErr    error
 	failOnce   sync.Once
@@ -46,6 +47,7 @@ type fakeDevice struct {
 	closeOnce  sync.Once
 	closeCalls atomic.Int32
 	events     chan tun.Event
+	feeding    sync.Mutex
 }
 
 func (d *fakeDevice) File() *os.File           { return nil }
@@ -58,6 +60,8 @@ func (d *fakeDevice) Read(bufs [][]byte, sizes []int, offset int) (int, error) {
 	var packet []byte
 	select {
 	case packet = <-d.inbound:
+	case err := <-d.failNext:
+		return 0, err
 	case <-d.readFailed:
 		return 0, d.readErr
 	case <-d.closed:
@@ -100,7 +104,10 @@ func (d *fakeDevice) Close() error {
 func (d *fakeDevice) release() {
 	d.closeOnce.Do(func() {
 		close(d.closed)
+		// A send pending on a closed channel panics, so a feeder must stop before events closes.
+		d.feeding.Lock()
 		close(d.events)
+		d.feeding.Unlock()
 	})
 }
 
@@ -118,6 +125,32 @@ func (d *fakeDevice) failRead(err error) {
 		d.readErr = err
 		close(d.readFailed)
 	})
+}
+
+// feedEvents sends n events, each kind in turn, on Events from a goroutine, counting those received and closing all after the last; release ends it.
+func (d *fakeDevice) feedEvents(n int) (received *atomic.Int32, all <-chan struct{}) {
+	count, done := new(atomic.Int32), make(chan struct{})
+	go func() {
+		d.feeding.Lock()
+		defer d.feeding.Unlock()
+		// release may have closed events already.
+		select {
+		case <-d.closed:
+			return
+		default:
+		}
+		kinds := []tun.Event{tun.EventUp, tun.EventDown, tun.EventMTUUpdate}
+		for i := range n {
+			select {
+			case d.events <- kinds[i%len(kinds)]:
+				count.Add(1)
+			case <-d.closed:
+				return
+			}
+		}
+		close(done)
+	}()
+	return count, done
 }
 
 func (d *fakeDevice) closedByServe() bool { return d.closeCalls.Load() > 0 }
@@ -233,9 +266,10 @@ func testServe(t *testing.T, opts Options) *testEnv {
 	dev := &fakeDevice{
 		client:     clientDev,
 		inbound:    make(chan []byte, 1024),
+		failNext:   make(chan error),
 		readFailed: make(chan struct{}),
 		closed:     make(chan struct{}),
-		events:     make(chan tun.Event),
+		events:     make(chan tun.Event), // unbuffered: a feedEvents send completes only once Serve receives it
 	}
 	dialer := &fakeDialer{targets: make(chan net.Conn, 16)}
 	t.Cleanup(dialer.closeTargets)
@@ -344,6 +378,18 @@ func (e *testEnv) nextTarget(t *testing.T) net.Conn {
 		t.Fatalf("Serve did not dial through the dialer within %v", testWait)
 	}
 	return nil
+}
+
+// failOneRead makes one device Read return err instead of packets, returning once Serve's Read has taken it.
+func (e *testEnv) failOneRead(t *testing.T, err error) {
+	t.Helper()
+	select {
+	case e.dev.failNext <- err:
+	case <-e.done:
+		t.Fatalf("Serve returned %v before its device Read could fail with %v", e.err, err)
+	case <-time.After(testWait):
+		t.Fatalf("Serve did not Read the device within %v", testWait)
+	}
 }
 
 // testRelay writes payload on from and expects it to arrive on to.
