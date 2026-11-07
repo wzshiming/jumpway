@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -175,7 +176,8 @@ func TestReloadCountsProxyTraffic(test *testing.T) {
 			len(rule.Targets) == 1 && rule.Targets[0].Stats.Active == 0
 	})
 	rule := snapshot.Rules[0]
-	if rule.Name != "direct" || rule.Stats.Dials != 1 || rule.Stats.DialFailures != 0 || rule.Stats.LatencyMs <= 0 {
+	// The coarse Windows monotonic clock can measure a loopback dial as 0 ms.
+	if rule.Name != "direct" || rule.Stats.Dials != 1 || rule.Stats.DialFailures != 0 || (runtime.GOOS != "windows" && rule.Stats.LatencyMs <= 0) {
 		test.Fatalf("unexpected proxy statistics: %+v", rule)
 	}
 	entry := rule.Targets[0]

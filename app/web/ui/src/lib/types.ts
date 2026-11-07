@@ -67,6 +67,8 @@ export interface RuleStatus {
 	running: boolean;
 	attempt?: number;
 	error?: string;
+	// The tun interface name while it runs.
+	tun?: string;
 }
 
 export interface Status {

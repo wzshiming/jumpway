@@ -33,7 +33,7 @@ func TestSnapshotJSON(t *testing.T) {
 	registry.Sync([]config.Rule{
 		{Name: "empty"},
 		{Name: "full", Listen: config.Listen{Way: []bridgeconfig.Node{{LB: []string{raw}}}}, Forward: config.Forward{Way: []bridgeconfig.Node{{LB: []string{raw}}}}},
-	})
+	}, "", nil)
 	rule := registry.Rule("full")
 	wrapped := rule.WrapDialer(rule.HopWrapper(Forward)(0, raw, bridge.DialFunc(func(context.Context, string, string) (net.Conn, error) {
 		return nil, errors.New("offline")
@@ -93,7 +93,7 @@ func TestSnapshotJSON(t *testing.T) {
 
 func TestSnapshotTransferJSON(t *testing.T) {
 	registry := NewRegistry()
-	registry.Sync([]config.Rule{{Name: "rule"}})
+	registry.Sync([]config.Rule{{Name: "rule"}}, "", nil)
 	rule := registry.Rule("rule")
 	inner, peer := net.Pipe()
 	closeOnCleanup(t, peer)
@@ -191,7 +191,7 @@ func TestSnapshotResolvesProcess(t *testing.T) {
 		registry.Sync([]config.Rule{
 			{Name: "local"},
 			{Name: "remote", Listen: config.Listen{Way: []bridgeconfig.Node{{LB: []string{"ssh://user:secret@entry:22"}}}}},
-		})
+		}, "", nil)
 		local := registry.Rule("local")
 		dial(local, client)
 		dial(local, &net.TCPAddr{IP: net.ParseIP("::1"), Port: 12346})
@@ -259,7 +259,7 @@ func TestSnapshotResolvesProcess(t *testing.T) {
 		registry.Sync([]config.Rule{
 			{Name: "local"},
 			{Name: "remote", Listen: config.Listen{Way: []bridgeconfig.Node{{LB: []string{"ssh://user:secret@entry:22"}}}}},
-		})
+		}, "", nil)
 		dial(registry.Rule("local"), &net.TCPAddr{IP: net.ParseIP("10.0.0.1"), Port: 1})
 		dial(registry.Rule("remote"), client)
 		dial(registry.Rule("local"), nil)
@@ -274,7 +274,7 @@ func TestSnapshotResolvesProcess(t *testing.T) {
 	})
 	t.Run("error", func(t *testing.T) {
 		registry := NewRegistry()
-		registry.Sync([]config.Rule{{Name: "local"}})
+		registry.Sync([]config.Rule{{Name: "local"}}, "", nil)
 		dial(registry.Rule("local"), client)
 		var calls atomic.Int32
 		registry.lookup = func(context.Context) (map[netip.AddrPort]netproc.Process, error) {
@@ -290,7 +290,7 @@ func TestSnapshotResolvesProcess(t *testing.T) {
 	})
 	t.Run("concurrency", func(t *testing.T) {
 		registry := NewRegistry()
-		registry.Sync([]config.Rule{{Name: "local"}})
+		registry.Sync([]config.Rule{{Name: "local"}}, "", nil)
 		dial(registry.Rule("local"), client)
 		started := make(chan struct{}, 1)
 		release := make(chan struct{})
@@ -360,7 +360,7 @@ func assertKeys(t *testing.T, object map[string]interface{}, expected ...string)
 
 func TestSnapshotHopAggregation(t *testing.T) {
 	registry := NewRegistry()
-	registry.Sync([]config.Rule{{Name: "rule"}})
+	registry.Sync([]config.Rule{{Name: "rule"}}, "", nil)
 	rule := registry.Rule("rule")
 	first := rule.HopWrapper(Forward)(0, "ssh://first:22", &net.Dialer{}).(*dialer).count
 	second := rule.HopWrapper(Forward)(0, "ssh://second:22", &net.Dialer{}).(*dialer).count
@@ -393,7 +393,7 @@ func TestSnapshotHopAggregation(t *testing.T) {
 
 func TestSnapshotDuplicateRedactedURLs(t *testing.T) {
 	registry := NewRegistry()
-	registry.Sync([]config.Rule{{Name: "rule", Forward: config.Forward{Way: []bridgeconfig.Node{{LB: []string{"ssh://u:a@h:22", "ssh://u:b@h:22"}}}}}})
+	registry.Sync([]config.Rule{{Name: "rule", Forward: config.Forward{Way: []bridgeconfig.Node{{LB: []string{"ssh://u:a@h:22", "ssh://u:b@h:22"}}}}}}, "", nil)
 	rule := registry.Rule("rule")
 	count := rule.HopWrapper(Forward)(0, "ssh://u:a@h:22", &net.Dialer{}).(*dialer).count
 	count.dial(time.Millisecond, time.Now(), nil)
@@ -409,7 +409,7 @@ func TestSnapshotDuplicateRedactedURLs(t *testing.T) {
 
 func TestSnapshotTargetOrder(t *testing.T) {
 	registry := NewRegistry()
-	registry.Sync([]config.Rule{{Name: "rule"}})
+	registry.Sync([]config.Rule{{Name: "rule"}}, "", nil)
 	rule := registry.Rule("rule")
 	for _, target := range []struct {
 		address string
@@ -442,7 +442,7 @@ func TestSnapshotTargetOrder(t *testing.T) {
 
 func TestSnapshotConnections(t *testing.T) {
 	registry := NewRegistry()
-	registry.Sync([]config.Rule{{Name: "first"}, {Name: "idle"}, {Name: "second"}})
+	registry.Sync([]config.Rule{{Name: "first"}, {Name: "idle"}, {Name: "second"}}, "", nil)
 	for index := range 8 {
 		dialRulePipe(t, registry.Rule("first"), "example.com:443")
 		dialRulePipe(t, registry.Rule("second"), "other:443")

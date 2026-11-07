@@ -14,7 +14,7 @@ import (
 
 func TestTick(t *testing.T) {
 	registry := NewRegistry()
-	registry.Sync([]config.Rule{{Name: "rule"}})
+	registry.Sync([]config.Rule{{Name: "rule"}}, "", nil)
 	rule := registry.Rule("rule")
 	hopCount := rule.HopWrapper(Forward)(0, "socks5://hop:1080", &net.Dialer{}).(*dialer).count
 	idle := rule.HopWrapper(Listen)(0, "ssh://idle:22", &net.Dialer{}).(*dialer).count
@@ -120,7 +120,7 @@ func TestCounterLastTransfer(t *testing.T) {
 
 func TestReset(t *testing.T) {
 	registry := NewRegistry()
-	registry.Sync([]config.Rule{{Name: "rule"}})
+	registry.Sync([]config.Rule{{Name: "rule"}}, "", nil)
 	rule := registry.Rule("rule")
 	hopCount := rule.HopWrapper(Forward)(0, "ssh://hop:22", &net.Dialer{}).(*dialer).count
 	targetCount := rule.target(targetKey{address: "target:443"})
@@ -163,7 +163,7 @@ func TestReset(t *testing.T) {
 
 func TestResetWithOpenConnections(t *testing.T) {
 	registry := NewRegistry()
-	registry.Sync([]config.Rule{{Name: "rule"}})
+	registry.Sync([]config.Rule{{Name: "rule"}}, "", nil)
 	rule := registry.Rule("rule")
 	oldInner, oldPeer := net.Pipe()
 	closeOnCleanup(t, oldPeer)
@@ -215,7 +215,7 @@ func TestRunCanceled(t *testing.T) {
 
 func TestConcurrentTraffic(t *testing.T) {
 	registry := NewRegistry()
-	registry.Sync([]config.Rule{{Name: "rule"}})
+	registry.Sync([]config.Rule{{Name: "rule"}}, "", nil)
 	rule := registry.Rule("rule")
 	const workers = 8
 	const writes = 100

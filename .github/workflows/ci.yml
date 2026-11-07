@@ -15,7 +15,12 @@ concurrency:
 
 jobs:
   go:
-    runs-on: ubuntu-latest
+    name: go (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
     timeout-minutes: 15
     steps:
     - uses: actions/checkout@v4
@@ -87,3 +92,55 @@ jobs:
         path: app/web/ui/test-results
         retention-days: 7
         if-no-files-found: ignore
+
+  tun-e2e:
+    name: tun e2e (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+
+    - name: Vet tray e2e
+      run: go vet -tags e2e ./app/tray
+
+    - name: Build tray e2e
+      if: runner.os != 'Windows'
+      run: go test -c -race -tags e2e -o "$RUNNER_TEMP/tray-e2e.test" ./app/tray
+
+    - name: Tray capture (root)
+      if: runner.os != 'Windows'
+      run: sudo -n env JUMPWAY_TUN_E2E=1 "$RUNNER_TEMP/tray-e2e.test" -test.v -test.timeout 6m -test.run '^TestE2E'
+
+    - name: Build tray e2e (Windows)
+      if: runner.os == 'Windows'
+      shell: bash
+      run: go test -c -race -tags e2e -o "$RUNNER_TEMP/tray-e2e.test.exe" ./app/tray
+
+    - name: Tray capture (Windows, elevated)
+      if: runner.os == 'Windows'
+      shell: bash
+      run: |
+        set -o pipefail
+        JUMPWAY_TUN_E2E=1 "$RUNNER_TEMP/tray-e2e.test.exe" -test.v -test.timeout 6m -test.run '^TestE2E' | tee "$RUNNER_TEMP/tray-e2e.log"
+        grep -qF -- "--- PASS: TestE2ETrayTUNCaptureThroughRule (" "$RUNNER_TEMP/tray-e2e.log" || { echo "::error::TestE2ETrayTUNCaptureThroughRule did not pass"; exit 1; }
+
+    - name: Network state
+      if: always() && runner.os != 'Windows'
+      run: |
+        if [ "$RUNNER_OS" = "Linux" ]; then ip addr; ip route; ip -6 route; else ifconfig; netstat -rn; fi
+
+    - name: Network state (Windows)
+      if: always() && runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        route print
+        ipconfig /all
