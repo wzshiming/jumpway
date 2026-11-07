@@ -131,6 +131,13 @@
 		<dd>
 			{hops === 0 ? t('direct') : hops === 1 ? t('hopCountOne') : t('hopCount', { count: hops })}
 		</dd>
+		{#if runtime?.tun}
+			<dt class="flex items-center gap-1 text-fg-muted">
+				{t('tun')}
+				<HelpTip concept={t('tun')} text={t('help.tun')} />
+			</dt>
+			<dd class="font-mono text-[13px] [overflow-wrap:anywhere]">{runtime.tun}</dd>
+		{/if}
 	</dl>
 	{#if runtime?.error}
 		<p class="line-clamp-2 text-xs break-words text-danger">{redactCredentials(runtime.error)}</p>

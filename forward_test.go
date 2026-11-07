@@ -140,7 +140,7 @@ func TestRunForwardHalfClose(t *testing.T) {
 		}
 		done := make(chan struct{})
 		go func() {
-			tunnel(ctx, inbound, outbound)
+			Tunnel(ctx, inbound, outbound)
 			close(done)
 		}()
 		if err := client.Close(); err != nil {
