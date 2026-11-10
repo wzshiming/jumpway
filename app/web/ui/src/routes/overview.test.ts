@@ -5,6 +5,7 @@ import {
 	snapshotFixture,
 	snapshotTotals,
 	statusFixture,
+	tunStatusFixture,
 	virtualRulesFixture
 } from '../../e2e/fixtures/api';
 import App from '../App.svelte';
@@ -12,6 +13,7 @@ import { SAVED_PREFIX } from '../lib/api';
 import { formatCount, formatDateTime, formatRate, formatShortTime } from '../lib/format';
 import { sumStats } from '../lib/hosts';
 import { router } from '../lib/router.svelte';
+import { STATUS_INTERVAL_MS } from '../lib/status.svelte';
 import { toasts } from '../lib/toast.svelte';
 import { trend } from '../lib/trend.svelte';
 import { list, type Rule, type Snapshot, type Status } from '../lib/types';
@@ -1023,4 +1025,44 @@ test('every card footer carries one hidden rate line after its rates; a rule wit
 		)
 	).toBe(true);
 	expect(target.querySelectorAll('[data-sparkline]')).toHaveLength(5);
+});
+
+// Only the runtime says whether a rule carries the TUN: it names the interface it opened.
+const TUN_HELP =
+	"TUN: a virtual network interface that captures this machine's TCP traffic and sends it through the rule's exit chain; of UDP only DNS (port 53) is relayed. macOS and Linux only.";
+const terms = (name: string) =>
+	Array.from(card(name).querySelectorAll('dl dt')).map((term) => [
+		compact(term),
+		compact(term.nextElementSibling)
+	]);
+
+test('a card whose status names a TUN interface shows it in a fourth row; other cards have none, and the row goes when the status drops it', async () => {
+	const index = runtime.rules!.findIndex((entry) => entry.name === tunStatusFixture.name);
+	runtime.rules![index] = structuredClone(tunStatusFixture);
+	await render();
+	expect(terms('office')).toEqual([
+		['Listen', '127.0.0.1:18097'],
+		['Target', '\u2014'],
+		['Exit chain', '2 hops'],
+		['TUN', 'utun5']
+	]);
+	expect(card('office').querySelectorAll('dl dd')[3].classList.contains('font-mono')).toBe(true);
+	expect(compact(card('office').querySelector('header p'))).toBe('Proxy');
+	for (const name of ['mirror', 'db-tunnel', 'lab']) {
+		expect(
+			terms(name).map(([term]) => term),
+			name
+		).toEqual(['Listen', 'Target', 'Exit chain']);
+	}
+	const help = card('office').querySelectorAll('dl dt')[3].querySelector('[data-help]');
+	if (!help) throw new Error('missing TUN help');
+	help.dispatchEvent(new Event('pointerenter'));
+	flushSync();
+	expect(tooltipText()).toBe(TUN_HELP);
+
+	// The next status poll no longer names an interface: the row is gone.
+	delete runtime.rules![index].tun;
+	await vi.advanceTimersByTimeAsync(STATUS_INTERVAL_MS);
+	await settle();
+	expect(terms('office').map(([term]) => term)).toEqual(['Listen', 'Target', 'Exit chain']);
 });
