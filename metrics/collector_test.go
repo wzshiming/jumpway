@@ -98,7 +98,7 @@ jumpway_target_peak_bandwidth_bytes_per_second{direction="up",rule="a",target="e
 
 func TestCollectorTransferStats(t *testing.T) {
 	registry := NewRegistry()
-	registry.Sync([]config.Rule{{Name: "rule"}})
+	registry.Sync([]config.Rule{{Name: "rule"}}, "", nil)
 	rule := registry.Rule("rule")
 	counts := []*counter{
 		rule.count,
@@ -391,7 +391,7 @@ func TestCollectorRemovesSeries(t *testing.T) {
 			t.Errorf("stale metric family after reset: %s", name)
 		}
 	}
-	registry.Sync([]config.Rule{{Name: "a"}, {Name: "b"}})
+	registry.Sync([]config.Rule{{Name: "a"}, {Name: "b"}}, "", nil)
 	families, err = reg.Gather()
 	if err != nil {
 		t.Fatal(err)
@@ -401,7 +401,7 @@ func TestCollectorRemovesSeries(t *testing.T) {
 			t.Errorf("removed hop retained: %s", family.GetName())
 		}
 	}
-	registry.Sync([]config.Rule{{Name: "b"}})
+	registry.Sync([]config.Rule{{Name: "b"}}, "", nil)
 	families, err = reg.Gather()
 	if err != nil {
 		t.Fatal(err)
@@ -419,7 +419,7 @@ func TestCollectorRemovesSeries(t *testing.T) {
 
 func TestCollectorHopParents(t *testing.T) {
 	registry := NewRegistry()
-	registry.Sync([]config.Rule{{Name: "a"}})
+	registry.Sync([]config.Rule{{Name: "a"}}, "", nil)
 	for _, role := range []Role{Listen, Forward} {
 		for index := range 2 {
 			registry.Rule("a").HopWrapper(role)(index, "ssh://hop"+strconv.Itoa(index)+":22", &net.Dialer{})
@@ -444,7 +444,7 @@ func TestCollectorDuplicateURLs(t *testing.T) {
 			"ssh://u:secret@h:22", "ssh://u:secret@h:22", "ssh://u:other@h:22",
 		}}}}},
 		{Name: "b"},
-	})
+	}, "", nil)
 	const expected = `# HELP jumpway_hop_bytes_total Total number of bytes transferred in each direction.
 # TYPE jumpway_hop_bytes_total counter
 jumpway_hop_bytes_total{direction="down",hop="0",rule="a",url="ssh://u:xxxxx@h:22",way="forward"} 5
@@ -460,7 +460,7 @@ jumpway_hop_info{hop="0",parent="local",rule="a",url="ssh://u:xxxxx@h:22",way="f
 
 func TestCollectorConcurrentReset(t *testing.T) {
 	registry := NewRegistry()
-	registry.Sync([]config.Rule{{Name: "a"}})
+	registry.Sync([]config.Rule{{Name: "a"}}, "", nil)
 	rule := registry.Rule("a")
 	inner, peer := net.Pipe()
 	closeOnCleanup(t, inner)
@@ -568,7 +568,7 @@ func collectorRegistry(t *testing.T) *Registry {
 	registry.Sync([]config.Rule{
 		{Name: "a", Forward: config.Forward{Way: []bridgeconfig.Node{{LB: []string{raw}}}}},
 		{Name: "b"},
-	})
+	}, "", nil)
 	rule := registry.Rule("a")
 	inner, target := net.Pipe()
 	closeOnCleanup(t, inner)

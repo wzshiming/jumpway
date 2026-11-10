@@ -50,6 +50,7 @@ export const zh = {
 	cipher: '加密方式',
 	cipherRequired: 'Shadowsocks 需要加密方式。',
 	passwordRequired: 'Shadowsocks 需要密码。',
+	tun: 'TUN',
 	listenThroughHint:
 		'留空时在本机打开端口；否则由第一个节点在其所在机器上绑定主机和端口（SSH 远程端口转发；远端 sshd 默认仅绑定回环地址，启用 GatewayPorts 后才能绑定其他地址），最后一个节点由本机直接连接。只有 ssh://、cmd: 和 nc 节点支持监听。',
 	deleteRule: '删除',
@@ -258,6 +259,8 @@ export const zh = {
 	'help.target': '目标：端口转发规则把每条连接转发到的主机和端口，从出口节点连接。',
 	'help.exitChain':
 		'出口链路：出站时由本机连接的代理。节点 1 是紧邻目标的出口节点，最后一个节点最先被连接；留空表示直连。',
+	'help.tun':
+		'TUN：虚拟网卡，捕获本机 TCP 流量并经由规则的出口链路发出；UDP 仅转发 DNS（53 端口）。仅支持 macOS 和 Linux。',
 	'help.endpoints': '端点：这台主机上不同的代理 URL（scheme://host:port），涵盖所有规则和节点。',
 	'help.path':
 		'路径：此连接实际经过的路线，从本机依次经过各代理 URL 到达目标；“复用连接”表示该节点通过已有的传输通道到达。',

@@ -6,7 +6,9 @@ import (
 	"errors"
 	"io"
 	"net"
+	"net/netip"
 	"reflect"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -14,6 +16,7 @@ import (
 	bridgeconfig "github.com/wzshiming/bridge/config"
 	"github.com/wzshiming/jumpway"
 	"github.com/wzshiming/jumpway/config"
+	"github.com/wzshiming/jumpway/netproc"
 )
 
 func TestHopDialer(t *testing.T) {
@@ -31,6 +34,8 @@ func TestHopDialer(t *testing.T) {
 		if dialErr != nil {
 			return nil, dialErr
 		}
+		// Outlasts the 15.6 ms Windows clock tick so the dial never measures 0.
+		time.Sleep(20 * time.Millisecond)
 		return inner, nil
 	})}
 	connected, err := wrapped.DialContext(ctx, "tcp", "example.com:443")
@@ -171,7 +176,7 @@ func TestRuleDialerTargets(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			registry := NewRegistry()
-			registry.Sync([]config.Rule{{Name: "rule"}})
+			registry.Sync([]config.Rule{{Name: "rule"}}, "", nil)
 			rule := registry.Rule("rule")
 			inner, peer := net.Pipe()
 			closeOnCleanup(t, inner)
@@ -187,6 +192,8 @@ func TestRuleDialerTargets(t *testing.T) {
 				if test.err != nil {
 					return nil, test.err
 				}
+				// Outlasts the 15.6 ms Windows clock tick so the dial never measures 0.
+				time.Sleep(20 * time.Millisecond)
 				return inner, nil
 			})
 			if test.url != "" {
@@ -279,7 +286,7 @@ func TestRuleDialerTargets(t *testing.T) {
 					t.Fatalf("connections after close = %+v, want empty list", connections)
 				}
 			}
-			registry.Sync([]config.Rule{{Name: "rule"}})
+			registry.Sync([]config.Rule{{Name: "rule"}}, "", nil)
 			if retained := registry.Snapshot().Rules[0].Targets; len(retained) != 1 || retained[0].Stats.Dials != 1 {
 				t.Fatal("reload dropped targets")
 			}
@@ -297,7 +304,7 @@ func TestTargetViaUnderFailover(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			registry := NewRegistry()
-			registry.Sync([]config.Rule{{Name: "rule"}})
+			registry.Sync([]config.Rule{{Name: "rule"}}, "", nil)
 			rule := registry.Rule("rule")
 			wrap := rule.HopWrapper(Forward)
 			entry := wrap(1, "socks5://entry:1080", bridge.DialFunc(func(context.Context, string, string) (net.Conn, error) {
@@ -348,7 +355,7 @@ func TestTargetViaUnderFailover(t *testing.T) {
 // Exit URLs that differ only in credentials or options are one endpoint, like the Web UI shows them.
 func TestTargetViaGroupsByEndpoint(t *testing.T) {
 	registry := NewRegistry()
-	registry.Sync([]config.Rule{{Name: "rule"}})
+	registry.Sync([]config.Rule{{Name: "rule"}}, "", nil)
 	rule := registry.Rule("rule")
 	wrap := rule.HopWrapper(Forward)
 	base := bridge.DialFunc(func(context.Context, string, string) (net.Conn, error) {
@@ -400,7 +407,7 @@ func TestConnectionPathCachedTransport(t *testing.T) {
 				{LB: []string{exit}},
 				{LB: []string{entry}},
 			}}}
-			registry.Sync([]config.Rule{configured})
+			registry.Sync([]config.Rule{configured}, "", nil)
 			rule := registry.Rule("rule")
 			wrap := rule.HopWrapper(Forward)
 			calls := 0
@@ -437,7 +444,7 @@ func TestConnectionPathCachedTransport(t *testing.T) {
 				t.Fatalf("first connections = %+v, want path %+v", before, path)
 			}
 			configured.Forward.Way[1].LB = test.urls
-			registry.Sync([]config.Rule{configured})
+			registry.Sync([]config.Rule{configured}, "", nil)
 			second, err := wrapped.DialContext(context.Background(), "tcp", "other.example:443")
 			if err != nil {
 				t.Fatal(err)
@@ -464,7 +471,7 @@ func TestConnectionPathCachedTransport(t *testing.T) {
 
 func TestTargetViaSeparatesSameAddress(t *testing.T) {
 	registry := NewRegistry()
-	registry.Sync([]config.Rule{{Name: "rule"}})
+	registry.Sync([]config.Rule{{Name: "rule"}}, "", nil)
 	rule := registry.Rule("rule")
 	base := bridge.DialFunc(func(context.Context, string, string) (net.Conn, error) {
 		return nil, errors.New("offline")
@@ -494,7 +501,7 @@ func TestTargetViaSeparatesSameAddress(t *testing.T) {
 
 func TestLiveConnectionTraffic(t *testing.T) {
 	registry := NewRegistry()
-	registry.Sync([]config.Rule{{Name: "rule"}})
+	registry.Sync([]config.Rule{{Name: "rule"}}, "", nil)
 	rule := registry.Rule("rule")
 	first, firstPeer := dialRulePipe(t, rule, "example.com:443")
 	second, secondPeer := dialRulePipe(t, rule, "example.com:443")
@@ -529,6 +536,58 @@ func TestLiveConnectionTraffic(t *testing.T) {
 		if connection.Stats.RateUp != 0 || connection.Stats.RateDown != 0 {
 			t.Fatalf("idle connection rates = %+v, want zero", connection)
 		}
+	}
+}
+
+func TestRuleDialerPendingTUNClient(t *testing.T) {
+	want := netproc.Process{PID: 4242, Name: "curl"}
+	for _, test := range []struct {
+		name    string
+		rule    string
+		client  string
+		pending bool
+	}{
+		{name: "tun address", rule: "tun", client: "198.18.0.1:40000", pending: true},
+		{name: "tun IPv6 address", rule: "tun", client: "[fd00:6a77:7761::1]:40000", pending: true},
+		{name: "tun subnet peer", rule: "tun", client: "198.18.0.2:40000"},
+		{name: "rule without tun", rule: "plain", client: "198.18.0.1:40000"},
+		{name: "loopback with tun", rule: "tun", client: "127.0.0.1:40000", pending: true},
+		{name: "loopback without tun", rule: "plain", client: "127.0.0.1:40000", pending: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			registry := NewRegistry()
+			registry.Sync([]config.Rule{{Name: "tun"}, {Name: "plain"}}, "tun", ttTUNPrefixes)
+			client := netip.MustParseAddrPort(test.client)
+			var calls atomic.Int32
+			registry.lookup = func(context.Context) (map[netip.AddrPort]netproc.Process, error) {
+				calls.Add(1)
+				return map[netip.AddrPort]netproc.Process{client: want}, nil
+			}
+			inner, peer := net.Pipe()
+			closeOnCleanup(t, peer)
+			ctx := jumpway.WithClientAddr(context.Background(), net.TCPAddrFromAddrPort(client))
+			connected, err := registry.Rule(test.rule).WrapDialer(bridge.DialFunc(func(context.Context, string, string) (net.Conn, error) {
+				return inner, nil
+			})).DialContext(ctx, "tcp", "example.com:443")
+			if err != nil {
+				t.Fatal(err)
+			}
+			closeOnCleanup(t, connected)
+			var connections []Connection
+			for _, rule := range registry.Snapshot().Rules {
+				connections = append(connections, rule.Connections...)
+			}
+			if len(connections) != 1 || connections[0].Client != client.String() {
+				t.Fatalf("connections = %+v, want one from %s", connections, client)
+			}
+			process := connections[0].Process
+			if test.pending && (calls.Load() != 1 || process == nil || *process != want) {
+				t.Fatalf("lookups = %d, process = %+v; want the %s connection pending and resolved to %+v", calls.Load(), process, test.rule, want)
+			}
+			if !test.pending && (calls.Load() != 0 || process != nil) {
+				t.Fatalf("lookups = %d, process = %+v; want the %s connection not pending", calls.Load(), process, test.rule)
+			}
+		})
 	}
 }
 

@@ -48,7 +48,7 @@ func (s *Store) Init() error {
 }
 
 func (s *Store) Load() (*Config, error) {
-	data, err := os.ReadFile(s.path)
+	data, err := readFile(s.path)
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +69,7 @@ func (s *Store) Save(conf *Config) error {
 }
 
 func (s *Store) LoadRaw() ([]byte, error) {
-	return os.ReadFile(s.path)
+	return readFile(s.path)
 }
 
 func (s *Store) SaveRaw(data []byte) error {
@@ -96,7 +96,7 @@ func (s *Store) SaveRaw(data []byte) error {
 	if err := tmpFile.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmpFile.Name(), s.path)
+	return renameFile(tmpFile.Name(), s.path)
 }
 
 func (s *Store) Edit() error {

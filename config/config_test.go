@@ -268,6 +268,16 @@ func TestValidate(t *testing.T) {
 			wantError: "rules[0].listen.protocols is only used by proxy rules",
 		},
 		{
+			name:      "tun_protocol_is_unknown",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "tun"}}}}}},
+			wantError: `rules[0].listen.protocols[0].type "tun" is unknown`,
+		},
+		{
+			name:      "tun_protocol_beside_http_is_unknown",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "http"}, {Type: "tun"}}}}}},
+			wantError: `rules[0].listen.protocols[1].type "tun" is unknown`,
+		},
+		{
 			name:      "no_lb",
 			conf:      withWay(bridgeconfig.Node{}),
 			wantError: "rules[0].forward.way[0] has no proxy URL",
@@ -754,13 +764,14 @@ func TestListenSchemes(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			before := slices.Clone(test.listen.Protocols)
 			got := test.listen.Schemes()
-			if !reflect.DeepEqual(got, test.want) {
+			// An empty result may be nil or not.
+			if (len(got) != 0 || len(test.want) != 0) && !reflect.DeepEqual(got, test.want) {
 				t.Fatalf("Schemes() = %#v, want %#v", got, test.want)
 			}
 			if !reflect.DeepEqual(test.listen.Protocols, before) {
 				t.Fatalf("Schemes() mutated Protocols: %#v", test.listen.Protocols)
 			}
-			if len(test.listen.Protocols) != 0 {
+			if len(test.listen.Protocols) != 0 && len(got) != 0 {
 				got[0].Type = "mutated"
 				if test.listen.Protocols[0].Type == "mutated" {
 					t.Fatal("Schemes() shares its backing array with Protocols")
@@ -986,7 +997,8 @@ func TestStoreSaveRawAtomic(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if info.Mode().Perm() != 0o644 {
+		// Windows has no POSIX permission bits; Go reports 0666 for any writable file.
+		if runtime.GOOS != "windows" && info.Mode().Perm() != 0o644 {
 			t.Fatalf("config mode = %04o, want 0644", info.Mode().Perm())
 		}
 	})

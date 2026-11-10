@@ -49,6 +49,7 @@ export const en = {
 	cipher: 'Cipher',
 	cipherRequired: 'Shadowsocks needs a cipher.',
 	passwordRequired: 'Shadowsocks needs a password.',
+	tun: 'TUN',
 	listenThroughHint:
 		'Leave empty to open the port on this machine. Otherwise the first hop binds host:port on its side (SSH remote forwarding; the remote sshd binds loopback unless GatewayPorts is enabled) and the last hop is dialed from this machine. Only ssh://, cmd: and nc hops can bind.',
 	deleteRule: 'Delete',
@@ -264,6 +265,8 @@ export const en = {
 		'Target: the host and port every connection of a port-forward rule is piped to, reached from the exit node.',
 	'help.exitChain':
 		'Exit chain: the proxies dialed from this machine on the way out. Hop 1 is the exit node next to the target; the last hop is the first one dialed. Empty means connecting directly.',
+	'help.tun':
+		"TUN: a virtual network interface that captures this machine's TCP traffic and sends it through the rule's exit chain; of UDP only DNS (port 53) is relayed. macOS and Linux only.",
 	'help.endpoints':
 		'Endpoints: the distinct proxy URLs on this host, as scheme://host:port, across all rules and hops.',
 	'help.path':

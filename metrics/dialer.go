@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"slices"
 	"sync"
 	"time"
 
@@ -113,8 +114,10 @@ func (d *ruleDialer) DialContext(ctx context.Context, network, address string) (
 		conn:    wrapped,
 	}
 	if len(d.rule.ways[Listen]) == 0 {
-		if addr, err := netip.ParseAddrPort(entry.client); err == nil && addr.Addr().Unmap().IsLoopback() {
-			entry.pending = netip.AddrPortFrom(addr.Addr().Unmap(), addr.Port())
+		if addr, err := netip.ParseAddrPort(entry.client); err == nil {
+			if ip := addr.Addr().Unmap(); ip.IsLoopback() || slices.Contains(d.rule.local, ip) {
+				entry.pending = netip.AddrPortFrom(ip, addr.Port())
+			}
 		}
 	}
 	wrapped.extra = entry.count

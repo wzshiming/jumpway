@@ -77,9 +77,12 @@ func getFile(configDir, filePath string) (io.ReadCloser, error) {
 			return nil, err
 		}
 		client := *httpCli
-		client.Transport = httpcache.NewRoundTripper(client.Transport, httpcache.WithStorer(
-			httpcache.DirectoryStorer(filepath.Join(configDir, "cache")),
-		))
+		client.Transport = httpcache.NewRoundTripper(client.Transport,
+			httpcache.WithKeyer(httpcache.KeyerFunc(func(req *http.Request) string {
+				return fileSafeKey(cacheKeyer.Key(req))
+			})),
+			httpcache.WithStorer(httpcache.DirectoryStorer(filepath.Join(configDir, "cache"))),
+		)
 		resp, err := client.Do(req)
 		if err != nil {
 			return nil, err
@@ -109,6 +112,9 @@ func getFile(configDir, filePath string) (io.ReadCloser, error) {
 		return nil, fmt.Errorf("unknown scheme %v", u.Scheme)
 	}
 }
+
+// The default httpcache host/path key, kept so existing caches stay valid.
+var cacheKeyer = httpcache.JointKeyer(httpcache.HostKeyer(), httpcache.PathKeyer())
 
 var httpCli = &http.Client{
 	Transport: &http.Transport{

@@ -45,6 +45,8 @@ type Rule struct {
 	counters       map[hopKey]*counter
 	targets        map[targetKey]*counter
 	targetsEvicted int64
+	// local are the rule's TUN addresses, the client addresses of connections arriving through the TUN.
+	local []netip.Addr
 }
 
 type hopKey struct {
@@ -106,7 +108,8 @@ func NewRegistry() *Registry {
 	}
 }
 
-func (r *Registry) Sync(rules []config.Rule) {
+// Sync installs the enabled rules; the rule named tunRule owns the TUN device's addresses as local.
+func (r *Registry) Sync(rules []config.Rule, tunRule string, tunAddresses []netip.Prefix) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	updated := make(map[string]*Rule, len(rules))
@@ -120,6 +123,12 @@ func (r *Registry) Sync(rules []config.Rule) {
 		entry.ways[Listen] = entry.syncWay(Listen, rule.Listen.Way, counters)
 		entry.ways[Forward] = entry.syncWay(Forward, rule.Forward.Way, counters)
 		entry.counters = counters
+		entry.local = nil
+		if tunRule != "" && rule.Name == tunRule {
+			for _, prefix := range tunAddresses {
+				entry.local = append(entry.local, prefix.Addr())
+			}
+		}
 		updated[rule.Name] = entry
 		order = append(order, rule.Name)
 	}
