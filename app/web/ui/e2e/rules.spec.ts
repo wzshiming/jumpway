@@ -1,4 +1,5 @@
 import type { Locator, Page } from '@playwright/test';
+import type { Rule } from '../src/lib/types.ts';
 import { protocolRulesFixture, rulesFixture } from './fixtures/api.ts';
 import { expect, test } from './fixtures/test.ts';
 import { count, type MockApi } from './mockApi.ts';
@@ -1654,6 +1655,244 @@ test('a hop URL without a scheme, or an added hop left blank, is marked inline a
 			]
 		}
 	});
+});
+
+test('UDP and DNS options: unset they read as the defaults, are tracked as changes and a rule without them saves without udp or dns', async ({
+	page,
+	api
+}) => {
+	await page.goto('/#/rules/mirror');
+	await expect(heading(page)).toHaveText('mirror');
+	const udpMode = page.getByLabel('UDP mode');
+	const udpNat = page.getByLabel('UDP NAT');
+	const udpIdle = page.getByLabel('UDP idle timeout (s)');
+	const dnsMode = page.getByLabel('DNS mode');
+	const dnsServer = page.getByLabel('DNS server');
+	const dnsIdle = page.getByLabel('DNS idle timeout (s)');
+	await expect(udpMode.locator('option:checked')).toHaveText('Default');
+	await expect(udpMode.locator('option')).toHaveText([
+		'Default',
+		'Through the exit chain',
+		'Direct',
+		'Block'
+	]);
+	await expect(udpNat.locator('option:checked')).toHaveText('Automatic');
+	await expect(udpNat.locator('option')).toHaveText(['Automatic', 'Full cone', 'Symmetric']);
+	await expect(udpIdle).toHaveValue('');
+	await expect(udpIdle).toHaveAttribute('placeholder', '60');
+	await expect(dnsMode.locator('option:checked')).toHaveText('Default (DNS over TCP)');
+	await expect(dnsMode.locator('option')).toHaveText([
+		'Default (DNS over TCP)',
+		'DNS over TCP',
+		'UDP'
+	]);
+	await expect(dnsServer).toHaveValue('');
+	await expect(dnsIdle).toHaveAttribute('placeholder', '10');
+	await expect(udpMode).toHaveAccessibleDescription(/^Where this rule's UDP goes\./);
+	await expect(dnsIdle).toHaveAccessibleDescription(/default 10\.$/);
+	await expect(page.getByRole('group', { name: 'UDP', exact: true })).toBeVisible();
+	await expect(page.getByRole('group', { name: 'DNS', exact: true })).toBeVisible();
+	await page.getByRole('group', { name: 'UDP', exact: true }).scrollIntoViewIfNeeded();
+	await shoot(page, 'desktop-udp-dns-en');
+
+	// Keyboard order follows the layout.
+	await udpMode.focus();
+	for (const next of [udpNat, udpIdle, dnsMode, dnsServer, dnsIdle]) {
+		await page.keyboard.press('Tab');
+		await expect(next).toBeFocused();
+	}
+
+	await expect(unsaved(page)).toHaveCount(0);
+	await udpMode.selectOption('block');
+	await expect(unsaved(page)).toBeVisible();
+	await udpMode.selectOption('');
+	await expect(unsaved(page)).toHaveCount(0);
+	await dnsIdle.fill('5');
+	await expect(unsaved(page)).toBeVisible();
+	await dnsIdle.fill('');
+	await expect(unsaved(page)).toHaveCount(0);
+
+	await page.getByLabel('Target port').fill('5433');
+	await page.keyboard.press('ControlOrMeta+s');
+	await expect(unsaved(page)).toHaveCount(0);
+	await expect
+		.poll(() => api.writes)
+		.toEqual([
+			{
+				method: 'PUT',
+				path: '/apis/configs/rules/mirror',
+				body: {
+					name: 'mirror',
+					listen: { host: '127.0.0.1', port: 18098 },
+					forward: {
+						host: '10.0.0.5',
+						port: 5433,
+						way: [{ lb: ['ssh://ops@bastion.example:22'] }]
+					}
+				}
+			}
+		]);
+});
+
+test('UDP and DNS options: stored ones load and save back untouched, edits send exactly what is set, DNS mode UDP disables server and idle, clearing drops the keys', async ({
+	page,
+	api
+}) => {
+	const stored: Rule = {
+		name: 'udp-rule',
+		listen: { host: '127.0.0.1', port: 18300, protocols: LEGACY },
+		forward: {
+			way: [{ lb: ['socks5://proxy.example:1080'] }],
+			udp: { mode: 'direct', nat: 'symmetric', idle: 120 },
+			dns: { mode: 'tcp', server: '1.1.1.1:53', idle: 30 }
+		}
+	};
+	api.rules.push(structuredClone(stored));
+	await page.goto('/#/rules/udp-rule');
+	await expect(heading(page)).toHaveText('udp-rule');
+	await expect(page.getByLabel('UDP mode')).toHaveValue('direct');
+	await expect(page.getByLabel('UDP NAT')).toHaveValue('symmetric');
+	await expect(page.getByLabel('UDP idle timeout (s)')).toHaveValue('120');
+	await expect(page.getByLabel('DNS mode')).toHaveValue('tcp');
+	await expect(page.getByLabel('DNS server')).toHaveValue('1.1.1.1:53');
+	await expect(page.getByLabel('DNS idle timeout (s)')).toHaveValue('30');
+	await expect(unsaved(page)).toHaveCount(0);
+	await page.keyboard.press('ControlOrMeta+s');
+	await expect
+		.poll(() => api.writes)
+		.toEqual([
+			{
+				method: 'PUT',
+				path: '/apis/configs/rules/udp-rule',
+				body: stored
+			}
+		]);
+
+	await page.getByLabel('DNS mode').selectOption('udp');
+	await expect(page.getByLabel('DNS server')).toBeDisabled();
+	await expect(page.getByLabel('DNS idle timeout (s)')).toBeDisabled();
+	await expect(page.getByLabel('DNS server')).toHaveValue('1.1.1.1:53');
+	await page.getByLabel('UDP mode').selectOption('');
+	await page.getByLabel('UDP idle timeout (s)').fill('');
+	await page.keyboard.press('ControlOrMeta+s');
+	await expect
+		.poll(() => api.writes[1]?.body)
+		.toEqual({
+			...stored,
+			forward: { ...stored.forward, udp: { nat: 'symmetric' }, dns: { mode: 'udp' } }
+		});
+
+	await page.getByLabel('UDP NAT').selectOption('');
+	await page.getByLabel('DNS mode').selectOption('');
+	await expect(page.getByLabel('DNS server')).toBeEnabled();
+	await page.getByLabel('DNS server').fill('');
+	await page.getByLabel('DNS idle timeout (s)').fill('0');
+	await page.keyboard.press('ControlOrMeta+s');
+	await expect
+		.poll(() => api.writes[2]?.body)
+		.toEqual({
+			...stored,
+			forward: { way: stored.forward.way }
+		});
+	await expect(unsaved(page)).toHaveCount(0);
+	expect(api.writes).toHaveLength(3);
+});
+
+test('UDP and DNS options in a port-forward rule: typed values are sent as set; an invalid server or idle is marked inline and focused, nothing is sent until fixed', async ({
+	page,
+	api
+}) => {
+	await page.goto('/#/rules/db-tunnel');
+	await expect(heading(page)).toHaveText('db-tunnel');
+	await page.getByLabel('UDP mode').selectOption('proxy');
+	await page.getByLabel('UDP NAT').selectOption('full-cone');
+	const udpIdle = page.getByLabel('UDP idle timeout (s)');
+	const server = page.getByLabel('DNS server');
+	const dnsIdle = page.getByLabel('DNS idle timeout (s)');
+	await udpIdle.fill('1.5');
+	await server.fill('dns.example');
+	await dnsIdle.fill('4294967296');
+	await page.keyboard.press('ControlOrMeta+s');
+	// Focus moving off the last-filled field proves the save handler ran and stopped.
+	await expect(udpIdle).toBeFocused();
+	await expect(udpIdle).toHaveAttribute('aria-invalid', 'true');
+	await expect(page.locator('#udp-idle-error')).toHaveText(
+		'Enter a whole number of seconds from 0 to 4294967295.'
+	);
+	await expect(server).toHaveAttribute('aria-invalid', 'true');
+	await expect(page.locator('#dns-server-error')).toHaveText(
+		'Enter host:port with a host and a port between 1 and 65535.'
+	);
+	await expect(dnsIdle).toHaveAttribute('aria-invalid', 'true');
+	await expect(page.locator('#dns-idle-error')).toHaveText(
+		'Enter a whole number of seconds from 0 to 4294967295.'
+	);
+	expect(api.writes).toEqual([]);
+
+	await udpIdle.fill('90');
+	await expect(udpIdle).not.toHaveAttribute('aria-invalid', /./);
+	await expect(page.locator('#udp-idle-error')).toHaveCount(0);
+	await server.fill('[2606:4700::1111]:65536');
+	await expect(page.locator('#dns-server-error')).toHaveCount(0);
+	await page.keyboard.press('ControlOrMeta+s');
+	// The error cleared by typing comes back only once the save handler has run and stopped.
+	await expect(page.locator('#dns-server-error')).toBeVisible();
+	await expect(server).toBeFocused();
+	expect(api.writes).toEqual([]);
+
+	// DNS mode UDP takes the invalid tcp-only fields out of the save.
+	await page.getByLabel('DNS mode').selectOption('udp');
+	await expect(page.locator('#dns-server-error')).toHaveCount(0);
+	await expect(page.locator('#dns-idle-error')).toHaveCount(0);
+	await page.getByLabel('DNS mode').selectOption('tcp');
+	await server.fill('[2606:4700::1111]:53');
+	await dnsIdle.fill('7');
+	await page.keyboard.press('ControlOrMeta+s');
+	await expect(unsaved(page)).toHaveCount(0);
+	await expect
+		.poll(() => api.writes)
+		.toEqual([
+			{
+				method: 'PUT',
+				path: '/apis/configs/rules/db-tunnel',
+				body: {
+					name: 'db-tunnel',
+					listen: { host: '0.0.0.0', port: 18099, way: [{ lb: ['ssh://ops@edge.example:22'] }] },
+					forward: {
+						host: '127.0.0.1',
+						port: 5432,
+						udp: { mode: 'proxy', nat: 'full-cone', idle: 90 },
+						dns: { mode: 'tcp', server: '[2606:4700::1111]:53', idle: 7 }
+					}
+				}
+			}
+		]);
+});
+
+test('UDP and DNS options speak Chinese', async ({ page }) => {
+	await page.goto('/?lang=zh#/rules/office');
+	await expect(heading(page)).toHaveText('office');
+	await expect(page.getByLabel('UDP 模式').locator('option:checked')).toHaveText('默认');
+	await expect(page.getByLabel('UDP NAT 类型').locator('option:checked')).toHaveText('自动');
+	await expect(page.getByLabel('UDP 空闲超时（秒）')).toHaveAttribute('placeholder', '60');
+	await expect(page.getByLabel('DNS 模式').locator('option:checked')).toHaveText(
+		'默认（DNS over TCP）'
+	);
+	await expect(page.getByLabel('DNS 服务器')).toBeVisible();
+	await expect(page.getByLabel('DNS 空闲超时（秒）')).toHaveAttribute('placeholder', '10');
+	await page.getByLabel('DNS 服务器').fill('x');
+	await page.keyboard.press('ControlOrMeta+s');
+	await expect(page.locator('#dns-server-error')).toHaveText(
+		'请输入主机:端口，主机不能为空，端口须为 1 到 65535。'
+	);
+	for (const [width, label] of [
+		[1280, 'desktop'],
+		[375, 'mobile']
+	] as const) {
+		await page.setViewportSize({ width, height: 900 });
+		await page.getByRole('group', { name: 'UDP', exact: true }).scrollIntoViewIfNeeded();
+		await shoot(page, `${label}-udp-dns-zh`);
+	}
 });
 
 test.describe('screenshots', () => {

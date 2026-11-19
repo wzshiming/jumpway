@@ -5,6 +5,8 @@ import {
 	list,
 	type Address,
 	type Forward,
+	type ForwardDNS,
+	type ForwardUDP,
 	type Listen,
 	type Protocol,
 	type Rule,
@@ -76,7 +78,12 @@ export interface RuleDraft {
 	};
 	mode: Mode;
 	target: { kind: EndpointKind; host: string; port: string; virtual: string };
-	forward: { way: HopDraft[] };
+	// '' leaves an option unset.
+	forward: {
+		way: HopDraft[];
+		udp: { mode: ForwardUDP['mode'] | ''; nat: ForwardUDP['nat'] | ''; idle: string };
+		dns: { mode: ForwardDNS['mode'] | ''; server: string; idle: string };
+	};
 }
 
 let sequence = 0;
@@ -92,6 +99,9 @@ const hopsFrom = (way: Rule['listen']['way']): HopDraft[] =>
 	normalizeWay(way).map((hop) => newHop(hop.lb));
 
 const kindOf = (virtual: string | undefined): EndpointKind => (virtual ? 'virtual' : 'address');
+
+// 0 means the default, so it drafts as the empty field.
+const idleText = (idle: number | undefined): string => (idle ? text(idle) : '');
 
 // An empty stored list means the legacy set; a stored ss entry may still take the flat cipher.
 function protocolsFrom(listen: Listen): ProtocolDraft[] {
@@ -112,6 +122,7 @@ function protocolsFrom(listen: Listen): ProtocolDraft[] {
 export function draftFrom(rule: Rule): RuleDraft {
 	const port = rule.forward.port ?? 0;
 	const forwarding = port > 0 || !!rule.forward.virtual;
+	const { udp, dns } = rule.forward;
 	return {
 		name: rule.name,
 		enabled: !rule.disabled,
@@ -132,7 +143,11 @@ export function draftFrom(rule: Rule): RuleDraft {
 			port: port > 0 ? text(port) : '',
 			virtual: text(rule.forward.virtual)
 		},
-		forward: { way: hopsFrom(rule.forward.way) }
+		forward: {
+			way: hopsFrom(rule.forward.way),
+			udp: { mode: udp?.mode ?? '', nat: udp?.nat ?? '', idle: idleText(udp?.idle) },
+			dns: { mode: dns?.mode ?? '', server: text(dns?.server), idle: idleText(dns?.idle) }
+		}
 	};
 }
 
@@ -173,6 +188,9 @@ export interface DraftErrors {
 	ssPassword?: MessageKey;
 	targetPort?: MessageKey;
 	targetVirtual?: MessageKey;
+	udpIdle?: MessageKey;
+	dnsServer?: MessageKey;
+	dnsIdle?: MessageKey;
 	// Keyed by UrlDraft.id.
 	urls?: Record<number, MessageKey>;
 }
@@ -193,6 +211,22 @@ function parsePort(value: string, minimum: 0 | 1): number | null {
 	const port = Number(trimmed);
 	if (!trimmed || !Number.isInteger(port) || port < minimum || port > 65535) return null;
 	return port;
+}
+
+// Whole seconds, stored as a uint32; empty is 0, the default.
+function parseIdle(value: string): number | null {
+	const trimmed = value.trim();
+	if (!trimmed) return 0;
+	const idle = Number(trimmed);
+	return /^\d+$/.test(trimmed) && idle <= 0xffffffff ? idle : null;
+}
+
+// Like net.SplitHostPort: an IPv6 host needs brackets; the host must be non-empty, the port 1 to 65535.
+function isHostPort(value: string): boolean {
+	const match = /^(?:\[([^\]]*)\]|([^:[\]]*)):(\d+)$/.exec(value);
+	if (!match) return false;
+	const port = Number(match[3]);
+	return !!(match[1] ?? match[2]) && port >= 1 && port <= 65535;
 }
 
 function parseChannel(value: string): string | null {
@@ -298,6 +332,14 @@ export function readRule(draft: RuleDraft, context?: ReadContext): ReadResult {
 	else if (targetChannel && targetChannel === listenChannel)
 		errors.targetVirtual = 'virtualSelfLoop';
 	const forwardWay = targetVirtual ? [] : readWay(draft.forward.way, errors);
+	const udpIdle = parseIdle(draft.forward.udp.idle);
+	if (udpIdle === null) errors.udpIdle = 'idleInvalid';
+	// DNS mode udp disables the tcp-only fields; their drafts are kept but not read.
+	const dnsTCP = draft.forward.dns.mode !== 'udp';
+	const dnsServer = dnsTCP ? draft.forward.dns.server.trim() : '';
+	if (dnsServer && !isHostPort(dnsServer)) errors.dnsServer = 'dnsServerInvalid';
+	const dnsIdle = dnsTCP ? parseIdle(draft.forward.dns.idle) : 0;
+	if (dnsIdle === null) errors.dnsIdle = 'idleInvalid';
 
 	// Like Validate: disabled and remote rules and port 0 never clash, nor does a web UI on port 0.
 	if (
@@ -354,6 +396,16 @@ export function readRule(draft: RuleDraft, context?: ReadContext): ReadResult {
 		forward.port = targetPort;
 	}
 	if (forwardWay.length) forward.way = forwardWay;
+	const udp: ForwardUDP = {};
+	if (draft.forward.udp.mode) udp.mode = draft.forward.udp.mode;
+	if (draft.forward.udp.nat) udp.nat = draft.forward.udp.nat;
+	if (udpIdle) udp.idle = udpIdle;
+	if (Object.keys(udp).length) forward.udp = udp;
+	const dns: ForwardDNS = {};
+	if (draft.forward.dns.mode) dns.mode = draft.forward.dns.mode;
+	if (dnsServer) dns.server = dnsServer;
+	if (dnsIdle) dns.idle = dnsIdle;
+	if (Object.keys(dns).length) forward.dns = dns;
 
 	const rule: Rule = { name, listen, forward };
 	if (!draft.enabled) rule.disabled = true;

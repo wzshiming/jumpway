@@ -3,6 +3,7 @@ import type {
 	NoProxy,
 	RawConfig,
 	Rule,
+	RuleStatus,
 	Snapshot,
 	Stats,
 	Status
@@ -103,6 +104,15 @@ export const protocolRulesFixture: Rule[] = [
 		forward: {}
 	}
 ];
+
+// office's status entry while the TUN runs through it: the runtime names the interface.
+export const tunStatusFixture: RuleStatus = {
+	name: 'office',
+	address: '127.0.0.1:18097',
+	remote: false,
+	running: true,
+	tun: 'utun5'
+};
 
 const zero: Stats = {
 	up: 0,

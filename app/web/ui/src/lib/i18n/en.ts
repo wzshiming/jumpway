@@ -49,6 +49,38 @@ export const en = {
 	cipher: 'Cipher',
 	cipherRequired: 'Shadowsocks needs a cipher.',
 	passwordRequired: 'Shadowsocks needs a password.',
+	tun: 'TUN',
+	udp: 'UDP',
+	dns: 'DNS',
+	optionDefault: 'Default',
+	udpMode: 'UDP mode',
+	'udpMode.proxy': 'Through the exit chain',
+	'udpMode.direct': 'Direct',
+	'udpMode.block': 'Block',
+	udpModeHint:
+		"Where this rule's UDP goes. Through the exit chain: through the rule's exit chain. Direct: not through the exit chain, straight from this machine, escaping the TUN when one is selected. Block: dropped on the TUN, and a SOCKS5 UDP ASSOCIATE on this rule's listener is refused. Default: UDP captured by the TUN goes through the exit chain, and a UDP ASSOCIATE on this rule's listener is sent directly. DNS queries captured by the TUN (UDP port 53) follow the DNS mode, not the UDP mode: unless the DNS mode is UDP, they are still relayed as DNS over TCP through the exit chain when the UDP mode is Direct or Block.",
+	udpNat: 'UDP NAT',
+	'udpNat.auto': 'Automatic',
+	'udpNat.fullCone': 'Full cone',
+	'udpNat.symmetric': 'Symmetric',
+	udpNatHint:
+		"Full cone: one socket or association per session for all destinations; replies from any source are delivered. Full cone holds as far as the exit chain's UDP can address every destination; otherwise each destination gets its own connection. Symmetric: one connection per destination. Automatic: full cone, except one connection per destination when the rule sends some destinations directly (NO_PROXY/ONLY_PROXY environment lists, or a no-proxy entry of * or IP:port).",
+	udpIdle: 'UDP idle timeout (s)',
+	udpIdleHint:
+		'Seconds without datagrams after which a UDP session of the TUN ends and a per-destination connection is closed; default 60.',
+	dnsMode: 'DNS mode',
+	'dnsMode.default': 'Default (DNS over TCP)',
+	'dnsMode.tcp': 'DNS over TCP',
+	'dnsMode.udp': 'UDP',
+	dnsModeHint:
+		'DNS over TCP: DNS queries captured by the TUN (UDP port 53) are relayed as DNS over TCP through the exit chain; this is the default. UDP: port 53 gets no special handling and follows the UDP options.',
+	dnsServer: 'DNS server',
+	dnsServerPlaceholder: 'Server the query was sent to',
+	dnsServerHint:
+		'DNS over TCP only: every query is sent to this host:port instead of the server it was addressed to.',
+	dnsIdle: 'DNS idle timeout (s)',
+	dnsIdleHint:
+		'DNS over TCP only: seconds without queries or replies after which a DNS session ends; default 10.',
 	listenThroughHint:
 		'Leave empty to open the port on this machine. Otherwise the first hop binds host:port on its side (SSH remote forwarding; the remote sshd binds loopback unless GatewayPorts is enabled) and the last hop is dialed from this machine. Only ssh://, cmd: and nc hops can bind.',
 	deleteRule: 'Delete',
@@ -264,6 +296,8 @@ export const en = {
 		'Target: the host and port every connection of a port-forward rule is piped to, reached from the exit node.',
 	'help.exitChain':
 		'Exit chain: the proxies dialed from this machine on the way out. Hop 1 is the exit node next to the target; the last hop is the first one dialed. Empty means connecting directly.',
+	'help.tun':
+		"TUN: a virtual network interface that captures this machine's TCP and UDP traffic and sends it through the rule's exit chain. DNS queries (UDP port 53) are relayed as DNS over TCP unless the rule's DNS mode is UDP; other UDP follows the rule's UDP options.",
 	'help.endpoints':
 		'Endpoints: the distinct proxy URLs on this host, as scheme://host:port, across all rules and hops.',
 	'help.path':
@@ -296,6 +330,8 @@ export const en = {
 	passwordNeedsUsername: 'Set a username for this password.',
 	hopUrlEmpty: 'Enter a proxy URL.',
 	hopUrlNoScheme: 'Include the scheme (e.g. socks5://host:1080).',
+	idleInvalid: 'Enter a whole number of seconds from 0 to 4294967295.',
+	dnsServerInvalid: 'Enter host:port with a host and a port between 1 and 65535.',
 	ruleNotFound: 'Rule "{name}" was not found.',
 	breadcrumb: 'Breadcrumb',
 	chain: 'Chain',
