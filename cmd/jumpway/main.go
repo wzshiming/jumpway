@@ -19,9 +19,13 @@ import (
 	"github.com/wzshiming/jumpway/daemon"
 	"github.com/wzshiming/jumpway/i18n"
 	"github.com/wzshiming/jumpway/log"
+	"github.com/wzshiming/tun"
 )
 
 func main() {
+	if len(os.Args) >= 2 && os.Args[1] == tun.HelperCommand {
+		os.Exit(tun.Helper(os.Args[2:]))
+	}
 	log.Info(i18n.Args(), "list", os.Args)
 	if len(os.Args) == 2 {
 		daemon.Exec(os.Args[1])

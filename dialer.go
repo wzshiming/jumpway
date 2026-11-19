@@ -19,14 +19,25 @@ type logDialer struct {
 	log    func(ctx context.Context, network, address string)
 }
 
+// NewLogDialer logs each dial; it keeps the dialer's ListenPacket, which is not logged.
 func NewLogDialer(dialer bridge.Dialer, log func(ctx context.Context, network, address string)) bridge.Dialer {
 	if log == nil {
 		return dialer
 	}
-	return &logDialer{
+	logged := &logDialer{
 		dialer: dialer,
 		log:    log,
 	}
+	if listen, ok := dialer.(bridge.ListenPacketConfig); ok {
+		return packetDialer{Dialer: logged, ListenPacketConfig: listen}
+	}
+	return logged
+}
+
+// packetDialer dials through Dialer and listens for datagrams through ListenPacketConfig.
+type packetDialer struct {
+	bridge.Dialer
+	bridge.ListenPacketConfig
 }
 
 func (l *logDialer) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
@@ -41,7 +52,7 @@ type retryDialer struct {
 	onRetry func(ctx context.Context, network, address string, attempt int, err error)
 }
 
-// NewRetryDialer retries failed dials up to retries times with exponential backoff.
+// NewRetryDialer retries failed dials up to retries times with exponential backoff, but never an unsupported one.
 func NewRetryDialer(dialer bridge.Dialer, retries int, backoff time.Duration, onRetry func(ctx context.Context, network, address string, attempt int, err error)) bridge.Dialer {
 	return &retryDialer{
 		dialer:  dialer,
@@ -66,7 +77,7 @@ func (r *retryDialer) DialContext(ctx context.Context, network, address string) 
 		if ctx.Err() != nil {
 			return nil, joinContextErr(errs, ctx.Err())
 		}
-		if attempt > r.retries {
+		if attempt > r.retries || errors.Is(err, errors.ErrUnsupported) {
 			return nil, errors.Join(errs...)
 		}
 		timer := time.NewTimer(backoff)

@@ -642,15 +642,50 @@
      }
     }
    },
+   "DNS": {
+    "type": "object",
+    "properties": {
+     "idle": {
+      "type": "integer",
+      "description": "Idle, in tcp mode, is the seconds without queries or replies after which a DNS session ends; 0 means 10.\n",
+      "format": "uint32"
+     },
+     "mode": {
+      "type": "string",
+      "description": "Mode is tcp (relayed as DNS over TCP through Way, the default) or udp (handled like any other UDP port).\n"
+     },
+     "server": {
+      "type": "string",
+      "description": "Server, in tcp mode, is the host:port every query is sent to instead of the addressed server.\n"
+     }
+    },
+    "description": "DNS is how a TUN serves UDP port 53; every empty field means the default behaviour.\n"
+   },
    "Forward": {
     "type": "object",
     "properties": {
+     "dns": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/DNS"
+       }
+      ],
+      "description": "DNS is how a TUN serves UDP port 53; every empty field means the default behaviour.\n"
+     },
      "host": {
       "type": "string"
      },
      "port": {
       "type": "integer",
       "format": "uint32"
+     },
+     "udp": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/UDP"
+       }
+      ],
+      "description": "UDP is how the rule carries UDP; every empty field means the default behaviour.\n"
      },
      "virtual": {
       "type": "string"
@@ -1028,6 +1063,10 @@
      "target": {
       "type": "string",
       "description": "Target is the fixed destination for port-forward rules; empty for proxy rules.\n"
+     },
+     "tun": {
+      "type": "string",
+      "description": "Tun is the TUN's interface name while the rule's TUN half is up.\n"
      }
     },
     "description": "RuleStatus is one rule's listener state; Attempt counts consecutive failed listen attempts.\n"
@@ -1174,6 +1213,25 @@
       "type": "string"
      }
     }
+   },
+   "UDP": {
+    "type": "object",
+    "properties": {
+     "idle": {
+      "type": "integer",
+      "description": "Idle is the seconds without datagrams after which a session or destination connection ends; 0 means 60.\n",
+      "format": "uint32"
+     },
+     "mode": {
+      "type": "string",
+      "description": "Mode is where UDP goes: proxy (through Way, the default), direct (from this machine) or block.\n"
+     },
+     "nat": {
+      "type": "string",
+      "description": "NAT is full-cone (one socket per client session) or symmetric (one connection per destination); empty picks automatically.\n"
+     }
+    },
+    "description": "UDP is how the rule carries UDP; every empty field means the default behaviour.\n"
    },
    "URLStats": {
     "required": [

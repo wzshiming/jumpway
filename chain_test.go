@@ -14,7 +14,10 @@ import (
 	"github.com/wzshiming/bridge"
 	"github.com/wzshiming/bridge/chain"
 	"github.com/wzshiming/bridge/config"
+	_ "github.com/wzshiming/bridge/protocols/connect"
 	"github.com/wzshiming/bridge/protocols/local"
+	"github.com/wzshiming/httpproxy"
+	"github.com/wzshiming/socks5"
 	"github.com/wzshiming/sshproxy"
 	"golang.org/x/crypto/ssh"
 )
@@ -245,4 +248,113 @@ func TestNewChainDialerSSHHopSurvivesRejectedDial(t *testing.T) {
 		t.Fatalf("rejected dial error = %v, want *ssh.OpenChannelError", err)
 	}
 	roundTrip("after rejected dial\n")
+}
+
+func TestNewChainDialerSOCKS5HopRelaysThroughBaseListenPacket(t *testing.T) {
+	ctx := context.Background()
+	proxy, err := socks5.NewSimpleServer("socks5://127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := proxy.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { proxy.Close() })
+	hop, err := httpproxy.NewSimpleServer("http://127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := hop.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { hop.Close() })
+	socksNode := config.Node{LB: []string{"socks5://" + proxy.Address}}
+	hopNode := config.Node{LB: []string{hop.ProxyURL()}}
+	for _, testCase := range []struct {
+		name string
+		way  []config.Node
+	}{
+		{name: "behind_http_hop", way: []config.Node{socksNode, hopNode}},
+		{name: "behind_two_http_hops", way: []config.Node{socksNode, hopNode, hopNode}},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			base := &ttPacketBase{}
+			// Hiding each hop's methods, as metrics does, must not matter.
+			dialer, err := NewChainDialer(ctx, base, testCase.way, func(index int, url string, dialer bridge.Dialer) bridge.Dialer {
+				return bridge.DialFunc(dialer.DialContext)
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			conn, err := dialer.DialContext(ctx, "udp", ttUDPEcho(t))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer conn.Close()
+			ttEchoDatagram(t, conn)
+			if listens := base.recorded(); len(listens) != 1 || listens[0].LocalAddr().String() != conn.LocalAddr().String() {
+				t.Fatalf("base listens %v, want only the relay socket at %v", listens, conn.LocalAddr())
+			}
+		})
+	}
+}
+
+// ttPacketBase dials and listens for packets for real, recording each socket it opens.
+type ttPacketBase struct {
+	net.Dialer
+	mu      sync.Mutex
+	sockets []net.PacketConn
+}
+
+func (base *ttPacketBase) ListenPacket(ctx context.Context, network, address string) (net.PacketConn, error) {
+	conn, err := (&net.ListenConfig{}).ListenPacket(ctx, network, address)
+	if err != nil {
+		return nil, err
+	}
+	base.mu.Lock()
+	base.sockets = append(base.sockets, conn)
+	base.mu.Unlock()
+	return conn, nil
+}
+
+func (base *ttPacketBase) recorded() []net.PacketConn {
+	base.mu.Lock()
+	defer base.mu.Unlock()
+	return slices.Clone(base.sockets)
+}
+
+// ttUDPEcho serves a UDP echo on IPv4 loopback until the test ends and returns its address.
+func ttUDPEcho(t *testing.T) string {
+	t.Helper()
+	conn, err := net.ListenPacket("udp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn.Close() })
+	go func() {
+		buf := make([]byte, 64)
+		for {
+			n, source, err := conn.ReadFrom(buf)
+			if err != nil {
+				return
+			}
+			conn.WriteTo(buf[:n], source)
+		}
+	}()
+	return conn.LocalAddr().String()
+}
+
+// ttEchoDatagram writes one datagram to conn and wants it back, closing conn if none arrives in time.
+func ttEchoDatagram(t *testing.T, conn net.Conn) {
+	t.Helper()
+	if _, err := conn.Write([]byte("datagram")); err != nil {
+		t.Fatal(err)
+	}
+	guard := time.AfterFunc(5*time.Second, func() { conn.Close() })
+	defer guard.Stop()
+	buf := make([]byte, 64)
+	n, err := conn.Read(buf)
+	if err != nil || string(buf[:n]) != "datagram" {
+		t.Fatalf("read %q, %v; want the echoed datagram", buf[:n], err)
+	}
 }

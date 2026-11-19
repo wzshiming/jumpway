@@ -50,6 +50,36 @@ export const zh = {
 	cipher: '加密方式',
 	cipherRequired: 'Shadowsocks 需要加密方式。',
 	passwordRequired: 'Shadowsocks 需要密码。',
+	tun: 'TUN',
+	udp: 'UDP',
+	dns: 'DNS',
+	optionDefault: '默认',
+	udpMode: 'UDP 模式',
+	'udpMode.proxy': '经由出口链路',
+	'udpMode.direct': '直连',
+	'udpMode.block': '阻止',
+	udpModeHint:
+		'规则的 UDP 流量去向。经由出口链路：通过规则的出口链路发出。直连：不经出口链路，由本机直接发出，选中 TUN 时绕过 TUN。阻止：在 TUN 上丢弃，并拒绝本规则监听端口上的 SOCKS5 UDP ASSOCIATE。默认：TUN 捕获的 UDP 经由出口链路发出，本规则监听端口上的 UDP ASSOCIATE 直接发出。TUN 捕获的 DNS 查询（UDP 53 端口）按 DNS 模式而非 UDP 模式处理：除非 DNS 模式为 UDP，即使 UDP 模式为直连或阻止，它们仍以 DNS over TCP 经由出口链路转发。',
+	udpNat: 'UDP NAT 类型',
+	'udpNat.auto': '自动',
+	'udpNat.fullCone': '全锥形',
+	'udpNat.symmetric': '对称型',
+	udpNatHint:
+		'全锥形：每个会话用一个套接字或关联发往所有目标，来自任意来源的回复都会送达。全锥形仅在出口链路的 UDP 能发往每个目标时成立，否则每个目标各用一条连接。对称型：每个目标一条连接。自动：全锥形；但规则把部分目标直连时（NO_PROXY/ONLY_PROXY 环境变量列表，或不走代理列表中有 * 或 IP:端口 条目）按目标分别连接。',
+	udpIdle: 'UDP 空闲超时（秒）',
+	udpIdleHint: '多少秒内没有数据报后，结束 TUN 的 UDP 会话并关闭按目标建立的连接；默认 60。',
+	dnsMode: 'DNS 模式',
+	'dnsMode.default': '默认（DNS over TCP）',
+	'dnsMode.tcp': 'DNS over TCP',
+	'dnsMode.udp': 'UDP',
+	dnsModeHint:
+		'DNS over TCP：TUN 捕获的 DNS 查询（UDP 53 端口）以 DNS over TCP 经由出口链路转发，这是默认方式。UDP：53 端口不做特殊处理，按 UDP 选项处理。',
+	dnsServer: 'DNS 服务器',
+	dnsServerPlaceholder: '查询原本发往的服务器',
+	dnsServerHint:
+		'仅用于 DNS over TCP：所有查询都发往这里填写的主机:端口，而不是查询原本发往的服务器。',
+	dnsIdle: 'DNS 空闲超时（秒）',
+	dnsIdleHint: '仅用于 DNS over TCP：多少秒内没有查询或回复后结束 DNS 会话；默认 10。',
 	listenThroughHint:
 		'留空时在本机打开端口；否则由第一个节点在其所在机器上绑定主机和端口（SSH 远程端口转发；远端 sshd 默认仅绑定回环地址，启用 GatewayPorts 后才能绑定其他地址），最后一个节点由本机直接连接。只有 ssh://、cmd: 和 nc 节点支持监听。',
 	deleteRule: '删除',
@@ -258,6 +288,8 @@ export const zh = {
 	'help.target': '目标：端口转发规则把每条连接转发到的主机和端口，从出口节点连接。',
 	'help.exitChain':
 		'出口链路：出站时由本机连接的代理。节点 1 是紧邻目标的出口节点，最后一个节点最先被连接；留空表示直连。',
+	'help.tun':
+		'TUN：虚拟网卡，捕获本机 TCP 和 UDP 流量并经由规则的出口链路发出。DNS 查询（UDP 53 端口）以 DNS over TCP 转发，规则的 DNS 模式为 UDP 时除外；其他 UDP 按规则的 UDP 选项处理。',
 	'help.endpoints': '端点：这台主机上不同的代理 URL（scheme://host:port），涵盖所有规则和节点。',
 	'help.path':
 		'路径：此连接实际经过的路线，从本机依次经过各代理 URL 到达目标；“复用连接”表示该节点通过已有的传输通道到达。',
@@ -289,6 +321,8 @@ export const zh = {
 	passwordNeedsUsername: '请为该密码设置用户名。',
 	hopUrlEmpty: '请输入代理地址。',
 	hopUrlNoScheme: '请包含协议（例如 socks5://host:1080）。',
+	idleInvalid: '请输入 0 到 4294967295 之间的整数秒数。',
+	dnsServerInvalid: '请输入主机:端口，主机不能为空，端口须为 1 到 65535。',
 	ruleNotFound: '未找到规则“{name}”。',
 	breadcrumb: '面包屑导航',
 	chain: '链路',

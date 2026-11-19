@@ -1059,6 +1059,13 @@ test('the editor stacks General, Chain, Listen and Exit; General holds name, swi
 	expect(group('Listen')!.querySelector('#listen-port')).toBeNull();
 });
 
+test('the UDP and DNS groups are headed like the other groups in a band, with the field-label legend', async () => {
+	await render('#/rules/office');
+	for (const name of ['UDP', 'DNS', 'Protocols']) {
+		expect(group(name)!.querySelector(':scope > legend')!.className, name).toBe('field-label');
+	}
+});
+
 test('a legacy rule checks HTTP, SOCKS5, SOCKS4 and SSH; checking Shadowsocks adds its row with a default cipher; the body lists exactly the checked ones and reopens so', async () => {
 	await render('#/rules/lab');
 	expect(checkedTypes()).toEqual(['http', 'socks5', 'socks4', 'ssh']);

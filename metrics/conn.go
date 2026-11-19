@@ -64,6 +64,35 @@ func (c *conn) CloseWrite() error {
 	return errors.ErrUnsupported
 }
 
+// exposed is c, a net.PacketConn too when its conn can address any destination.
+func (c *conn) exposed() net.Conn {
+	if _, connected := c.Conn.(*net.UDPConn); connected {
+		return c
+	}
+	if packet, ok := c.Conn.(net.PacketConn); ok {
+		return &fullConeConn{conn: c, packet: packet}
+	}
+	return c
+}
+
+// fullConeConn counts ReadFrom and WriteTo as conn counts Read and Write.
+type fullConeConn struct {
+	*conn
+	packet net.PacketConn
+}
+
+func (c *fullConeConn) ReadFrom(buffer []byte) (int, net.Addr, error) {
+	size, addr, err := c.packet.ReadFrom(buffer)
+	c.record(size, true)
+	return size, addr, err
+}
+
+func (c *fullConeConn) WriteTo(buffer []byte, addr net.Addr) (int, error) {
+	size, err := c.packet.WriteTo(buffer, addr)
+	c.record(size, false)
+	return size, err
+}
+
 type listener struct {
 	net.Listener
 	count *counter

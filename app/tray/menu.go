@@ -14,6 +14,8 @@ type menuItems struct {
 	rules       map[string]*systray.MenuItem
 	manual      *systray.MenuItem
 	proxies     map[string]*systray.MenuItem
+	tunOff      *systray.MenuItem
+	tun         map[string]*systray.MenuItem
 	exports     map[string]*systray.MenuItem
 	noLocalRule *systray.MenuItem
 }
@@ -22,6 +24,8 @@ type menuSnapshot struct {
 	web      string
 	rules    []ruleMenuEntry
 	selected string
+	tun      string
+	tunRules []string
 	items    *menuItems
 }
 
@@ -69,7 +73,7 @@ func (a *App) menuSnapshot() menuSnapshot {
 		rules[index] = *rule
 	}
 	address, webErr, lastErr := a.webAddress, a.webErr, a.lastErr
-	selected, items := a.systemProxyRule, a.menuItems
+	selected, tun, items := a.systemProxyRule, a.tunRule, a.menuItems
 	a.mu.Unlock()
 	if lastErr != nil {
 		address = lastErr.Error()
@@ -80,10 +84,18 @@ func (a *App) menuSnapshot() menuSnapshot {
 	if selected != "" {
 		mode = i18n.SystemProxy()
 	}
+	var tunRules []string
+	for _, rule := range rules {
+		if rule.tunCapable() {
+			tunRules = append(tunRules, rule.name)
+		}
+	}
 	return menuSnapshot{
 		web:      i18n.WebUI() + " \u00b7 " + address + " \u00b7 " + mode,
 		rules:    menuModel(rules),
 		selected: selected,
+		tun:      tun,
+		tunRules: tunRules,
 		items:    items,
 	}
 }
@@ -95,6 +107,7 @@ func (a *App) buildMenu() *systray.Menu {
 		web:     menu.Add(snapshot.web, nil),
 		rules:   make(map[string]*systray.MenuItem),
 		proxies: make(map[string]*systray.MenuItem),
+		tun:     make(map[string]*systray.MenuItem),
 		exports: make(map[string]*systray.MenuItem),
 	}
 	items.web.SetDisabled(true)
@@ -129,6 +142,20 @@ func (a *App) buildMenu() *systray.Menu {
 		items.noLocalRule.SetDisabled(true)
 	}
 	menu.AddSubmenu(i18n.SystemProxy(), proxies)
+
+	if tunSupported {
+		tun := systray.NewMenu()
+		tunSelected := snapshot.tunSelected()
+		items.tunOff = tun.AddCheckbox(i18n.TUNOff(), tunSelected == "", func() {
+			a.do(func() { a.selectTUN("") })
+		})
+		for _, name := range snapshot.tunRules {
+			items.tun[name] = tun.AddCheckbox(name, tunSelected == name, func() {
+				a.do(func() { a.selectTUN(name) })
+			})
+		}
+		menu.AddSubmenu(i18n.TUN(), tun)
+	}
 	menu.AddSubmenu(i18n.ExportCommand(), exports)
 	menu.AddSeparator()
 
@@ -203,4 +230,21 @@ func (a *App) updateStatus() {
 	if items.manual != nil {
 		items.manual.SetChecked(selected == "")
 	}
+	tunSelected := snapshot.tunSelected()
+	for name, item := range items.tun {
+		item.SetChecked(tunSelected == name)
+	}
+	if items.tunOff != nil {
+		items.tunOff.SetChecked(tunSelected == "")
+	}
+}
+
+// tunSelected is the selected TUN rule when it is listed, else empty.
+func (s menuSnapshot) tunSelected() string {
+	for _, name := range s.tunRules {
+		if name == s.tun {
+			return name
+		}
+	}
+	return ""
 }

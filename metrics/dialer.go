@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"slices"
 	"sync"
 	"time"
 
@@ -34,7 +35,7 @@ func (d *dialer) DialContext(ctx context.Context, network, address string) (net.
 	if err != nil {
 		return nil, err
 	}
-	return newConn(connected, d.count, false), nil
+	return newConn(connected, d.count, false).exposed(), nil
 }
 
 func (d *dialer) Listen(ctx context.Context, network, address string) (net.Listener, error) {
@@ -85,12 +86,36 @@ func (d *ruleDialer) DialContext(ctx context.Context, network, address string) (
 	}
 	wrapped := newConn(connected, count, false)
 	if registry.rules[d.rule.name] != d.rule {
-		return wrapped, nil
+		return wrapped.exposed(), nil
 	}
-	path := make([]PathHop, len(d.rule.ways[Forward]))
+	entry := &live{
+		id:      registry.nextID.Add(1),
+		rule:    d.rule,
+		client:  jumpway.ClientAddr(ctx),
+		target:  address,
+		via:     key.via,
+		path:    d.rule.path(trace.urls),
+		started: now,
+		count:   newCounter(registry.lastTick),
+		conn:    wrapped,
+	}
+	entry.pending = d.rule.pending(entry.client)
+	wrapped.extra = entry.count
+	registry.live[entry.id] = entry
+	wrapped.onClose = func() {
+		registry.mu.Lock()
+		delete(registry.live, entry.id)
+		registry.mu.Unlock()
+	}
+	return wrapped.exposed(), nil
+}
+
+// path is the forward route of a connection whose dialed hops are dialed, other hops inferred from the rule's URLs.
+func (r *Rule) path(dialed map[int]string) []PathHop {
+	path := make([]PathHop, len(r.ways[Forward]))
 	for index := range path {
-		url, dialed := trace.urls[index]
-		if urls := d.rule.ways[Forward][index].urls; !dialed && len(urls) > 0 {
+		url, ok := dialed[index]
+		if urls := r.ways[Forward][index].urls; !ok && len(urls) > 0 {
 			url = urls[0].url
 			for _, candidate := range urls[1:] {
 				if candidate.url != url {
@@ -99,30 +124,22 @@ func (d *ruleDialer) DialContext(ctx context.Context, network, address string) (
 				}
 			}
 		}
-		path[index] = PathHop{Index: index, URL: url, Dialed: dialed}
+		path[index] = PathHop{Index: index, URL: url, Dialed: ok}
 	}
-	entry := &live{
-		id:      registry.nextID.Add(1),
-		rule:    d.rule,
-		client:  jumpway.ClientAddr(ctx),
-		target:  address,
-		via:     key.via,
-		path:    path,
-		started: now,
-		count:   newCounter(registry.lastTick),
-		conn:    wrapped,
+	return path
+}
+
+// pending is the client address whose process a snapshot looks up, or zero when client is not local to this machine.
+func (r *Rule) pending(client string) netip.AddrPort {
+	if len(r.ways[Listen]) != 0 {
+		return netip.AddrPort{}
 	}
-	if len(d.rule.ways[Listen]) == 0 {
-		if addr, err := netip.ParseAddrPort(entry.client); err == nil && addr.Addr().Unmap().IsLoopback() {
-			entry.pending = netip.AddrPortFrom(addr.Addr().Unmap(), addr.Port())
-		}
+	addr, err := netip.ParseAddrPort(client)
+	if err != nil {
+		return netip.AddrPort{}
 	}
-	wrapped.extra = entry.count
-	registry.live[entry.id] = entry
-	wrapped.onClose = func() {
-		registry.mu.Lock()
-		delete(registry.live, entry.id)
-		registry.mu.Unlock()
+	if ip := addr.Addr().Unmap(); ip.IsLoopback() || slices.Contains(r.local, ip) {
+		return netip.AddrPortFrom(ip, addr.Port())
 	}
-	return wrapped, nil
+	return netip.AddrPort{}
 }
