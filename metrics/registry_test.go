@@ -276,6 +276,87 @@ func TestRuleWrapListener(t *testing.T) {
 	}
 }
 
+func TestRuleWrapConnCountsAcceptedConn(t *testing.T) {
+	registry := NewRegistry()
+	registry.Sync([]config.Rule{{Name: "rule"}}, "", nil)
+	inner, peer := net.Pipe()
+	closeOnCleanup(t, peer)
+	wrapped := registry.Rule("rule").WrapConn(inner)
+	closeOnCleanup(t, wrapped)
+	setDeadlines(t, wrapped, peer)
+	if stats := registry.Snapshot().Rules[0].Stats; stats.Total != 1 || stats.Active != 1 {
+		t.Fatalf("rule stats after WrapConn = %+v, want total 1 and active 1", stats)
+	}
+	transferBytes(t, peer, wrapped, 3)
+	transferBytes(t, wrapped, peer, 5)
+	if stats := registry.Snapshot().Rules[0].Stats; stats.Up != 3 || stats.Down != 5 {
+		t.Fatalf("rule stats = %+v, want 3 bytes up read from the client and 5 down written to it", stats)
+	}
+	if err := wrapped.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if stats := registry.Snapshot().Rules[0].Stats; stats.Active != 0 || stats.Total != 1 {
+		t.Fatalf("rule stats after Close = %+v, want active 0 of total 1", stats)
+	}
+}
+
+func TestRuleWrapConnPassesHalfCloseToInner(t *testing.T) {
+	registry := NewRegistry()
+	registry.Sync([]config.Rule{{Name: "rule"}}, "", nil)
+	listener, err := net.ListenTCP("tcp", &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	closeOnCleanup(t, listener)
+	if err := listener.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	client, err := net.DialTimeout("tcp", listener.Addr().String(), 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	closeOnCleanup(t, client)
+	accepted, err := listener.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrapped := registry.Rule("rule").WrapConn(accepted)
+	closeOnCleanup(t, wrapped)
+	setDeadlines(t, wrapped, client)
+	closer, ok := wrapped.(interface{ CloseWrite() error })
+	if !ok {
+		t.Fatalf("wrapped %T has no CloseWrite", wrapped)
+	}
+	if err := closer.CloseWrite(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Read(make([]byte, 1)); err != io.EOF {
+		t.Fatalf("client Read = %v, want EOF from the half-close", err)
+	}
+	if _, err := client.Write([]byte("ok")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.ReadFull(wrapped, make([]byte, 2)); err != nil {
+		t.Fatalf("read after CloseWrite: %v", err)
+	}
+}
+
+func TestRuleWrapConnCountsTheRuleAlone(t *testing.T) {
+	registry := NewRegistry()
+	registry.Sync([]config.Rule{{Name: "rule", Forward: config.Forward{Way: []bridgeconfig.Node{{LB: []string{"socks5://hop:1080"}}}}}}, "", nil)
+	inner, peer := net.Pipe()
+	closeOnCleanup(t, peer)
+	wrapped := registry.Rule("rule").WrapConn(inner)
+	closeOnCleanup(t, wrapped)
+	setDeadlines(t, wrapped, peer)
+	transferBytes(t, peer, wrapped, 3)
+	transferBytes(t, wrapped, peer, 5)
+	rule := registry.Snapshot().Rules[0]
+	if len(rule.Targets) != 0 || len(rule.Connections) != 0 || rule.Forward[0].Stats != (Stats{}) {
+		t.Fatalf("targets %+v, connections %+v, hop %+v; want WrapConn to leave all but the rule's own stats", rule.Targets, rule.Connections, rule.Forward[0].Stats)
+	}
+}
+
 func TestHopWrapperLazy(t *testing.T) {
 	registry := NewRegistry()
 	registry.Sync([]config.Rule{{Name: "rule"}}, "", nil)

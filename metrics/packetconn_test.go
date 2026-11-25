@@ -74,6 +74,44 @@ func TestDialedConnsWithoutFullConeAreNotPacketConns(t *testing.T) {
 	}
 }
 
+func TestRuleWrapConnKeepsAddressedDatagrams(t *testing.T) {
+	registry := NewRegistry()
+	registry.Sync([]config.Rule{{Name: "rule"}}, "", nil)
+	inner, peer := net.Pipe()
+	closeOnCleanup(t, peer)
+	client := &net.UDPAddr{IP: net.IPv4(198, 18, 0, 2), Port: 50000}
+	wrapped := registry.Rule("rule").WrapConn(&ttAddressedConn{Conn: inner, client: client, read: "abc"})
+	closeOnCleanup(t, wrapped)
+	packet, ok := wrapped.(net.PacketConn)
+	if !ok {
+		t.Fatalf("wrapped %T is not a net.PacketConn", wrapped)
+	}
+	if n, from, err := packet.ReadFrom(make([]byte, 64)); err != nil || n != 3 || from != client {
+		t.Fatalf("ReadFrom = %d, %v, %v; want 3 bytes from %v", n, from, err, client)
+	}
+	if n, err := packet.WriteTo([]byte("hello"), client); err != nil || n != 5 {
+		t.Fatalf("WriteTo = %d, %v; want 5 bytes", n, err)
+	}
+	if stats := registry.Snapshot().Rules[0].Stats; stats.Up != 3 || stats.Down != 5 {
+		t.Fatalf("rule stats = %+v, want 3 bytes up from ReadFrom and 5 down from WriteTo", stats)
+	}
+}
+
+// ttAddressedConn is an accepted conn that also addresses datagrams: ReadFrom returns read from client, WriteTo takes any.
+type ttAddressedConn struct {
+	net.Conn
+	client net.Addr
+	read   string
+}
+
+func (c *ttAddressedConn) ReadFrom(b []byte) (int, net.Addr, error) {
+	return copy(b, c.read), c.client, nil
+}
+
+func (c *ttAddressedConn) WriteTo(b []byte, _ net.Addr) (int, error) {
+	return len(b), nil
+}
+
 // ttFullConeSocket is an unconnected UDP socket on IPv4 loopback that is not a *net.UDPConn.
 func ttFullConeSocket(t *testing.T) net.Conn {
 	t.Helper()
