@@ -102,6 +102,19 @@ func TestE2ETrayTUNCaptureThroughRule(t *testing.T) {
 	t.Run("E2 tcp6 through the rule", func(t *testing.T) {
 		ttE2EEchoViaHop(t, hop, ttE2ETarget6, "ping-v6")
 	})
+	t.Run("E2 the rule counts the captured flows", func(t *testing.T) {
+		deadline := time.Now().Add(10 * time.Second)
+		for {
+			stats := app.metrics.Snapshot().Rules[0].Stats
+			if stats.Total >= 1 && stats.Up > 0 && stats.Down > 0 {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("rule e2e's own stats after the echoes = %+v, want a total of at least 1 and bytes both ways", stats)
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	})
 
 	t.Run("E3 bypass dialer escapes the TUN", func(t *testing.T) {
 		before := hop.count(ttE2ETarget4)

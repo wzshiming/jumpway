@@ -704,6 +704,153 @@ func (flow *ttDNSFlow) Close() error {
 	return nil
 }
 
+func TestSelectTUNCountsATCPFlowOnTheRule(test *testing.T) {
+	target := startEchoServer(test)
+	app, opts := ttSelectTUNOptions(test, &config.Config{Rules: []config.Rule{ttTUNRule("alpha", 0)}})
+	client, accepted := net.Pipe()
+	defer client.Close()
+	if err := client.SetDeadline(time.Now().Add(ttWait)); err != nil {
+		test.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		tunproxy.Handler(opts).ServeFlow(ctx, &ttTCPFlow{target: netip.MustParseAddrPort(target.Addr().String()), conn: accepted})
+	}()
+	if _, err := io.WriteString(client, "ping"); err != nil {
+		test.Fatalf("write to the TUN's TCP flow: %v", err)
+	}
+	if _, err := io.ReadFull(client, make([]byte, len("ping"))); err != nil {
+		test.Fatalf("read the echo of the TUN's TCP flow: %v", err)
+	}
+	if stats := app.metrics.Snapshot().Rules[0].Stats; stats.Total != 1 || stats.Active != 1 {
+		test.Fatalf("alpha's own stats with the TUN's TCP flow open = %+v, want total 1 and active 1", stats)
+	}
+	client.Close()
+	select {
+	case <-done:
+	case <-time.After(ttWait):
+		test.Fatalf("the TUN's TCP flow still served %v after its client closed", ttWait)
+	}
+	if stats := app.metrics.Snapshot().Rules[0].Stats; stats.Total != 1 || stats.Active != 0 || stats.Up == 0 || stats.Down == 0 {
+		test.Fatalf("alpha's own stats after the TUN's TCP flow closed = %+v, want total 1, active 0 and bytes both ways", stats)
+	}
+}
+
+func TestSelectTUNCountsAUDPSessionOnceOnTheRule(test *testing.T) {
+	ttSeamTUNUDP(test, ttListenPacket(func(context.Context, string, string) (net.PacketConn, error) { return ttNewEchoConn(), nil }))
+	app, opts := ttSelectTUNOptions(test, &config.Config{Rules: []config.Rule{ttTUNRule("alpha", 0)}})
+	flow := ttNewUDPFlow("192.0.2.1:443", "192.0.2.2:443")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		tunproxy.Handler(opts).ServeFlow(ctx, flow)
+	}()
+	for range len(flow.targets) {
+		select {
+		case <-flow.replies:
+		case <-time.After(ttWait):
+			test.Fatalf("the TUN's UDP session got no reply from one of its targets %v within %v", flow.targets, ttWait)
+		}
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(ttWait):
+		test.Fatalf("the TUN's UDP session still served %v after ctx ended", ttWait)
+	}
+	if stats := app.metrics.Snapshot().Rules[0].Stats; stats.Total != 1 || stats.Active != 0 {
+		test.Fatalf("alpha's own stats after a UDP session to %v = %+v, want it counted once: total 1, active 0", flow.targets, stats)
+	}
+}
+
+// ttSelectTUNOptions starts an app of conf, selects alpha's TUN and returns the options serveTUN served it with.
+func ttSelectTUNOptions(test *testing.T, conf *config.Config) (*App, tunproxy.Options) {
+	test.Helper()
+	served := make(chan tunproxy.Options, 1)
+	previous := serveTUNDevice
+	test.Cleanup(func() { serveTUNDevice = previous })
+	serveTUNDevice = func(ctx context.Context, opts tunproxy.Options) error {
+		select {
+		case served <- opts:
+		default:
+		}
+		return previous(ctx, opts)
+	}
+	app, _ := ttNewTUNApp(test, conf, &ttTUNOpener{})
+	ttStart(test, app)
+	app.selectTUN("alpha")
+	var opts tunproxy.Options
+	select {
+	case opts = <-served:
+	case <-time.After(ttWait):
+		test.Fatal("no TUN served")
+	}
+	return app, opts
+}
+
+// ttTCPFlow is a TUN's TCP flow from 198.18.0.2:50000 to target, which Accept answers with conn.
+type ttTCPFlow struct {
+	target netip.AddrPort
+	conn   net.Conn
+}
+
+func (flow *ttTCPFlow) Network() string           { return "tcp" }
+func (flow *ttTCPFlow) Target() netip.AddrPort    { return flow.target }
+func (flow *ttTCPFlow) Client() netip.AddrPort    { return netip.MustParseAddrPort("198.18.0.2:50000") }
+func (flow *ttTCPFlow) Reject()                   {}
+func (flow *ttTCPFlow) Accept() (net.Conn, error) { return flow.conn, nil }
+
+// ttUDPFlow is a TUN's UDP session from 198.18.0.2:50000 sending a datagram to each target, then waiting until closed; replies gets each reply's source.
+type ttUDPFlow struct {
+	net.Conn
+	targets []netip.AddrPort
+	sent    atomic.Int32
+	replies chan net.Addr
+	closed  chan struct{}
+	once    sync.Once
+}
+
+func ttNewUDPFlow(targets ...string) *ttUDPFlow {
+	flow := &ttUDPFlow{replies: make(chan net.Addr, len(targets)), closed: make(chan struct{})}
+	for _, target := range targets {
+		flow.targets = append(flow.targets, netip.MustParseAddrPort(target))
+	}
+	return flow
+}
+
+func (flow *ttUDPFlow) Network() string           { return "udp" }
+func (flow *ttUDPFlow) Target() netip.AddrPort    { return flow.targets[0] }
+func (flow *ttUDPFlow) Client() netip.AddrPort    { return netip.MustParseAddrPort("198.18.0.2:50000") }
+func (flow *ttUDPFlow) Reject()                   {}
+func (flow *ttUDPFlow) Accept() (net.Conn, error) { return flow, nil }
+
+func (flow *ttUDPFlow) ReadFrom(p []byte) (int, net.Addr, error) {
+	if index := int(flow.sent.Add(1)) - 1; index < len(flow.targets) {
+		return copy(p, "datagram"), net.UDPAddrFromAddrPort(flow.targets[index]), nil
+	}
+	<-flow.closed
+	return 0, nil, net.ErrClosed
+}
+
+func (flow *ttUDPFlow) WriteTo(p []byte, addr net.Addr) (int, error) {
+	select {
+	case flow.replies <- addr:
+		return len(p), nil
+	case <-flow.closed:
+		return 0, net.ErrClosed
+	}
+}
+
+func (flow *ttUDPFlow) Close() error {
+	flow.once.Do(func() { close(flow.closed) })
+	return nil
+}
+
 func TestReloadKeepsSelectedTUNDevice(test *testing.T) {
 	conf := &config.Config{Rules: []config.Rule{ttTUNRule("alpha", 0)}}
 	opener := &ttTUNOpener{}
