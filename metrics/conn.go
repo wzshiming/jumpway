@@ -58,6 +58,9 @@ func (c *conn) Close() error {
 }
 
 func (c *conn) CloseWrite() error {
+	if closer, ok := c.Conn.(interface{ CloseWrite() error }); ok {
+		return closer.CloseWrite()
+	}
 	return errors.ErrUnsupported
 }
 
