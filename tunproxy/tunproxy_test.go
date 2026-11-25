@@ -177,6 +177,69 @@ func TestHandlerIdleOptionsEndSessions(test *testing.T) {
 	}
 }
 
+func TestHandlerWrapsEachAcceptedConnOnce(test *testing.T) {
+	client := netip.MustParseAddrPort("198.18.0.2:50000")
+	for _, scenario := range []struct{ name, network, target string }{
+		{name: "tcp", network: "tcp", target: "192.0.2.1:443"},
+		{name: "dns", network: "udp", target: "192.0.2.1:53"},
+		{name: "udp", network: "udp", target: "192.0.2.1:443"},
+	} {
+		test.Run(scenario.name, func(test *testing.T) {
+			flow := ttNewAnsweredFlow(scenario.network, netip.MustParseAddrPort(scenario.target), client)
+			wraps := &ttWraps{}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				Handler(Options{Dialer: ttPipeDialer{}, WrapConn: wraps.wrap}).ServeFlow(ctx, flow)
+			}()
+			var accepted net.Conn
+			select {
+			case accepted = <-flow.accepted:
+			case <-time.After(ttWait):
+				test.Fatal("the flow was never accepted")
+			}
+			cancel()
+			select {
+			case <-done:
+			case <-time.After(ttWait):
+				test.Fatal("ServeFlow did not return once ctx ended")
+			}
+			wrapped := wraps.all()
+			if len(wrapped) != 1 {
+				test.Fatalf("WrapConn called %d times, want once", len(wrapped))
+			}
+			if wrapped[0].Conn != accepted || !wrapped[0].closed.Load() {
+				test.Fatalf("wrapped %v, closed by the handler: %v; want the accepted %v, closed", wrapped[0].Conn, wrapped[0].closed.Load(), accepted)
+			}
+		})
+	}
+}
+
+func TestHandlerDoesNotWrapRejectedFlows(test *testing.T) {
+	flow := ttNewAnsweredFlow("tcp", netip.MustParseAddrPort("192.0.2.1:443"), netip.MustParseAddrPort("198.18.0.2:50000"))
+	wraps := &ttWraps{}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		Handler(Options{Dialer: ttRecordingDialer(make(chan ttDial, 1)), WrapConn: wraps.wrap}).ServeFlow(ctx, flow)
+	}()
+	select {
+	case <-done:
+	case <-time.After(ttWait):
+		test.Fatal("ServeFlow of a flow whose dial failed did not return")
+	}
+	if !flow.rejected.Load() || len(flow.accepted) != 0 {
+		test.Fatalf("rejected: %v, accepted %d times; want the failed dial to reject the flow", flow.rejected.Load(), len(flow.accepted))
+	}
+	if wrapped := wraps.all(); len(wrapped) != 0 {
+		test.Fatalf("WrapConn called %d times for a rejected flow, want never", len(wrapped))
+	}
+}
+
 func TestServeReturnsOpenError(test *testing.T) {
 	openErr := fmt.Errorf("tt helper: %w", tun.ErrDenied)
 	var requested []tun.Config
@@ -488,4 +551,76 @@ func (conn *ttSessionConn) WriteTo(b []byte, _ net.Addr) (int, error) { return l
 func (conn *ttSessionConn) Close() error {
 	conn.closeOnce.Do(func() { close(conn.closed) })
 	return nil
+}
+
+// ttAnsweredFlow is a ttFlow recording its answer; Accept sends the conn it returns, a pipe for tcp, to accepted.
+type ttAnsweredFlow struct {
+	ttFlow
+	accepted chan net.Conn
+	rejected atomic.Bool
+}
+
+func ttNewAnsweredFlow(network string, target, client netip.AddrPort) *ttAnsweredFlow {
+	return &ttAnsweredFlow{ttFlow: ttFlow{network: network, target: target, client: client}, accepted: make(chan net.Conn, 1)}
+}
+
+func (flow *ttAnsweredFlow) Accept() (net.Conn, error) {
+	var conn net.Conn = &ttSessionConn{target: flow.target, closed: make(chan struct{})}
+	if flow.network == "tcp" {
+		conn, _ = net.Pipe()
+	}
+	select {
+	case flow.accepted <- conn:
+	default:
+	}
+	return conn, nil
+}
+
+func (flow *ttAnsweredFlow) Reject() { flow.rejected.Store(true) }
+
+// ttPipeDialer connects every dial to a pipe nothing reads.
+type ttPipeDialer struct{}
+
+func (ttPipeDialer) DialContext(context.Context, string, string) (net.Conn, error) {
+	conn, _ := net.Pipe()
+	return conn, nil
+}
+
+// ttWraps is a WrapConn recording each conn it wraps.
+type ttWraps struct {
+	mu      sync.Mutex
+	wrapped []*ttWrappedConn
+}
+
+func (wraps *ttWraps) wrap(inner net.Conn) net.Conn {
+	wraps.mu.Lock()
+	defer wraps.mu.Unlock()
+	wrapped := &ttWrappedConn{Conn: inner}
+	wraps.wrapped = append(wraps.wrapped, wrapped)
+	return wrapped
+}
+
+func (wraps *ttWraps) all() []*ttWrappedConn {
+	wraps.mu.Lock()
+	defer wraps.mu.Unlock()
+	return slices.Clone(wraps.wrapped)
+}
+
+// ttWrappedConn is the conn ttWraps returns: the accepted conn with its datagram methods, recording Close.
+type ttWrappedConn struct {
+	net.Conn
+	closed atomic.Bool
+}
+
+func (conn *ttWrappedConn) ReadFrom(b []byte) (int, net.Addr, error) {
+	return conn.Conn.(net.PacketConn).ReadFrom(b)
+}
+
+func (conn *ttWrappedConn) WriteTo(b []byte, addr net.Addr) (int, error) {
+	return conn.Conn.(net.PacketConn).WriteTo(b, addr)
+}
+
+func (conn *ttWrappedConn) Close() error {
+	conn.closed.Store(true)
+	return conn.Conn.Close()
 }

@@ -3,6 +3,7 @@ package tunproxy
 
 import (
 	"context"
+	"net"
 	"net/netip"
 	"time"
 
@@ -42,6 +43,8 @@ type Options struct {
 	UDPIdle time.Duration
 	// DNS configures the flows to UDP port 53.
 	DNS DNS
+	// WrapConn, unless nil, wraps the conn of every flow a handler accepts.
+	WrapConn func(net.Conn) net.Conn
 }
 
 // DNS configures the flows to UDP port 53; the zero value relays them as DNS over TCP through the Dialer.
@@ -78,5 +81,24 @@ func Handler(opts Options) stack.Handler {
 		m.Handle("udp", ":53", &dns.Handler{Dialer: opts.Dialer, Target: opts.DNS.Server, Idle: opts.DNS.Idle})
 	}
 	m.Handle("udp", "", &udp.Handler{Dialer: opts.Dialer, ListenConfig: opts.ListenConfig, Idle: opts.UDPIdle})
-	return m
+	if opts.WrapConn == nil {
+		return m
+	}
+	return stack.HandlerFunc(func(ctx context.Context, f stack.Flow) {
+		m.ServeFlow(ctx, wrappingFlow{Flow: f, wrap: opts.WrapConn})
+	})
+}
+
+// wrappingFlow is a Flow whose accepted conn passes through wrap.
+type wrappingFlow struct {
+	stack.Flow
+	wrap func(net.Conn) net.Conn
+}
+
+func (f wrappingFlow) Accept() (net.Conn, error) {
+	conn, err := f.Flow.Accept()
+	if err != nil {
+		return nil, err
+	}
+	return f.wrap(conn), nil
 }
