@@ -81,12 +81,7 @@ func Handler(opts Options) stack.Handler {
 		m.Handle("udp", ":53", &dns.Handler{Dialer: opts.Dialer, Target: opts.DNS.Server, Idle: opts.DNS.Idle})
 	}
 	m.Handle("udp", "", &udp.Handler{Dialer: opts.Dialer, ListenConfig: opts.ListenConfig, Idle: opts.UDPIdle})
-	if opts.WrapConn == nil {
-		return m
-	}
-	return stack.HandlerFunc(func(ctx context.Context, f stack.Flow) {
-		m.ServeFlow(ctx, wrappingFlow{Flow: f, wrap: opts.WrapConn})
-	})
+	return m
 }
 
 // wrappingFlow is a Flow whose accepted conn passes through wrap.

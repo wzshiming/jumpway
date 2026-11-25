@@ -111,7 +111,6 @@ func (a *App) serveTUN(ctx context.Context, open func(context.Context, tun.Confi
 		ListenConfig: listen,
 		UDPIdle:      time.Duration(rule.Forward.UDP.Idle) * time.Second,
 		DNS:          tunproxy.DNS{AsUDP: dns.Mode == config.DNSModeUDP, Server: dns.Server, Idle: time.Duration(dns.Idle) * time.Second},
-		WrapConn:     a.metrics.Rule(rule.Name).WrapConn,
 		Up: func(dev *tun.Device) {
 			up = true
 			for _, warning := range dev.Warnings {

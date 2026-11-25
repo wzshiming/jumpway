@@ -189,7 +189,7 @@ func (r *Rule) WrapListener(inner net.Listener) net.Listener {
 
 // WrapConn counts inner, a conn accepted from a client, in the rule's own stats until it is closed.
 func (r *Rule) WrapConn(inner net.Conn) net.Conn {
-	return newConn(inner, r.count, true).exposed()
+	return newConn(inner, &counter{}, true).exposed()
 }
 
 func (r *Rule) HopWrapper(role Role) func(index int, url string, d bridge.Dialer) bridge.Dialer {
