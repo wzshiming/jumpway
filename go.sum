@@ -110,8 +110,8 @@ github.com/wzshiming/systheme v0.0.1 h1:mRjzxaHyAQJ+b9TEZtrTF4ImVdEat9SMDaV5pWs5
 github.com/wzshiming/systheme v0.0.1/go.mod h1:8kRlfe8xyQbCBtzVIhz4ClScn41pDqQLT7QevwaK1cY=
 github.com/wzshiming/trie v0.4.0 h1:djOmioql3Zkd1DoUhj5AbQghW3K4o+lvPl4uL2Gi0no=
 github.com/wzshiming/trie v0.4.0/go.mod h1:c9thxXTh4KcGkejt4sUsO4c5GUmWpxeWzOJ7AZJaI+8=
-github.com/wzshiming/tun v0.0.0-20261125071159-b79f351ca2ab h1:wWWAFMrbX4fAx/bRefSbKSZkYhJnbKCgORPg0Ek2eYo=
-github.com/wzshiming/tun v0.0.0-20261125071159-b79f351ca2ab/go.mod h1:w3C5c5JpmH9XzgHRicytfHEM0+vYcz4IgHjI1ERcWr4=
+github.com/wzshiming/tun v0.0.0-20261126070938-2505e79175eb h1:TL5L1E0bqFfSccKUPXQY6V89asWYpshZ+0t+kmtQjtg=
+github.com/wzshiming/tun v0.0.0-20261126070938-2505e79175eb/go.mod h1:w3C5c5JpmH9XzgHRicytfHEM0+vYcz4IgHjI1ERcWr4=
 github.com/wzshiming/wintun v0.0.0-20261106175824-f7950ee936b8 h1:BrzLikummkbS6StgDYAJRlIe2z7sbbBpkYgi54elh8M=
 github.com/wzshiming/wintun v0.0.0-20261106175824-f7950ee936b8/go.mod h1:/oZRy0z9uOYyLzk/bimnwYb3pHKp9vmaEbBNrsd0zls=
 go.uber.org/goleak v1.3.0 h1:2K3zAYmnTNqV73imy9J1T3WC+gmCePx2hEGkimedGto=
