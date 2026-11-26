@@ -1,10 +1,12 @@
 package tunproxy
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/netip"
 	"os"
@@ -16,6 +18,7 @@ import (
 
 	"github.com/wzshiming/tun"
 	"github.com/wzshiming/tun/stack"
+	"golang.org/x/net/dns/dnsmessage"
 	wgtun "golang.zx2c4.com/wireguard/tun"
 )
 
@@ -240,6 +243,63 @@ func TestHandlerDoesNotWrapRejectedFlows(test *testing.T) {
 	}
 }
 
+func TestHandlerAnswersRepeatedDNSQueryFromCache(test *testing.T) {
+	question := dnsmessage.Question{Name: dnsmessage.MustNewName("example.com."), Type: dnsmessage.TypeA, Class: dnsmessage.ClassINET}
+	query, err := (&dnsmessage.Message{Header: dnsmessage.Header{ID: 0x1234, RecursionDesired: true}, Questions: []dnsmessage.Question{question}}).Pack()
+	if err != nil {
+		test.Fatal(err)
+	}
+	reply, err := (&dnsmessage.Message{
+		Header:    dnsmessage.Header{ID: 0x1234, Response: true, RecursionDesired: true, RecursionAvailable: true},
+		Questions: []dnsmessage.Question{question},
+		Answers: []dnsmessage.Resource{{
+			Header: dnsmessage.ResourceHeader{Name: question.Name, Type: dnsmessage.TypeA, Class: dnsmessage.ClassINET, TTL: 300},
+			Body:   &dnsmessage.AResource{A: [4]byte{192, 0, 2, 80}},
+		}},
+	}).Pack()
+	if err != nil {
+		test.Fatal(err)
+	}
+	server := &ttDNSServer{reply: reply}
+	handler := Handler(Options{Dialer: server, WrapConn: (&ttWraps{}).wrap})
+	ask := func(port uint16) []byte {
+		test.Helper()
+		client := netip.AddrPortFrom(netip.MustParseAddr("198.18.0.2"), port)
+		flow := &ttQueryFlow{ttFlow: ttFlow{network: "udp", target: netip.MustParseAddrPort("192.0.2.1:53"), client: client}, query: query, replies: make(chan []byte, 1)}
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			handler.ServeFlow(ctx, flow)
+		}()
+		test.Cleanup(func() {
+			cancel()
+			select {
+			case <-done:
+			case <-time.After(ttWait):
+				test.Errorf("the DNS session of %v still served %v after its ctx ended", client, ttWait)
+			}
+		})
+		select {
+		case got := <-flow.replies:
+			return got
+		case <-time.After(ttWait):
+			test.Fatalf("no reply within %v to the DNS query of %v; the upstream was dialed %d times and read %d frames", ttWait, client, server.dials.Load(), server.frames.Load())
+			return nil
+		}
+	}
+	if got := ask(50000); !bytes.Equal(got, reply) {
+		test.Fatalf("first reply %x, want the upstream's %x", got, reply)
+	}
+	// The cache packs the answer anew, each TTL less the whole seconds it was kept.
+	if got, want := ttTimeless(ask(50001)), ttTimeless(reply); got != want {
+		test.Fatalf("reply to the same query from another port:\n%s\nwant the upstream's answer:\n%s", got, want)
+	}
+	if dials, frames := server.dials.Load(), server.frames.Load(); dials != 1 || frames != 1 {
+		test.Fatalf("the upstream was dialed %d times and read %d frames, want once each: the cache answers the query repeated from another port", dials, frames)
+	}
+}
+
 func TestServeReturnsOpenError(test *testing.T) {
 	openErr := fmt.Errorf("tt helper: %w", tun.ErrDenied)
 	var requested []tun.Config
@@ -425,6 +485,18 @@ func ttUDPPacket(source, target netip.AddrPort, payload []byte) []byte {
 	return packet
 }
 
+// ttTimeless renders message, a DNS message, with the TTLs of its answers zeroed, or the error it fails to unpack with.
+func ttTimeless(message []byte) string {
+	var parsed dnsmessage.Message
+	if err := parsed.Unpack(message); err != nil {
+		return err.Error()
+	}
+	for index := range parsed.Answers {
+		parsed.Answers[index].Header.TTL = 0
+	}
+	return parsed.GoString()
+}
+
 // ttDevice is a TUN that reads the packets sent on inbound, or fails with readErr, and drops every packet written.
 type ttDevice struct {
 	inbound  chan []byte
@@ -578,12 +650,78 @@ func (flow *ttAnsweredFlow) Accept() (net.Conn, error) {
 
 func (flow *ttAnsweredFlow) Reject() { flow.rejected.Store(true) }
 
+// ttQueryFlow is a ttFlow whose session sends query to its target once and hands each datagram sent back to replies.
+type ttQueryFlow struct {
+	ttFlow
+	query   []byte
+	replies chan []byte
+}
+
+func (flow *ttQueryFlow) Accept() (net.Conn, error) {
+	return &ttQuerySession{ttSessionConn: ttSessionConn{target: flow.target, closed: make(chan struct{})}, flow: flow}, nil
+}
+
+// ttQuerySession is the session of a ttQueryFlow.
+type ttQuerySession struct {
+	ttSessionConn
+	flow *ttQueryFlow
+}
+
+func (conn *ttQuerySession) ReadFrom(b []byte) (int, net.Addr, error) {
+	if !conn.sent.Swap(true) {
+		return copy(b, conn.flow.query), net.UDPAddrFromAddrPort(conn.target), nil
+	}
+	<-conn.closed
+	return 0, nil, net.ErrClosed
+}
+
+func (conn *ttQuerySession) WriteTo(b []byte, _ net.Addr) (int, error) {
+	select {
+	case conn.flow.replies <- bytes.Clone(b):
+		return len(b), nil
+	case <-conn.closed:
+		return 0, net.ErrClosed
+	}
+}
+
 // ttPipeDialer connects every dial to a pipe nothing reads.
 type ttPipeDialer struct{}
 
 func (ttPipeDialer) DialContext(context.Context, string, string) (net.Conn, error) {
 	conn, _ := net.Pipe()
 	return conn, nil
+}
+
+// ttDNSServer connects every dial to a pipe whose far end answers each length-framed message with reply, counting dials and frames.
+type ttDNSServer struct {
+	reply         []byte
+	dials, frames atomic.Int32
+}
+
+func (server *ttDNSServer) DialContext(context.Context, string, string) (net.Conn, error) {
+	server.dials.Add(1)
+	conn, far := net.Pipe()
+	go server.serve(far)
+	return conn, nil
+}
+
+// serve answers each frame read from conn until conn fails.
+func (server *ttDNSServer) serve(conn net.Conn) {
+	defer conn.Close()
+	answer := append(binary.BigEndian.AppendUint16(nil, uint16(len(server.reply))), server.reply...)
+	var size [2]byte
+	for {
+		if _, err := io.ReadFull(conn, size[:]); err != nil {
+			return
+		}
+		if _, err := io.CopyN(io.Discard, conn, int64(binary.BigEndian.Uint16(size[:]))); err != nil {
+			return
+		}
+		server.frames.Add(1)
+		if _, err := conn.Write(answer); err != nil {
+			return
+		}
+	}
 }
 
 // ttWraps is a WrapConn recording each conn it wraps.
