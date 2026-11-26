@@ -28,7 +28,7 @@ require (
 	github.com/wzshiming/sysnotify v0.0.2
 	github.com/wzshiming/sysproxy v0.2.2
 	github.com/wzshiming/systheme v0.0.1
-	github.com/wzshiming/tun v0.0.0-20261126070938-2505e79175eb
+	github.com/wzshiming/tun v0.0.0-20261125071159-b79f351ca2ab
 	golang.org/x/crypto v0.57.0
 	golang.org/x/net v0.60.0
 	golang.org/x/sys v0.48.0
