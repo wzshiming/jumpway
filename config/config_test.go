@@ -268,6 +268,16 @@ func TestValidate(t *testing.T) {
 			wantError: "rules[0].listen.protocols is only used by proxy rules",
 		},
 		{
+			name:      "tun_protocol_is_unknown",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "tun"}}}}}},
+			wantError: `rules[0].listen.protocols[0].type "tun" is unknown`,
+		},
+		{
+			name:      "tun_protocol_beside_http_is_unknown",
+			conf:      &Config{Rules: []Rule{{Name: "a", Listen: Listen{Protocols: []Protocol{{Type: "http"}, {Type: "tun"}}}}}},
+			wantError: `rules[0].listen.protocols[1].type "tun" is unknown`,
+		},
+		{
 			name:      "no_lb",
 			conf:      withWay(bridgeconfig.Node{}),
 			wantError: "rules[0].forward.way[0] has no proxy URL",
@@ -534,6 +544,119 @@ func TestValidate(t *testing.T) {
 				{Name: "c", Disabled: true, Listen: Listen{Virtual: "x"}},
 			}},
 		},
+		{
+			name: "udp_options",
+			conf: &Config{Rules: []Rule{
+				{Name: "a", Forward: Forward{UDP: UDP{Mode: "proxy", NAT: "full-cone", Idle: 120}, DNS: DNS{Mode: "tcp", Server: "1.1.1.1:53", Idle: 30}}},
+				{Name: "b", Forward: Forward{UDP: UDP{Mode: "direct", NAT: "symmetric"}, DNS: DNS{Server: "[2606:4700::1111]:65535"}}},
+				{Name: "c", Forward: Forward{Port: 5432, UDP: UDP{Mode: "block"}, DNS: DNS{Mode: "udp"}}},
+				{Name: "d", Forward: Forward{DNS: DNS{Server: "dns.example:1"}}},
+			}},
+		},
+		{
+			name:      "unknown_udp_mode",
+			conf:      &Config{Rules: []Rule{{Name: "a", Forward: Forward{UDP: UDP{Mode: "x"}}}}},
+			wantError: `rules[0].forward.udp.mode "x" is unknown`,
+		},
+		{
+			name:      "unknown_udp_nat",
+			conf:      &Config{Rules: []Rule{{Name: "a"}, {Name: "b", Forward: Forward{UDP: UDP{NAT: "cone"}}}}},
+			wantError: `rules[1].forward.udp.nat "cone" is unknown`,
+		},
+		{
+			name:      "unknown_dns_mode",
+			conf:      &Config{Rules: []Rule{{Name: "a", Forward: Forward{DNS: DNS{Mode: "doh"}}}}},
+			wantError: `rules[0].forward.dns.mode "doh" is unknown`,
+		},
+		{
+			name:      "dns_server_without_port",
+			conf:      &Config{Rules: []Rule{{Name: "a", Forward: Forward{DNS: DNS{Server: "1.1.1.1"}}}}},
+			wantError: `rules[0].forward.dns.server "1.1.1.1" must be host:port`,
+		},
+		{
+			name:      "dns_server_without_host",
+			conf:      &Config{Rules: []Rule{{Name: "a", Forward: Forward{DNS: DNS{Server: ":53"}}}}},
+			wantError: `rules[0].forward.dns.server ":53" must be host:port`,
+		},
+		{
+			name:      "dns_server_port_zero",
+			conf:      &Config{Rules: []Rule{{Name: "a", Forward: Forward{DNS: DNS{Server: "1.1.1.1:0"}}}}},
+			wantError: `rules[0].forward.dns.server "1.1.1.1:0" port must be a number from 1 to 65535`,
+		},
+		{
+			name:      "dns_server_port_too_large",
+			conf:      &Config{Rules: []Rule{{Name: "a", Forward: Forward{DNS: DNS{Server: "1.1.1.1:65536"}}}}},
+			wantError: `rules[0].forward.dns.server "1.1.1.1:65536" port must be a number from 1 to 65535`,
+		},
+		{
+			name:      "dns_server_named_port",
+			conf:      &Config{Rules: []Rule{{Name: "a", Forward: Forward{DNS: DNS{Server: "1.1.1.1:domain"}}}}},
+			wantError: `rules[0].forward.dns.server "1.1.1.1:domain" port must be a number from 1 to 65535`,
+		},
+		{
+			name:      "dns_server_empty_port",
+			conf:      &Config{Rules: []Rule{{Name: "a", Forward: Forward{DNS: DNS{Server: "host:"}}}}},
+			wantError: `rules[0].forward.dns.server "host:" port must be a number from 1 to 65535`,
+		},
+		{
+			name:      "dns_server_port_with_letters",
+			conf:      &Config{Rules: []Rule{{Name: "a", Forward: Forward{DNS: DNS{Server: "host:53x"}}}}},
+			wantError: `rules[0].forward.dns.server "host:53x" port must be a number from 1 to 65535`,
+		},
+		{
+			name:      "dns_server_unbracketed_ipv6",
+			conf:      &Config{Rules: []Rule{{Name: "a", Forward: Forward{DNS: DNS{Server: "::1:53"}}}}},
+			wantError: `rules[0].forward.dns.server "::1:53" must be host:port`,
+		},
+		{
+			name:      "dns_server_leading_space",
+			conf:      &Config{Rules: []Rule{{Name: "a", Forward: Forward{DNS: DNS{Server: " 1.1.1.1:53"}}}}},
+			wantError: `rules[0].forward.dns.server " 1.1.1.1:53" must not start or end with whitespace`,
+		},
+		{
+			name:      "dns_server_trailing_newline",
+			conf:      &Config{Rules: []Rule{{Name: "a", Forward: Forward{DNS: DNS{Server: "1.1.1.1:53\n"}}}}},
+			wantError: `rules[0].forward.dns.server "1.1.1.1:53\n" must not start or end with whitespace`,
+		},
+		{
+			name: "dns_server_bracketed_ipv6",
+			conf: &Config{Rules: []Rule{{Name: "a", Forward: Forward{DNS: DNS{Server: "[::1]:53"}}}}},
+		},
+		{
+			name:      "udp_mode_upper_case",
+			conf:      &Config{Rules: []Rule{{Name: "a", Forward: Forward{UDP: UDP{Mode: "PROXY"}}}}},
+			wantError: `rules[0].forward.udp.mode "PROXY" is unknown`,
+		},
+		{
+			name:      "udp_mode_leading_space",
+			conf:      &Config{Rules: []Rule{{Name: "a", Forward: Forward{UDP: UDP{Mode: " proxy"}}}}},
+			wantError: `rules[0].forward.udp.mode " proxy" is unknown`,
+		},
+		{
+			name:      "udp_mode_auto",
+			conf:      &Config{Rules: []Rule{{Name: "a", Forward: Forward{UDP: UDP{Mode: "auto"}}}}},
+			wantError: `rules[0].forward.udp.mode "auto" is unknown`,
+		},
+		{
+			name:      "udp_nat_underscore",
+			conf:      &Config{Rules: []Rule{{Name: "a", Forward: Forward{UDP: UDP{NAT: "full_cone"}}}}},
+			wantError: `rules[0].forward.udp.nat "full_cone" is unknown`,
+		},
+		{
+			name:      "dns_server_in_udp_mode",
+			conf:      &Config{Rules: []Rule{{Name: "a", Forward: Forward{DNS: DNS{Mode: "udp", Server: "1.1.1.1:53"}}}}},
+			wantError: "rules[0].forward.dns.server is only used by mode tcp",
+		},
+		{
+			name:      "dns_idle_in_udp_mode",
+			conf:      &Config{Rules: []Rule{{Name: "a", Forward: Forward{DNS: DNS{Mode: "udp", Idle: 5}}}}},
+			wantError: "rules[0].forward.dns.idle is only used by mode tcp",
+		},
+		{
+			name:      "disabled_rule_udp_error",
+			conf:      &Config{Rules: []Rule{{Name: "a", Disabled: true, Forward: Forward{UDP: UDP{Mode: "x"}}}}},
+			wantError: `rules[0].forward.udp.mode "x" is unknown`,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -649,6 +772,82 @@ func TestVirtualSchema(t *testing.T) {
 	}
 }
 
+func TestForwardUDPOptionsSchema(t *testing.T) {
+	forward := Forward{
+		Way: []bridgeconfig.Node{{LB: []string{"socks5://proxy:1080"}}},
+		UDP: UDP{Mode: UDPModeDirect, NAT: NATSymmetric, Idle: 120},
+		DNS: DNS{Mode: DNSModeTCP, Server: "1.1.1.1:53", Idle: 30},
+	}
+	var fromYAML Forward
+	source := "way: [{lb: [socks5://proxy:1080]}]\nudp: {mode: direct, nat: symmetric, idle: 120}\ndns: {mode: tcp, server: 1.1.1.1:53, idle: 30}\n"
+	if err := yaml.Unmarshal([]byte(source), &fromYAML); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(fromYAML, forward) {
+		t.Fatalf("yaml = %#v, want %#v", fromYAML, forward)
+	}
+	yamlOut, err := yaml.Marshal(forward)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantYAML := "way:\n    - lb:\n        - socks5://proxy:1080\nudp:\n    mode: direct\n    nat: symmetric\n    idle: 120\ndns:\n    mode: tcp\n    server: 1.1.1.1:53\n    idle: 30\n"
+	if string(yamlOut) != wantYAML {
+		t.Fatalf("yaml out = %q, want %q", yamlOut, wantYAML)
+	}
+	jsonOut, err := json.Marshal(forward)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantJSON := `{"way":["socks5://proxy:1080"],"udp":{"mode":"direct","nat":"symmetric","idle":120},"dns":{"mode":"tcp","server":"1.1.1.1:53","idle":30}}`
+	if string(jsonOut) != wantJSON {
+		t.Fatalf("json = %s, want %s", jsonOut, wantJSON)
+	}
+	var fromJSON Forward
+	if err := json.Unmarshal(jsonOut, &fromJSON); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(fromJSON, forward) {
+		t.Fatalf("json roundtrip = %#v, want %#v", fromJSON, forward)
+	}
+	partial := Forward{UDP: UDP{NAT: NATFullCone}, DNS: DNS{Mode: DNSModeUDP}}
+	if yamlOut, err := yaml.Marshal(partial); err != nil || string(yamlOut) != "udp:\n    nat: full-cone\ndns:\n    mode: udp\n" {
+		t.Fatalf("partial yaml = %q, %v", yamlOut, err)
+	}
+	if jsonOut, err := json.Marshal(partial); err != nil || string(jsonOut) != `{"udp":{"nat":"full-cone"},"dns":{"mode":"udp"}}` {
+		t.Fatalf("partial json = %s, %v", jsonOut, err)
+	}
+	if yamlOut, err := yaml.Marshal(Rule{Name: "a", Forward: Forward{Port: 5432}}); err != nil || string(yamlOut) != "name: a\nforward:\n    port: 5432\n" {
+		t.Fatalf("yaml without udp options = %q, %v", yamlOut, err)
+	}
+}
+
+func TestForwardZeroSerialisesWithoutUDPOptions(t *testing.T) {
+	if yamlOut, err := yaml.Marshal(Forward{}); err != nil || string(yamlOut) != "{}\n" {
+		t.Fatalf("zero forward yaml = %q, %v; want no udp or dns", yamlOut, err)
+	}
+}
+
+func TestForwardOnlyIdleSerialisesAsOneNestedKey(t *testing.T) {
+	for _, scenario := range []struct {
+		name     string
+		forward  Forward
+		wantYAML string
+		wantJSON string
+	}{
+		{name: "udp", forward: Forward{UDP: UDP{Idle: 5}}, wantYAML: "udp:\n    idle: 5\n", wantJSON: `{"udp":{"idle":5}}`},
+		{name: "dns", forward: Forward{DNS: DNS{Idle: 5}}, wantYAML: "dns:\n    idle: 5\n", wantJSON: `{"dns":{"idle":5}}`},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			if yamlOut, err := yaml.Marshal(scenario.forward); err != nil || string(yamlOut) != scenario.wantYAML {
+				t.Fatalf("yaml = %q, %v; want %q", yamlOut, err, scenario.wantYAML)
+			}
+			if jsonOut, err := json.Marshal(scenario.forward); err != nil || string(jsonOut) != scenario.wantJSON {
+				t.Fatalf("json = %s, %v; want %s", jsonOut, err, scenario.wantJSON)
+			}
+		})
+	}
+}
+
 func TestListenCipherSchema(t *testing.T) {
 	listen := Listen{Port: 1080, Password: "secret", Cipher: "aes-256-gcm"}
 	yamlOut, err := yaml.Marshal(listen)
@@ -754,13 +953,14 @@ func TestListenSchemes(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			before := slices.Clone(test.listen.Protocols)
 			got := test.listen.Schemes()
-			if !reflect.DeepEqual(got, test.want) {
+			// An empty result may be nil or not.
+			if (len(got) != 0 || len(test.want) != 0) && !reflect.DeepEqual(got, test.want) {
 				t.Fatalf("Schemes() = %#v, want %#v", got, test.want)
 			}
 			if !reflect.DeepEqual(test.listen.Protocols, before) {
 				t.Fatalf("Schemes() mutated Protocols: %#v", test.listen.Protocols)
 			}
-			if len(test.listen.Protocols) != 0 {
+			if len(test.listen.Protocols) != 0 && len(got) != 0 {
 				got[0].Type = "mutated"
 				if test.listen.Protocols[0].Type == "mutated" {
 					t.Fatal("Schemes() shares its backing array with Protocols")
@@ -986,7 +1186,8 @@ func TestStoreSaveRawAtomic(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if info.Mode().Perm() != 0o644 {
+		// Windows has no POSIX permission bits; Go reports 0666 for any writable file.
+		if runtime.GOOS != "windows" && info.Mode().Perm() != 0o644 {
 			t.Fatalf("config mode = %04o, want 0644", info.Mode().Perm())
 		}
 	})
@@ -1200,7 +1401,33 @@ func TestJSONTags(t *testing.T) {
 		{
 			name:    "direct_proxy_forward",
 			value:   Forward{},
+			omitted: []string{"host", "port", "way", "udp", "dns"},
+		},
+		{
+			name:    "forward_with_udp_options",
+			value:   Forward{UDP: UDP{Idle: 1}, DNS: DNS{Mode: DNSModeUDP}},
+			keys:    []string{"udp", "dns"},
 			omitted: []string{"host", "port", "way"},
+		},
+		{
+			name:    "empty_udp",
+			value:   UDP{},
+			omitted: []string{"mode", "nat", "idle"},
+		},
+		{
+			name:  "udp",
+			value: UDP{Mode: UDPModeDirect, NAT: NATSymmetric, Idle: 120},
+			keys:  []string{"mode", "nat", "idle"},
+		},
+		{
+			name:    "empty_dns",
+			value:   DNS{},
+			omitted: []string{"mode", "server", "idle"},
+		},
+		{
+			name:  "dns",
+			value: DNS{Mode: DNSModeTCP, Server: "1.1.1.1:53", Idle: 30},
+			keys:  []string{"mode", "server", "idle"},
 		},
 		{
 			name:    "chained_proxy_forward",

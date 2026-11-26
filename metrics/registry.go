@@ -3,6 +3,7 @@ package metrics
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/netip"
 	"net/url"
@@ -45,6 +46,8 @@ type Rule struct {
 	counters       map[hopKey]*counter
 	targets        map[targetKey]*counter
 	targetsEvicted int64
+	// local are the rule's TUN addresses, the client addresses of connections arriving through the TUN.
+	local []netip.Addr
 }
 
 type hopKey struct {
@@ -92,7 +95,8 @@ type live struct {
 	path    []PathHop
 	started time.Time
 	count   *counter
-	conn    *conn
+	// conn is what Registry.Disconnect closes: the connection, or the whole UDP session of a peer.
+	conn io.Closer
 }
 
 func NewRegistry() *Registry {
@@ -106,7 +110,8 @@ func NewRegistry() *Registry {
 	}
 }
 
-func (r *Registry) Sync(rules []config.Rule) {
+// Sync installs the enabled rules; the rule named tunRule owns the TUN device's addresses as local.
+func (r *Registry) Sync(rules []config.Rule, tunRule string, tunAddresses []netip.Prefix) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	updated := make(map[string]*Rule, len(rules))
@@ -120,6 +125,12 @@ func (r *Registry) Sync(rules []config.Rule) {
 		entry.ways[Listen] = entry.syncWay(Listen, rule.Listen.Way, counters)
 		entry.ways[Forward] = entry.syncWay(Forward, rule.Forward.Way, counters)
 		entry.counters = counters
+		entry.local = nil
+		if tunRule != "" && rule.Name == tunRule {
+			for _, prefix := range tunAddresses {
+				entry.local = append(entry.local, prefix.Addr())
+			}
+		}
 		updated[rule.Name] = entry
 		order = append(order, rule.Name)
 	}
@@ -176,22 +187,33 @@ func (r *Rule) WrapListener(inner net.Listener) net.Listener {
 	return &listener{Listener: inner, count: r.count}
 }
 
+// WrapConn counts inner, a conn accepted from a client, in the rule's own stats until it is closed.
+func (r *Rule) WrapConn(inner net.Conn) net.Conn {
+	return newConn(inner, r.count, true).exposed()
+}
+
 func (r *Rule) HopWrapper(role Role) func(index int, url string, d bridge.Dialer) bridge.Dialer {
 	return func(index int, raw string, inner bridge.Dialer) bridge.Dialer {
-		key := hopKey{role: role, index: index, url: redact(raw)}
-		r.registry.mu.Lock()
-		defer r.registry.mu.Unlock()
-		count := r.counters[key]
-		if count == nil {
-			count = newCounter(r.registry.lastTick)
-			r.counters[key] = count
-			for len(r.ways[role]) <= index {
-				r.ways[role] = append(r.ways[role], hop{})
-			}
-			r.ways[role][index].urls = append(r.ways[role][index].urls, urlCounter{url: key.url, count: count})
-		}
-		return &dialer{inner: inner, count: count, url: key.url, index: index, role: role}
+		count, url := r.hopCounter(role, index, raw)
+		return &dialer{inner: inner, count: count, url: url, index: index, role: role}
 	}
+}
+
+// hopCounter is the counter of raw at hop index in role, added to the way unless known, and its redacted URL.
+func (r *Rule) hopCounter(role Role, index int, raw string) (*counter, string) {
+	key := hopKey{role: role, index: index, url: redact(raw)}
+	r.registry.mu.Lock()
+	defer r.registry.mu.Unlock()
+	count := r.counters[key]
+	if count == nil {
+		count = newCounter(r.registry.lastTick)
+		r.counters[key] = count
+		for len(r.ways[role]) <= index {
+			r.ways[role] = append(r.ways[role], hop{})
+		}
+		r.ways[role][index].urls = append(r.ways[role][index].urls, urlCounter{url: key.url, count: count})
+	}
+	return count, key.url
 }
 
 func (r *Rule) target(key targetKey) *counter {

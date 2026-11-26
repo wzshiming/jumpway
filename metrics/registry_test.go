@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"reflect"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -15,6 +17,31 @@ import (
 	bridgeconfig "github.com/wzshiming/bridge/config"
 	"github.com/wzshiming/jumpway/config"
 )
+
+var ttTUNPrefixes = []netip.Prefix{netip.MustParsePrefix("198.18.0.1/30"), netip.MustParsePrefix("fd00:6a77:7761::1/64")}
+
+func TestRegistrySyncMarksOnlyTUNRuleLocal(t *testing.T) {
+	want := []netip.Addr{netip.MustParseAddr("198.18.0.1"), netip.MustParseAddr("fd00:6a77:7761::1")}
+	for _, test := range []struct {
+		name    string
+		tunRule string
+		local   map[string][]netip.Addr
+	}{
+		{name: "first selected", tunRule: "first", local: map[string][]netip.Addr{"first": want}},
+		{name: "none selected", tunRule: ""},
+		{name: "unknown selected", tunRule: "missing"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			registry := NewRegistry()
+			registry.Sync([]config.Rule{{Name: "first"}, {Name: "second"}}, test.tunRule, ttTUNPrefixes)
+			for _, name := range []string{"first", "second"} {
+				if got := registry.Rule(name).local; !slices.Equal(got, test.local[name]) {
+					t.Errorf("rule %q local = %v, want %v", name, got, test.local[name])
+				}
+			}
+		})
+	}
+}
 
 func TestRegistrySync(t *testing.T) {
 	registry := NewRegistry()
@@ -32,7 +59,7 @@ func TestRegistrySync(t *testing.T) {
 		}}},
 		{Name: "second"},
 	}
-	registry.Sync(rules)
+	registry.Sync(rules, "", nil)
 	first := registry.Rule("first")
 	first.count.total.Store(7)
 	first.count.up.Store(50)
@@ -61,7 +88,7 @@ func TestRegistrySync(t *testing.T) {
 		{LB: []string{"ssh://user:new-password@exit:22", "socks5://new:1080"}},
 		{LB: []string{entry}},
 	}
-	registry.Sync([]config.Rule{rules[1], rules[0]})
+	registry.Sync([]config.Rule{rules[1], rules[0]}, "", nil)
 	if registry.Rule("first") != first {
 		t.Fatal("rule pointer was not retained")
 	}
@@ -83,7 +110,7 @@ func TestRegistrySync(t *testing.T) {
 		t.Fatal("reload mutated an existing snapshot")
 	}
 	rules[0].Name = "renamed"
-	registry.Sync([]config.Rule{rules[0]})
+	registry.Sync([]config.Rule{rules[0]}, "", nil)
 	if registry.Rule("first") != nil || registry.Rule("second") != nil {
 		t.Fatal("removed rules remain in registry")
 	}
@@ -98,7 +125,7 @@ func TestRegistryCountersMeasureFromLastTick(t *testing.T) {
 	registry := NewRegistry()
 	start := time.Unix(100, 0)
 	registry.tick(start)
-	registry.Sync([]config.Rule{{Name: "rule", Forward: config.Forward{Way: []bridgeconfig.Node{{LB: []string{url}}}}}})
+	registry.Sync([]config.Rule{{Name: "rule", Forward: config.Forward{Way: []bridgeconfig.Node{{LB: []string{url}}}}}}, "", nil)
 	rule := registry.Rule("rule")
 	registry.mu.Lock()
 	target := rule.target(targetKey{address: "example.com:443"})
@@ -157,7 +184,7 @@ func TestRegistryHopPeak(t *testing.T) {
 					rules[0].Forward.Way = way
 				}
 				registry := NewRegistry()
-				registry.Sync(rules)
+				registry.Sync(rules, "", nil)
 				rule := registry.Rule("rule")
 				first := rule.HopWrapper(Role(role))(0, firstURL, &net.Dialer{}).(*dialer).count
 				second := rule.HopWrapper(Role(role))(0, test.secondURL, &net.Dialer{}).(*dialer).count
@@ -209,10 +236,10 @@ func TestRegistryHopPeak(t *testing.T) {
 				if stats := getHop().Stats; stats.RateUp != 0 || stats.RateDown != 0 {
 					t.Fatalf("idle hop rates = %+v", stats)
 				}
-				registry.Sync(rules)
+				registry.Sync(rules, "", nil)
 				assertPeak()
 				way[0].LB = []string{firstURL, "ssh://replacement:22"}
-				registry.Sync(rules)
+				registry.Sync(rules, "", nil)
 				assertPeak()
 				if getHop().URLs[0].Stats.PeakRateUp != 100 || getHop().URLs[1].Stats != (Stats{}) {
 					t.Fatal("sync failed to retain matching URL counters or clear replacement counters")
@@ -228,7 +255,7 @@ func TestRegistryHopPeak(t *testing.T) {
 
 func TestRuleWrapListener(t *testing.T) {
 	registry := NewRegistry()
-	registry.Sync([]config.Rule{{Name: "rule"}})
+	registry.Sync([]config.Rule{{Name: "rule"}}, "", nil)
 	inner, peer := net.Pipe()
 	closeOnCleanup(t, peer)
 	wrapped := registry.Rule("rule").WrapListener(&pipeListener{connection: inner})
@@ -249,9 +276,90 @@ func TestRuleWrapListener(t *testing.T) {
 	}
 }
 
+func TestRuleWrapConnCountsAcceptedConn(t *testing.T) {
+	registry := NewRegistry()
+	registry.Sync([]config.Rule{{Name: "rule"}}, "", nil)
+	inner, peer := net.Pipe()
+	closeOnCleanup(t, peer)
+	wrapped := registry.Rule("rule").WrapConn(inner)
+	closeOnCleanup(t, wrapped)
+	setDeadlines(t, wrapped, peer)
+	if stats := registry.Snapshot().Rules[0].Stats; stats.Total != 1 || stats.Active != 1 {
+		t.Fatalf("rule stats after WrapConn = %+v, want total 1 and active 1", stats)
+	}
+	transferBytes(t, peer, wrapped, 3)
+	transferBytes(t, wrapped, peer, 5)
+	if stats := registry.Snapshot().Rules[0].Stats; stats.Up != 3 || stats.Down != 5 {
+		t.Fatalf("rule stats = %+v, want 3 bytes up read from the client and 5 down written to it", stats)
+	}
+	if err := wrapped.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if stats := registry.Snapshot().Rules[0].Stats; stats.Active != 0 || stats.Total != 1 {
+		t.Fatalf("rule stats after Close = %+v, want active 0 of total 1", stats)
+	}
+}
+
+func TestRuleWrapConnPassesHalfCloseToInner(t *testing.T) {
+	registry := NewRegistry()
+	registry.Sync([]config.Rule{{Name: "rule"}}, "", nil)
+	listener, err := net.ListenTCP("tcp", &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	closeOnCleanup(t, listener)
+	if err := listener.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	client, err := net.DialTimeout("tcp", listener.Addr().String(), 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	closeOnCleanup(t, client)
+	accepted, err := listener.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrapped := registry.Rule("rule").WrapConn(accepted)
+	closeOnCleanup(t, wrapped)
+	setDeadlines(t, wrapped, client)
+	closer, ok := wrapped.(interface{ CloseWrite() error })
+	if !ok {
+		t.Fatalf("wrapped %T has no CloseWrite", wrapped)
+	}
+	if err := closer.CloseWrite(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Read(make([]byte, 1)); err != io.EOF {
+		t.Fatalf("client Read = %v, want EOF from the half-close", err)
+	}
+	if _, err := client.Write([]byte("ok")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.ReadFull(wrapped, make([]byte, 2)); err != nil {
+		t.Fatalf("read after CloseWrite: %v", err)
+	}
+}
+
+func TestRuleWrapConnCountsTheRuleAlone(t *testing.T) {
+	registry := NewRegistry()
+	registry.Sync([]config.Rule{{Name: "rule", Forward: config.Forward{Way: []bridgeconfig.Node{{LB: []string{"socks5://hop:1080"}}}}}}, "", nil)
+	inner, peer := net.Pipe()
+	closeOnCleanup(t, peer)
+	wrapped := registry.Rule("rule").WrapConn(inner)
+	closeOnCleanup(t, wrapped)
+	setDeadlines(t, wrapped, peer)
+	transferBytes(t, peer, wrapped, 3)
+	transferBytes(t, wrapped, peer, 5)
+	rule := registry.Snapshot().Rules[0]
+	if len(rule.Targets) != 0 || len(rule.Connections) != 0 || rule.Forward[0].Stats != (Stats{}) {
+		t.Fatalf("targets %+v, connections %+v, hop %+v; want WrapConn to leave all but the rule's own stats", rule.Targets, rule.Connections, rule.Forward[0].Stats)
+	}
+}
+
 func TestHopWrapperLazy(t *testing.T) {
 	registry := NewRegistry()
-	registry.Sync([]config.Rule{{Name: "rule"}})
+	registry.Sync([]config.Rule{{Name: "rule"}}, "", nil)
 	rule := registry.Rule("rule")
 	const raw = "ssh://user:secret@host:22"
 	first := rule.HopWrapper(Forward)(2, raw, &net.Dialer{}).(*dialer)
@@ -277,7 +385,7 @@ func TestHopWrapperLazy(t *testing.T) {
 
 func TestTargetCap(t *testing.T) {
 	registry := NewRegistry()
-	registry.Sync([]config.Rule{{Name: "rule"}})
+	registry.Sync([]config.Rule{{Name: "rule"}}, "", nil)
 	rule := registry.Rule("rule")
 	inner, peer := net.Pipe()
 	closeOnCleanup(t, peer)
@@ -333,7 +441,7 @@ func TestTargetCap(t *testing.T) {
 
 func TestRegistryDisconnect(t *testing.T) {
 	registry := NewRegistry()
-	registry.Sync([]config.Rule{{Name: "rule"}})
+	registry.Sync([]config.Rule{{Name: "rule"}}, "", nil)
 	connected, peer := dialRulePipe(t, registry.Rule("rule"), "example.com:443")
 	id := registry.Snapshot().Rules[0].Connections[0].ID
 	done := make(chan error, 1)
@@ -365,7 +473,7 @@ func TestRegistryDisconnect(t *testing.T) {
 
 func TestRegistryResetKeepsConnections(t *testing.T) {
 	registry := NewRegistry()
-	registry.Sync([]config.Rule{{Name: "rule"}})
+	registry.Sync([]config.Rule{{Name: "rule"}}, "", nil)
 	rule := registry.Rule("rule")
 	connected, peer := dialRulePipe(t, rule, "example.com:443")
 	start := time.Now()
@@ -433,12 +541,12 @@ func TestRegistryResetKeepsConnections(t *testing.T) {
 
 func TestRegistrySyncDropsConnections(t *testing.T) {
 	registry := NewRegistry()
-	registry.Sync([]config.Rule{{Name: "removed"}, {Name: "kept"}})
+	registry.Sync([]config.Rule{{Name: "removed"}, {Name: "kept"}}, "", nil)
 	removed, peer := dialRulePipe(t, registry.Rule("removed"), "example.com:443")
 	dialRulePipe(t, registry.Rule("kept"), "example.com:443")
 	before := registry.Snapshot()
 	id := before.Rules[0].Connections[0].ID
-	registry.Sync([]config.Rule{{Name: "kept"}})
+	registry.Sync([]config.Rule{{Name: "kept"}}, "", nil)
 	snapshot := registry.Snapshot()
 	if len(snapshot.Rules) != 1 || !reflect.DeepEqual(snapshot.Rules[0].Connections, before.Rules[1].Connections) {
 		t.Fatalf("reload connections = %+v, want only retained rule", snapshot.Rules)
@@ -448,7 +556,7 @@ func TestRegistrySyncDropsConnections(t *testing.T) {
 	}
 	transferBytes(t, removed, peer, 3)
 	transferBytes(t, peer, removed, 5)
-	registry.Sync([]config.Rule{{Name: "removed"}, {Name: "kept"}})
+	registry.Sync([]config.Rule{{Name: "removed"}, {Name: "kept"}}, "", nil)
 	dialRulePipe(t, registry.Rule("removed"), "example.com:443")
 	snapshot = registry.Snapshot()
 	if len(snapshot.Rules[0].Connections) != 1 || snapshot.Rules[0].Connections[0].ID <= before.Rules[1].Connections[0].ID {
@@ -464,7 +572,7 @@ func TestRegistrySyncDropsConnections(t *testing.T) {
 
 func TestRegistrySyncDuringDial(t *testing.T) {
 	registry := NewRegistry()
-	registry.Sync([]config.Rule{{Name: "rule"}})
+	registry.Sync([]config.Rule{{Name: "rule"}}, "", nil)
 	rule := registry.Rule("rule")
 	inner, peer := net.Pipe()
 	closeOnCleanup(t, inner)
@@ -491,8 +599,8 @@ func TestRegistrySyncDuringDial(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("dial did not start")
 	}
-	registry.Sync(nil)
-	registry.Sync([]config.Rule{{Name: "rule"}})
+	registry.Sync(nil, "", nil)
+	registry.Sync([]config.Rule{{Name: "rule"}}, "", nil)
 	release.Do(func() { close(resume) })
 	var connected net.Conn
 	select {
@@ -516,7 +624,7 @@ func TestRegistrySyncDuringDial(t *testing.T) {
 
 func TestRegistryConcurrentConnections(t *testing.T) {
 	registry := NewRegistry()
-	registry.Sync([]config.Rule{{Name: "rule"}})
+	registry.Sync([]config.Rule{{Name: "rule"}}, "", nil)
 	dialer := registry.Rule("rule").WrapDialer(bridge.DialFunc(func(context.Context, string, string) (net.Conn, error) {
 		inner, peer := net.Pipe()
 		peer.Close()
@@ -550,7 +658,7 @@ func TestRegistryConcurrentConnections(t *testing.T) {
 			registry.tick(time.Now())
 			registry.Snapshot()
 			registry.Reset()
-			registry.Sync([]config.Rule{{Name: "rule"}})
+			registry.Sync([]config.Rule{{Name: "rule"}}, "", nil)
 		}
 	})
 	close(start)

@@ -5,6 +5,7 @@
 	import { ApiError, configsApi, errorMessage, isAborted } from '../lib/api';
 	import { busy } from '../lib/busy.svelte';
 	import ChainFlow from '../lib/components/rules/ChainFlow.svelte';
+	import ForwardOptions from '../lib/components/rules/ForwardOptions.svelte';
 	import HopEditor from '../lib/components/rules/HopEditor.svelte';
 	import ListenProtocols from '../lib/components/rules/ListenProtocols.svelte';
 	import UrlBuilderDialog from '../lib/components/rules/UrlBuilderDialog.svelte';
@@ -605,6 +606,7 @@
 					/>
 				</div>
 			{/if}
+			<ForwardOptions bind:forward={draft.forward} bind:errors />
 		</fieldset>
 
 		<FormActions {dirty} disabled={busy.value || loading} {saving} sticky>

@@ -2,7 +2,9 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"net/url"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -56,6 +58,9 @@ func Validate(conf *Config) error {
 			return err
 		}
 		if err := validateWay(fmt.Sprintf("rules[%d].forward.way", ruleIndex), rule.Forward.Way); err != nil {
+			return err
+		}
+		if err := validateUDP(fmt.Sprintf("rules[%d].forward", ruleIndex), rule.Forward); err != nil {
 			return err
 		}
 		if rule.Disabled || rule.Listen.Remote() || (rule.Listen.Port == 0 && rule.Listen.Virtual == "") {
@@ -165,6 +170,46 @@ func validateVirtual(prefix, virtual, host string, port uint32, way []bridgeconf
 	}
 	if len(way) != 0 {
 		return fmt.Errorf("%s.virtual must not be combined with way", prefix)
+	}
+	return nil
+}
+
+func validateUDP(prefix string, forward Forward) error {
+	switch forward.UDP.Mode {
+	case "", UDPModeProxy, UDPModeDirect, UDPModeBlock:
+	default:
+		return fmt.Errorf("%s.udp.mode %q is unknown", prefix, forward.UDP.Mode)
+	}
+	switch forward.UDP.NAT {
+	case "", NATFullCone, NATSymmetric:
+	default:
+		return fmt.Errorf("%s.udp.nat %q is unknown", prefix, forward.UDP.NAT)
+	}
+	dns := forward.DNS
+	switch dns.Mode {
+	case "", DNSModeTCP:
+	case DNSModeUDP:
+		switch {
+		case dns.Server != "":
+			return fmt.Errorf("%s.dns.server is only used by mode tcp", prefix)
+		case dns.Idle != 0:
+			return fmt.Errorf("%s.dns.idle is only used by mode tcp", prefix)
+		}
+	default:
+		return fmt.Errorf("%s.dns.mode %q is unknown", prefix, dns.Mode)
+	}
+	if dns.Server == "" {
+		return nil
+	}
+	if strings.TrimSpace(dns.Server) != dns.Server {
+		return fmt.Errorf("%s.dns.server %q must not start or end with whitespace", prefix, dns.Server)
+	}
+	host, port, err := net.SplitHostPort(dns.Server)
+	if err != nil || host == "" {
+		return fmt.Errorf("%s.dns.server %q must be host:port", prefix, dns.Server)
+	}
+	if number, err := strconv.ParseUint(port, 10, 16); err != nil || number == 0 {
+		return fmt.Errorf("%s.dns.server %q port must be a number from 1 to 65535", prefix, dns.Server)
 	}
 	return nil
 }

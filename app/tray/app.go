@@ -21,6 +21,7 @@ import (
 	"github.com/wzshiming/jumpway/metrics"
 	"github.com/wzshiming/notify"
 	"github.com/wzshiming/systheme"
+	"github.com/wzshiming/tun"
 )
 
 type App struct {
@@ -30,6 +31,7 @@ type App struct {
 	web     http.Handler
 	metrics *metrics.Registry
 	logPath string
+	openTUN func(context.Context, tun.Config) (*tun.Device, error)
 
 	root          context.Context
 	cancel        context.CancelFunc
@@ -53,6 +55,7 @@ type App struct {
 	menuItems          *menuItems
 	systemProxyRule    string
 	systemProxyAddress string
+	tunRule            string
 }
 
 type ruleRuntime struct {
@@ -66,6 +69,7 @@ type ruleState struct {
 	name          string
 	listenAddress string
 	address       string
+	tun           string
 	target        string
 	remote        bool
 	virtual       bool
@@ -79,6 +83,9 @@ type ruleState struct {
 func (r ruleState) localProxy() bool {
 	return !r.remote && !r.virtual && r.target == "" && r.http
 }
+
+// tunCapable reports whether the rule runs on this machine and so can serve the TUN.
+func (r ruleState) tunCapable() bool { return !r.remote && !r.virtual }
 
 // displayAddress is the bound address, or the configured one before the first bind, made dialable for local rules.
 func (r ruleState) displayAddress() string {
@@ -99,6 +106,7 @@ func NewApp(store *config.Store) *App {
 		actions: make(chan func()),
 		store:   store,
 		metrics: metrics.NewRegistry(),
+		openTUN: tun.Open,
 	}
 	notify.On(syscall.SIGINT, a.Quit)
 	notify.On(syscall.SIGTERM, func() { a.do(a.Quit) })
@@ -208,6 +216,7 @@ func (a *App) Status() configs.Status {
 		state := configs.RuleStatus{
 			Name:    rule.name,
 			Address: rule.address,
+			Tun:     rule.tun,
 			Target:  rule.target,
 			Remote:  rule.remote,
 			Running: rule.running,
@@ -265,6 +274,7 @@ func (a *App) stop() {
 	metricsCancel := a.metricsCancel
 	systemProxyAddress := a.systemProxyAddress
 	a.systemProxyRule, a.systemProxyAddress = "", ""
+	a.tunRule = ""
 	a.mu.Unlock()
 	if systemProxyAddress != "" {
 		setSystemProxy("")

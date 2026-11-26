@@ -34,6 +34,37 @@ describe('dictionaries', () => {
 		expect(zh.showingConnections).toBe('显示 {total} 个连接中的 {shown} 个');
 		expect(en['field.encrypto']).toBe('Encryption method');
 	});
+
+	test('the zh TUN tooltip relays DNS over TCP and leaves other UDP to the rule options', () => {
+		expect(zh['help.tun']).toBe(
+			'TUN：虚拟网卡，捕获本机 TCP 和 UDP 流量并经由规则的出口链路发出。DNS 查询（UDP 53 端口）以 DNS over TCP 转发，规则的 DNS 模式为 UDP 时除外；其他 UDP 按规则的 UDP 选项处理。'
+		);
+	});
+
+	test('the UDP mode hint sends TUN DNS queries by the DNS mode, even when UDP is direct or blocked', () => {
+		expect(en.udpModeHint).toContain(
+			'DNS queries captured by the TUN (UDP port 53) follow the DNS mode, not the UDP mode: unless the DNS mode is UDP, they are still relayed as DNS over TCP through the exit chain when the UDP mode is Direct or Block.'
+		);
+		expect(zh.udpModeHint).toContain(
+			'TUN 捕获的 DNS 查询（UDP 53 端口）按 DNS 模式而非 UDP 模式处理：除非 DNS 模式为 UDP，即使 UDP 模式为直连或阻止，它们仍以 DNS over TCP 经由出口链路转发。'
+		);
+	});
+
+	test('the UDP NAT hint bounds full cone by what the exit chain can address', () => {
+		expect(en.udpNatHint).toContain(
+			"Full cone holds as far as the exit chain's UDP can address every destination; otherwise each destination gets its own connection."
+		);
+		expect(zh.udpNatHint).toContain(
+			'全锥形仅在出口链路的 UDP 能发往每个目标时成立，否则每个目标各用一条连接。'
+		);
+	});
+
+	test('the zh DNS server texts write 主机:端口 without a stray space', () => {
+		expect(zh.dnsServerHint).toBe(
+			'仅用于 DNS over TCP：所有查询都发往这里填写的主机:端口，而不是查询原本发往的服务器。'
+		);
+		expect(zh.dnsServerInvalid).toBe('请输入主机:端口，主机不能为空，端口须为 1 到 65535。');
+	});
 });
 
 describe('resolveLanguage', () => {

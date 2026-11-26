@@ -9,6 +9,7 @@ import (
 	socks4adapter "github.com/wzshiming/anyproxy/proxies/socks4"
 	socks5adapter "github.com/wzshiming/anyproxy/proxies/socks5"
 	sshproxyadapter "github.com/wzshiming/anyproxy/proxies/sshproxy"
+	"github.com/wzshiming/bridge"
 	"github.com/wzshiming/cmux/pattern"
 	"github.com/wzshiming/httpproxy"
 	"github.com/wzshiming/shadowsocks"
@@ -70,6 +71,7 @@ func newSOCKS5ServeConn(ctx context.Context, scheme, address string, conf *anypr
 		return nil, nil, err
 	}
 	template := host.(*socks5.SimpleServer)
+	listenPacket, _ := conf.Dialer.(bridge.ListenPacketConfig)
 	return serveConnFunc(func(conn net.Conn) {
 		// SOCKS servers embed a mutex, so the template is never copied whole.
 		server := socks5.Server{
@@ -85,6 +87,26 @@ func newSOCKS5ServeConn(ctx context.Context, scheme, address string, conf *anypr
 			ListenBindAcceptTimeout:   template.ListenBindAcceptTimeout,
 			Logger:                    template.Logger,
 			BytesPool:                 template.BytesPool,
+		}
+		if listenPacket != nil {
+			var target net.PacketConn
+			defer func() {
+				if target != nil {
+					target.Close()
+				}
+			}()
+			// The target socket opens before the relay so a refusal is answered with a failure reply.
+			server.ProxyListenPacket = func(ctx context.Context, network, address string) (net.PacketConn, error) {
+				var err error
+				target, err = listenPacket.ListenPacket(ctx, "udp", ":0")
+				if err != nil {
+					return nil, err
+				}
+				return (&net.ListenConfig{}).ListenPacket(ctx, network, address)
+			}
+			server.ProxyOutgoingListenPacket = func(context.Context, string, string) (net.PacketConn, error) {
+				return target, nil
+			}
 		}
 		server.ServeConn(conn)
 	}), patterns, nil

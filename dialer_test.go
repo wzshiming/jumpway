@@ -3,6 +3,7 @@ package jumpway
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"slices"
 	"testing"
@@ -79,6 +80,29 @@ func TestRetryDialerExhaustsRetries(t *testing.T) {
 	}
 }
 
+func TestRetryDialerReturnsUnsupportedAtOnce(t *testing.T) {
+	unsupported := fmt.Errorf("unsupported network: %w", errors.ErrUnsupported)
+	calls := 0
+	var attempts []int
+	dialer := NewRetryDialer(bridge.DialFunc(func(ctx context.Context, network, address string) (net.Conn, error) {
+		calls++
+		return nil, unsupported
+	}), 3, time.Millisecond, func(ctx context.Context, network, address string, attempt int, err error) {
+		attempts = append(attempts, attempt)
+	})
+
+	conn, err := dialer.DialContext(context.Background(), "udp", "example.com:53")
+	if conn != nil || !errors.Is(err, errors.ErrUnsupported) {
+		t.Fatalf("DialContext = (%v, %v), want nil connection and errors.ErrUnsupported", conn, err)
+	}
+	if calls != 1 {
+		t.Errorf("dial calls = %d, want 1", calls)
+	}
+	if !slices.Equal(attempts, []int{1}) {
+		t.Errorf("retry attempts = %v, want [1]", attempts)
+	}
+}
+
 func TestRetryDialerContextCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -146,6 +170,22 @@ func TestRetryDialerDoesNotDuplicateContextError(t *testing.T) {
 	_, err := dialer.DialContext(ctx, "tcp", "example.com:443")
 	if err == nil || err.Error() != context.Canceled.Error() {
 		t.Fatalf("error = %q, want exactly %q", err, context.Canceled)
+	}
+}
+
+func TestLogDialerKeepsListenPacket(t *testing.T) {
+	base := &ttPacketBase{}
+	dialer, ok := NewLogDialer(base, func(context.Context, string, string) {}).(bridge.ListenPacketConfig)
+	if !ok {
+		t.Fatal("NewLogDialer hides the dialer's ListenPacket")
+	}
+	conn, err := dialer.ListenPacket(context.Background(), "udp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.Close()
+	if listens := base.recorded(); len(listens) != 1 || listens[0] != conn {
+		t.Fatalf("base listens %v, want only %v", listens, conn)
 	}
 }
 

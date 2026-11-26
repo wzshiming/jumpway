@@ -34,12 +34,30 @@ export interface Listen {
 	protocols?: Nullable<Protocol[]>;
 }
 
+// Every field is optional and absent when unset; an absent field keeps the built-in behaviour.
+export interface ForwardUDP {
+	mode?: 'proxy' | 'direct' | 'block';
+	nat?: 'full-cone' | 'symmetric';
+	// Whole seconds; absent or 0 means 60.
+	idle?: number;
+}
+
+// server and idle apply to tcp mode only.
+export interface ForwardDNS {
+	mode?: 'tcp' | 'udp';
+	server?: string;
+	// Whole seconds; absent or 0 means 10.
+	idle?: number;
+}
+
 // port 0 or absent means proxy mode: clients pick their own target; virtual is always a forward.
 export interface Forward {
 	host?: string;
 	port?: number;
 	virtual?: string;
 	way?: Nullable<WayNode[]>;
+	udp?: ForwardUDP;
+	dns?: ForwardDNS;
 }
 
 export interface Rule {
@@ -67,6 +85,8 @@ export interface RuleStatus {
 	running: boolean;
 	attempt?: number;
 	error?: string;
+	// The tun interface name while it runs.
+	tun?: string;
 }
 
 export interface Status {

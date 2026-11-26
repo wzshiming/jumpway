@@ -127,7 +127,43 @@ type Forward struct {
 	Port    uint32              `yaml:"port,omitempty" json:"port,omitempty"`
 	Virtual string              `yaml:"virtual,omitempty" json:"virtual,omitempty"`
 	Way     []bridgeconfig.Node `yaml:"way,omitempty" json:"way,omitempty"`
+	UDP     UDP                 `yaml:"udp,omitempty" json:"udp,omitempty,omitzero"`
+	DNS     DNS                 `yaml:"dns,omitempty" json:"dns,omitempty,omitzero"`
 }
+
+// UDP is how the rule carries UDP; every empty field means the default behaviour.
+type UDP struct {
+	// Mode is where UDP goes: proxy (through Way, the default), direct (from this machine) or block.
+	Mode string `yaml:"mode,omitempty" json:"mode,omitempty"`
+	// NAT is full-cone (one socket per client session) or symmetric (one connection per destination); empty picks automatically.
+	NAT string `yaml:"nat,omitempty" json:"nat,omitempty"`
+	// Idle is the seconds without datagrams after which a session or destination connection ends; 0 means 60.
+	Idle uint32 `yaml:"idle,omitempty" json:"idle,omitempty"`
+}
+
+const (
+	UDPModeProxy  = "proxy"
+	UDPModeDirect = "direct"
+	UDPModeBlock  = "block"
+
+	NATFullCone  = "full-cone"
+	NATSymmetric = "symmetric"
+)
+
+// DNS is how a TUN serves UDP port 53; every empty field means the default behaviour.
+type DNS struct {
+	// Mode is tcp (relayed as DNS over TCP through Way, the default) or udp (handled like any other UDP port).
+	Mode string `yaml:"mode,omitempty" json:"mode,omitempty"`
+	// Server, in tcp mode, is the host:port every query is sent to instead of the addressed server.
+	Server string `yaml:"server,omitempty" json:"server,omitempty"`
+	// Idle, in tcp mode, is the seconds without queries or replies after which a DNS session ends; 0 means 10.
+	Idle uint32 `yaml:"idle,omitempty" json:"idle,omitempty"`
+}
+
+const (
+	DNSModeTCP = "tcp"
+	DNSModeUDP = "udp"
+)
 
 // IsProxy reports whether the rule serves proxy protocols instead of forwarding to a fixed target.
 func (f Forward) IsProxy() bool { return f.Port == 0 && f.Virtual == "" }

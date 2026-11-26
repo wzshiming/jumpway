@@ -13,7 +13,7 @@ import {
 	type ReadContext,
 	type RuleDraft
 } from './ruleEditor';
-import type { Address, Listen, Protocol, Rule } from './types';
+import type { Address, Forward, Listen, Protocol, Rule } from './types';
 
 const [office, mirror, dbTunnel, lab] = rulesFixture;
 
@@ -919,5 +919,198 @@ describe('readRule with the stored rules', () => {
 		draft.target.kind = 'virtual';
 		draft.target.virtual = 'exit';
 		expect(errorsOf(draft)).toEqual({});
+	});
+});
+
+describe('UDP and DNS options', () => {
+	const proxyRule = (forward: Forward): Rule => ({
+		name: 'p',
+		listen: { host: '127.0.0.1', port: 18500, protocols: LEGACY },
+		forward
+	});
+	const forwardRule = (forward: Forward): Rule => ({
+		name: 'f',
+		listen: { host: '127.0.0.1', port: 18501 },
+		forward: { host: '10.0.0.5', port: 5432, ...forward }
+	});
+	const saved = (draft: RuleDraft): Rule => {
+		const result = readRule(draft);
+		if (!result.ok) throw new Error('unexpected errors ' + JSON.stringify(result.errors));
+		return result.rule;
+	};
+	const errorsOf = (draft: RuleDraft): DraftErrors => {
+		const result = readRule(draft);
+		return result.ok ? {} : result.errors;
+	};
+
+	test('every combination of stored options reads back unchanged, in proxy and port-forward rules', () => {
+		const udps: (Forward['udp'] | undefined)[] = [
+			undefined,
+			{ mode: 'proxy' },
+			{ mode: 'direct', nat: 'symmetric', idle: 120 },
+			{ mode: 'block', nat: 'full-cone' },
+			{ idle: 1 }
+		];
+		const dnses: (Forward['dns'] | undefined)[] = [
+			undefined,
+			{ mode: 'udp' },
+			{ mode: 'tcp', server: '1.1.1.1:53', idle: 30 },
+			{ server: '[2606:4700::1111]:53' },
+			{ idle: 5 }
+		];
+		for (const udp of udps) {
+			for (const dns of dnses) {
+				const options: Forward = { way: [{ lb: ['socks5://proxy:1080'] }] };
+				if (udp) options.udp = udp;
+				if (dns) options.dns = dns;
+				for (const rule of [proxyRule(options), forwardRule(options)]) {
+					expect(saved(draftFrom(rule)), JSON.stringify(options)).toEqual(rule);
+				}
+			}
+		}
+	});
+
+	test('a rule without options drafts empty fields and saves without udp or dns keys', () => {
+		const draft = draftFrom(office);
+		expect(draft.forward.udp).toEqual({ mode: '', nat: '', idle: '' });
+		expect(draft.forward.dns).toEqual({ mode: '', server: '', idle: '' });
+		const forward = saved(draftFrom(office)).forward;
+		expect(forward).not.toHaveProperty('udp');
+		expect(forward).not.toHaveProperty('dns');
+		const fresh = emptyDraft();
+		fresh.name = 'n';
+		expect(saved(fresh).forward).toEqual({});
+	});
+
+	test('stored zero idles draft as empty and are not sent', () => {
+		const draft = draftFrom(proxyRule({ udp: { idle: 0 }, dns: { idle: 0 } }));
+		expect(draft.forward.udp.idle).toBe('');
+		expect(draft.forward.dns.idle).toBe('');
+		expect(saved(draft).forward).toEqual({});
+	});
+
+	test('clearing an option removes its key, and the last one removes its object', () => {
+		const draft = draftFrom(
+			proxyRule({ udp: { mode: 'direct', idle: 120 }, dns: { mode: 'tcp', server: 'ns:53' } })
+		);
+		draft.forward.udp.mode = '';
+		expect(saved(draft).forward).toEqual({
+			udp: { idle: 120 },
+			dns: { mode: 'tcp', server: 'ns:53' }
+		});
+		draft.forward.udp.idle = ' ';
+		draft.forward.dns.server = '';
+		expect(saved(draft).forward).toEqual({ dns: { mode: 'tcp' } });
+		draft.forward.dns.mode = '';
+		expect(saved(draft).forward).toEqual({});
+		draft.forward.udp.idle = '0';
+		expect(saved(draft).forward).toEqual({});
+	});
+
+	test('typed values are trimmed and idles sent as numbers', () => {
+		const draft = emptyDraft();
+		draft.name = 'n';
+		draft.forward.udp = { mode: 'block', nat: 'full-cone', idle: ' 90 ' };
+		draft.forward.dns = { mode: '', server: ' dns.example:853 ', idle: '007' };
+		expect(saved(draft).forward).toEqual({
+			udp: { mode: 'block', nat: 'full-cone', idle: 90 },
+			dns: { server: 'dns.example:853', idle: 7 }
+		});
+	});
+
+	test('DNS mode udp disables server and idle: they are neither sent nor checked, and their drafts stay', () => {
+		const draft = draftFrom(proxyRule({ dns: { mode: 'tcp', server: '1.1.1.1:53', idle: 30 } }));
+		draft.forward.dns.mode = 'udp';
+		expect(saved(draft).forward).toEqual({ dns: { mode: 'udp' } });
+		expect(draft.forward.dns).toEqual({ mode: 'udp', server: '1.1.1.1:53', idle: '30' });
+		draft.forward.dns.server = 'nonsense';
+		draft.forward.dns.idle = '-1';
+		expect(errorsOf(draft)).toEqual({});
+		draft.forward.dns.mode = 'tcp';
+		expect(errorsOf(draft)).toEqual({ dnsServer: 'dnsServerInvalid', dnsIdle: 'idleInvalid' });
+	});
+
+	test('the DNS server must be host:port with a non-empty host and a port from 1 to 65535', () => {
+		const check = (server: string) => {
+			const draft = draftFrom(proxyRule({}));
+			draft.forward.dns.server = server;
+			return errorsOf(draft).dnsServer ?? null;
+		};
+		for (const server of [
+			'1.1.1.1:53',
+			'dns.example:853',
+			'[2606:4700::1111]:53',
+			'[::1]:1',
+			'h:65535',
+			' ns:53 '
+		]) {
+			expect(check(server), server).toBeNull();
+		}
+		for (const server of [
+			'1.1.1.1',
+			':53',
+			'[]:53',
+			'h:0',
+			'h:65536',
+			'h:',
+			'h:5x',
+			'h:+53',
+			'h:-1',
+			'::1:53',
+			'2606:4700::1111',
+			'[::1]',
+			'[::1]53',
+			'a b:53x'
+		]) {
+			expect(check(server), server).toBe('dnsServerInvalid');
+		}
+	});
+
+	test('idles must be whole numbers of seconds from 0 to 4294967295', () => {
+		const check = (idle: string) => {
+			const draft = draftFrom(proxyRule({}));
+			draft.forward.udp.idle = idle;
+			draft.forward.dns.idle = idle;
+			return errorsOf(draft);
+		};
+		for (const idle of ['', ' ', '0', '1', '60', '86400', '4294967295']) {
+			expect(check(idle), idle).toEqual({});
+		}
+		for (const idle of ['-1', '1.5', '1e3', 'x', '+5', '0x10', '4294967296', '9007199254740993']) {
+			expect(check(idle), idle).toEqual({ udpIdle: 'idleInvalid', dnsIdle: 'idleInvalid' });
+		}
+	});
+
+	test('option errors are reported together with the other field errors', () => {
+		const draft = emptyDraft();
+		draft.listen.port = 'x';
+		draft.forward.udp.idle = 'x';
+		expect(errorsOf(draft)).toEqual({
+			name: 'ruleNameRequired',
+			listenPort: 'invalidPort',
+			udpIdle: 'idleInvalid'
+		});
+	});
+
+	test('snapshot tracks every option, so editing one is dirty and undoing it is clean', () => {
+		const rule = proxyRule({ udp: { mode: 'direct' }, dns: { server: 'ns:53' } });
+		const before = snapshot(draftFrom(rule));
+		const edits: ((draft: RuleDraft) => void)[] = [
+			(draft) => (draft.forward.udp.mode = 'block'),
+			(draft) => (draft.forward.udp.nat = 'symmetric'),
+			(draft) => (draft.forward.udp.idle = '30'),
+			(draft) => (draft.forward.dns.mode = 'udp'),
+			(draft) => (draft.forward.dns.server = 'ns:54'),
+			(draft) => (draft.forward.dns.idle = '3')
+		];
+		for (const edit of edits) {
+			const draft = draftFrom(rule);
+			edit(draft);
+			expect(snapshot(draft), edit.toString()).not.toBe(before);
+		}
+		const undone = draftFrom(rule);
+		undone.forward.udp.mode = 'block';
+		undone.forward.udp.mode = 'direct';
+		expect(snapshot(undone)).toBe(before);
 	});
 });

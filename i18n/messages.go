@@ -38,6 +38,14 @@ func SystemProxy() string {
 	return fmt.Sprintf("System Proxy")
 }
 
+func TUN() string {
+	return fmt.Sprintf("TUN")
+}
+
+func TUNOff() string {
+	return fmt.Sprintf("Off")
+}
+
 func ProxyMode() string {
 	return fmt.Sprintf("Proxy Mode")
 }
@@ -128,4 +136,12 @@ func Listen(address string) string {
 
 func Alert(message string) string {
 	return fmt.Sprintf("Alert %s", message)
+}
+
+func TUNDenied() string {
+	return fmt.Sprintf("TUN denied; re-select it in the TUN menu or reload config to retry")
+}
+
+func TUNUnavailable() string {
+	return fmt.Sprintf("TUN unavailable; re-select it in the TUN menu or reload config to retry")
 }
